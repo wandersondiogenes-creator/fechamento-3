@@ -7,8 +7,13 @@ import { isValidCPF } from '@/lib/validators';
 import {
   CADASTRO_EMPRESAS,
   CADASTRO_DEPARTAMENTOS,
+  CADASTRO_CONTAS_GERENCIAIS,
   isEmpresaColumn,
   isDepartamentoColumn,
+  isContaGerencialColumn,
+  isDateColumn,
+  toInputDateFormat,
+  toDisplayDateFormat,
 } from '@/lib/cadastros';
 import {
   Search,
@@ -38,6 +43,7 @@ import {
   Scale,
   Building2,
   FolderTree,
+  Calendar,
 } from 'lucide-react';
 
 interface ExcelTableProps {
@@ -277,7 +283,9 @@ export function ExcelTable({
         defaults[col.id] = CADASTRO_EMPRESAS[0]; // "BYD - ARRUDA"
       } else if (isDepartamentoColumn(headerText)) {
         defaults[col.id] = CADASTRO_DEPARTAMENTOS[0]; // "30129-CAIXA LOJA - DEPTO.OFICINA"
-      } else if (h.includes('data') || h.includes('dt_')) {
+      } else if (isContaGerencialColumn(headerText)) {
+        defaults[col.id] = CADASTRO_CONTAS_GERENCIAIS[0]; // "30129-CAIXA LOJA - DEPTO.OFICINA"
+      } else if (isDateColumn(headerText)) {
         defaults[col.id] = todayStr;
       } else if (h.includes('estado') || h.includes('status') || h.includes('situacao')) {
         defaults[col.id] = 'APROVADO';
@@ -1027,17 +1035,27 @@ export function ExcelTable({
                 ))}
               </datalist>
 
+              <datalist id="contas-datalist">
+                {CADASTRO_CONTAS_GERENCIAIS.map((cta) => (
+                  <option key={cta} value={cta} />
+                ))}
+              </datalist>
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {activeColumns.map((col) => {
                   const label = col.customHeader || col.originalHeader;
                   const isEmp = isEmpresaColumn(label);
                   const isDep = isDepartamentoColumn(label);
+                  const isCta = isContaGerencialColumn(label);
+                  const isDate = isDateColumn(label);
 
                   return (
                     <div key={col.id} className="space-y-1.5 sm:col-span-1">
                       <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block truncate flex items-center gap-1.5">
                         {isEmp && <Building2 className="w-3.5 h-3.5 text-emerald-600" />}
                         {isDep && <FolderTree className="w-3.5 h-3.5 text-blue-600" />}
+                        {isCta && <Scale className="w-3.5 h-3.5 text-indigo-600" />}
+                        {isDate && <Calendar className="w-3.5 h-3.5 text-amber-600" />}
                         <span>{label}</span>
                       </label>
 
@@ -1077,6 +1095,37 @@ export function ExcelTable({
                             </option>
                           ))}
                         </select>
+                      ) : isCta ? (
+                        <select
+                          value={newRowFormData[col.id] || ''}
+                          onChange={(e) =>
+                            setNewRowFormData((prev) => ({
+                              ...prev,
+                              [col.id]: e.target.value,
+                            }))
+                          }
+                          className="w-full px-3.5 py-2.5 text-sm font-bold text-slate-900 bg-indigo-50/50 border-2 border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 cursor-pointer shadow-xs transition-all"
+                        >
+                          <option value="">-- Selecione a Conta Gerencial --</option>
+                          {CADASTRO_CONTAS_GERENCIAIS.map((cta) => (
+                            <option key={cta} value={cta}>
+                              {cta}
+                            </option>
+                          ))}
+                        </select>
+                      ) : isDate ? (
+                        <input
+                          type="date"
+                          value={toInputDateFormat(newRowFormData[col.id] || '')}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setNewRowFormData((prev) => ({
+                              ...prev,
+                              [col.id]: toDisplayDateFormat(val),
+                            }));
+                          }}
+                          className="w-full px-3.5 py-2.5 text-sm font-bold text-slate-900 bg-amber-50/30 border-2 border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 cursor-pointer shadow-xs transition-all"
+                        />
                       ) : (
                         <input
                           type="text"

@@ -5,7 +5,13 @@ import { FechamentoItem } from '@/lib/fechamento-utils';
 import { FechamentoCaixaModal } from './FechamentoCaixaModal';
 import { HistoricoFechamentoModal } from './HistoricoFechamentoModal';
 import { FechamentoCaixaRecord } from '@/lib/fechamento-caixa-service';
-import { CADASTRO_EMPRESAS, CADASTRO_DEPARTAMENTOS } from '@/lib/cadastros';
+import {
+  CADASTRO_EMPRESAS,
+  CADASTRO_DEPARTAMENTOS,
+  CADASTRO_CONTAS_GERENCIAIS,
+  toInputDateFormat,
+  toDisplayDateFormat,
+} from '@/lib/cadastros';
 import {
   TrendingUp,
   Scale,
@@ -31,6 +37,7 @@ import {
   History,
   FileCheck,
   RotateCcw,
+  Calendar,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
@@ -79,7 +86,7 @@ export function FechamentoView({
   const [addForm, setAddForm] = useState({
     empresa: CADASTRO_EMPRESAS[0], // "BYD - ARRUDA"
     departamento: CADASTRO_DEPARTAMENTOS[0], // "30129-CAIXA LOJA - DEPTO.OFICINA"
-    contaGerencial: '1.01.02 - Cartões de Crédito',
+    contaGerencial: CADASTRO_CONTAS_GERENCIAIS[0], // "30129-CAIXA LOJA - DEPTO.OFICINA"
     caixaLoja: 'Loja 01 - Caixa Central',
     data: new Date().toLocaleDateString('pt-BR'),
     nsu: '',
@@ -1353,15 +1360,35 @@ export function FechamentoView({
                 </div>
 
                 <div className="space-y-1.5 sm:col-span-1">
-                  <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
-                    Data
+                  <label className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                    <Scale className="w-3.5 h-3.5 text-indigo-600" />
+                    <span>Conta Gerencial</span>
+                  </label>
+                  <select
+                    value={addForm.contaGerencial}
+                    onChange={(e) => setAddForm({ ...addForm, contaGerencial: e.target.value })}
+                    required
+                    className="w-full px-3.5 py-2.5 text-sm font-bold text-slate-900 bg-indigo-50/50 border-2 border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 cursor-pointer shadow-xs transition-all"
+                  >
+                    {CADASTRO_CONTAS_GERENCIAIS.map((cta) => (
+                      <option key={cta} value={cta}>
+                        {cta}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-1.5 sm:col-span-1">
+                  <label className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                    <Calendar className="w-3.5 h-3.5 text-amber-600" />
+                    <span>Data do Cx</span>
                   </label>
                   <input
-                    type="text"
-                    value={addForm.data}
-                    onChange={(e) => setAddForm({ ...addForm, data: e.target.value })}
-                    placeholder="DD/MM/AAAA"
-                    className="w-full px-3.5 py-2.5 text-sm font-semibold text-slate-900 bg-white border-2 border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500 shadow-xs transition-all"
+                    type="date"
+                    value={toInputDateFormat(addForm.data)}
+                    onChange={(e) => setAddForm({ ...addForm, data: toDisplayDateFormat(e.target.value) })}
+                    required
+                    className="w-full px-3.5 py-2.5 text-sm font-bold text-slate-900 bg-amber-50/30 border-2 border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 cursor-pointer shadow-xs transition-all"
                   />
                 </div>
 
