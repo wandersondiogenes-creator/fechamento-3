@@ -260,10 +260,13 @@ export function FechamentoView({
   };
 
   const toggleDepartamentoCollapse = (key: string) => {
-    setCollapsedDepartamentos((prev) => ({
-      ...prev,
-      [key]: !prev[key],
-    }));
+    setCollapsedDepartamentos((prev) => {
+      const isCurrentlyCollapsed = prev[key] ?? true;
+      return {
+        ...prev,
+        [key]: !isCurrentlyCollapsed,
+      };
+    });
   };
 
   const handleExpandAll = () => {
@@ -704,57 +707,54 @@ export function FechamentoView({
                   {/* Level 1: Empresa Accordion Header */}
                   <div
                     onClick={() => toggleEmpresaCollapse(empName)}
-                    className="px-4 py-3 bg-slate-900 text-white flex flex-wrap items-center justify-between gap-3 cursor-pointer hover:bg-slate-950 transition-colors select-none"
+                    className="px-4 py-3.5 bg-slate-100 hover:bg-slate-200/80 text-slate-900 flex flex-wrap items-center justify-between gap-3 cursor-pointer transition-colors border-b-2 border-slate-200 select-none shadow-2xs"
                   >
                     <div className="flex items-center gap-2.5">
-                      <button className="p-1 bg-slate-800 text-amber-400 rounded-md">
+                      <button className="p-1 bg-white text-amber-600 rounded-md border border-slate-300 shadow-2xs">
                         {isEmpCollapsed ? (
                           <ChevronRight className="w-4 h-4" />
                         ) : (
                           <ChevronDown className="w-4 h-4" />
                         )}
                       </button>
-                      <Building2 className="w-5 h-5 text-amber-400" />
-                      <div>
-                        <span className="font-black text-xs uppercase tracking-wider text-amber-400">
-                          Empresa (Dealer):
-                        </span>{' '}
-                        <span className="font-extrabold text-sm text-white">{empName}</span>
-                        <span className="ml-2 text-[11px] bg-slate-800 text-slate-300 px-2 py-0.5 rounded-full font-bold">
+                      <Building2 className="w-5 h-5 text-amber-600" />
+                      <div className="flex items-center gap-2.5">
+                        <span className="font-extrabold text-base text-slate-900">{empName}</span>
+                        <span className="text-[11px] bg-amber-100 text-amber-900 border border-amber-300 px-2.5 py-0.5 rounded-full font-bold">
                           {empData.countTotal} lançamento(s)
                         </span>
                       </div>
                     </div>
 
                     {/* Totals for Empresa */}
-                    <div className="flex items-center gap-4 text-xs">
-                      <div className="bg-slate-800 px-2.5 py-1 rounded-md">
-                        <span className="text-[10px] uppercase text-emerald-400 font-bold block">
+                    <div className="flex items-center gap-3 text-xs">
+                      <div className="bg-white border border-emerald-300 px-3 py-1 rounded-lg shadow-2xs">
+                        <span className="text-[10px] uppercase text-emerald-800 font-bold block">
                           Total Dealer:
                         </span>
-                        <span className="font-extrabold text-emerald-300">
+                        <span className="font-extrabold text-emerald-950">
                           {formatBRL(empData.totalDealer)}
                         </span>
                       </div>
 
-                      <div className="bg-slate-800 px-2.5 py-1 rounded-md">
-                        <span className="text-[10px] uppercase text-blue-400 font-bold block">
+                      <div className="bg-white border border-blue-300 px-3 py-1 rounded-lg shadow-2xs">
+                        <span className="text-[10px] uppercase text-blue-800 font-bold block">
                           Total Sitef:
                         </span>
-                        <span className="font-extrabold text-blue-300">
+                        <span className="font-extrabold text-blue-950">
                           {formatBRL(empData.totalSitef)}
                         </span>
                       </div>
 
-                      <div className="bg-slate-800 px-2.5 py-1 rounded-md">
-                        <span className="text-[10px] uppercase text-slate-400 font-bold block">
+                      <div className="bg-white border border-slate-300 px-3 py-1 rounded-lg shadow-2xs">
+                        <span className="text-[10px] uppercase text-slate-600 font-bold block">
                           Diferença:
                         </span>
                         <span
                           className={`font-black ${
                             empData.diferencaTotal === 0
-                              ? 'text-emerald-400'
-                              : 'text-amber-400 font-extrabold'
+                              ? 'text-emerald-700'
+                              : 'text-amber-800 font-extrabold'
                           }`}
                         >
                           {formatBRL(empData.diferencaTotal)}
@@ -762,12 +762,12 @@ export function FechamentoView({
                       </div>
 
                       {empData.countDivergencias > 0 ? (
-                        <span className="bg-amber-500 text-slate-950 font-black px-2.5 py-1 rounded-md text-[11px] flex items-center gap-1 shadow-2xs">
+                        <span className="bg-amber-500 text-white font-black px-2.5 py-1.5 rounded-lg text-[11px] flex items-center gap-1 shadow-2xs">
                           <AlertTriangle className="w-3.5 h-3.5" />
                           {empData.countDivergencias} Divergência(s)
                         </span>
                       ) : (
-                        <span className="bg-emerald-600 text-white font-bold px-2 py-1 rounded-md text-[11px] flex items-center gap-1">
+                        <span className="bg-emerald-600 text-white font-bold px-2.5 py-1.5 rounded-lg text-[11px] flex items-center gap-1 shadow-2xs">
                           <Check className="w-3.5 h-3.5" />
                           100% Conciliado
                         </span>
@@ -777,29 +777,29 @@ export function FechamentoView({
 
                   {/* Level 2: Departamentos inside Empresa (Visible if not collapsed) */}
                   {!isEmpCollapsed && (
-                    <div className="divide-y divide-slate-200">
+                    <div className="divide-y divide-slate-200 bg-white">
                       {Object.entries(empData.departamentos).map(([depName, depData]) => {
                         const depKey = `${empName}_${depName}`;
-                        const isDepCollapsed = Boolean(collapsedDepartamentos[depKey]);
+                        const isDepCollapsed = collapsedDepartamentos[depKey] ?? true;
 
                         return (
                           <div key={depKey} className="border-t border-slate-200">
                             {/* Departamento Header */}
                             <div
                               onClick={() => toggleDepartamentoCollapse(depKey)}
-                              className="px-5 py-2 bg-slate-800 text-slate-100 flex flex-wrap items-center justify-between gap-3 cursor-pointer hover:bg-slate-850 text-xs font-bold select-none"
+                              className="px-5 py-2.5 bg-slate-200/70 hover:bg-slate-200 text-slate-800 flex flex-wrap items-center justify-between gap-3 cursor-pointer text-xs font-bold select-none border-b border-slate-300/80"
                             >
                               <div className="flex items-center gap-2">
-                                <button className="p-0.5 text-slate-300">
+                                <button className="p-0.5 text-slate-600">
                                   {isDepCollapsed ? (
                                     <ChevronRight className="w-3.5 h-3.5" />
                                   ) : (
                                     <ChevronDown className="w-3.5 h-3.5" />
                                   )}
                                 </button>
-                                <FolderTree className="w-4 h-4 text-amber-400" />
-                                <span>Departamento: {depName}</span>
-                                <span className="text-[10px] bg-slate-700 text-slate-200 px-2 py-0.2 rounded-full font-bold">
+                                <FolderTree className="w-4 h-4 text-amber-600" />
+                                <span className="font-bold text-slate-900 text-xs">Departamento: {depName}</span>
+                                <span className="text-[10px] bg-white text-slate-700 border border-slate-300 px-2 py-0.2 rounded-full font-bold shadow-2xs">
                                   {depData.items.length} item(ns)
                                 </span>
                               </div>
@@ -808,21 +808,21 @@ export function FechamentoView({
                               <div className="flex items-center gap-3 text-[11px]">
                                 <span>
                                   Dealer:{' '}
-                                  <strong className="text-emerald-400">
+                                  <strong className="text-emerald-800 font-extrabold">
                                     {formatBRL(depData.totalDealer)}
                                   </strong>
                                 </span>
                                 <span>
                                   Sitef:{' '}
-                                  <strong className="text-blue-400">
+                                  <strong className="text-blue-800 font-extrabold">
                                     {formatBRL(depData.totalSitef)}
                                   </strong>
                                 </span>
                                 <span
                                   className={
                                     depData.diferencaTotal !== 0
-                                      ? 'text-amber-400 font-extrabold'
-                                      : 'text-emerald-400 font-bold'
+                                      ? 'text-amber-800 font-extrabold'
+                                      : 'text-emerald-700 font-bold'
                                   }
                                 >
                                   Diferença: {formatBRL(depData.diferencaTotal)}
@@ -1031,7 +1031,7 @@ export function FechamentoView({
                       className="rounded border-slate-300 text-amber-600 focus:ring-amber-500"
                     />
                   </th>
-                  <th className="p-3">Empresa (Dealer)</th>
+                  <th className="p-3">Empresa</th>
                   <th className="p-3">Departamento / Conta</th>
                   <th className="p-3">Data</th>
                   <th className="p-3">NSU</th>
