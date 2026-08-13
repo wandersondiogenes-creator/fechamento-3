@@ -1,0 +1,1105 @@
+'use client';
+
+import React, { useState, useMemo, useEffect } from 'react';
+import { ColumnConfig, SpreadsheetState } from '@/types/spreadsheet';
+import { ColumnVisibilityPopover } from './ColumnVisibilityPopover';
+import { isValidCPF } from '@/lib/validators';
+import {
+  Search,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
+  Settings2,
+  EyeOff,
+  Edit2,
+  Filter,
+  Check,
+  X,
+  Sparkles,
+  Layers,
+  AlertCircle,
+  FileSpreadsheet,
+  Upload,
+  CreditCard,
+  Clock,
+  RotateCcw,
+  CheckCircle2,
+  Trash2,
+  Plus,
+  PlusCircle,
+  CheckSquare,
+  Square,
+  Scale,
+} from 'lucide-react';
+
+interface ExcelTableProps {
+  state: SpreadsheetState;
+  activeTab?: 'dealer' | 'sitef' | 'pendente_cdc' | 'fechamento';
+  onTabChange?: (tab: 'dealer' | 'sitef' | 'pendente_cdc' | 'fechamento') => void;
+  tabCounts?: { dealer: number; sitef: number; pendente_cdc: number; fechamento?: number };
+  onUpdateColumn: (updatedCol: ColumnConfig) => void;
+  onSetAllColumnsVisibility: (visible: boolean) => void;
+  onUpdateCell: (rowIndex: number, colId: string, newValue: any) => void;
+  onDeleteRow?: (rowIndex: number) => void;
+  onDeleteRows?: (rowIndexes: number[]) => void;
+  onAddRow?: (newRowData?: Record<string, any>) => void;
+  onOpenColumnModal: (columnId: string) => void;
+  onOpenAIDrawer: () => void;
+  onTriggerFileImport?: () => void;
+}
+
+function getStatusBadge(val: any, header?: string) {
+  if (val === null || val === undefined) return null;
+  const str = String(val).trim();
+  if (!str) return null;
+  const norm = str.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+
+  const normHeader = (header || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const isStatusCol =
+    normHeader.includes('estado') ||
+    normHeader.includes('status') ||
+    normHeader.includes('situacao') ||
+    normHeader.includes('conciliacao');
+
+  if (norm.includes('pendent')) {
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-black bg-amber-100 text-amber-900 border border-amber-300 shadow-2xs">
+        <Clock className="w-3 h-3 text-amber-700" />
+        {str}
+      </span>
+    );
+  }
+
+  if (norm.includes('estornad') || norm.includes('estorno')) {
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-black bg-purple-100 text-purple-900 border border-purple-300 shadow-2xs">
+        <RotateCcw className="w-3 h-3 text-purple-700" />
+        {str}
+      </span>
+    );
+  }
+
+  if (
+    isStatusCol &&
+    (norm.includes('aprovad') || norm.includes('conciliad') || norm === 'ok' || norm.includes('pago'))
+  ) {
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+        <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+        {str}
+      </span>
+    );
+  }
+
+  return null;
+}
+
+export function ExcelTable({
+  state,
+  activeTab = 'dealer',
+  onTabChange,
+  tabCounts = { dealer: 0, sitef: 0, pendente_cdc: 0, fechamento: 0 },
+  onUpdateColumn,
+  onSetAllColumnsVisibility,
+  onUpdateCell,
+  onDeleteRow,
+  onDeleteRows,
+  onAddRow,
+  onOpenColumnModal,
+  onOpenAIDrawer,
+  onTriggerFileImport,
+}: ExcelTableProps) {
+  const [searchQuery, setSearchQuery] = useState('');
+  const [sortColId, setSortColId] = useState<string | null>(null);
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+  const [viewRawData, setViewRawData] = useState<boolean>(false);
+
+  // Column inline renaming state
+  const [editingHeaderColId, setEditingHeaderColId] = useState<string | null>(null);
+  const [editingHeaderValue, setEditingHeaderValue] = useState('');
+
+  // Cell inline editing state
+  const [editingCell, setEditingCell] = useState<{ rowIndex: number; colId: string } | null>(null);
+  const [editingCellValue, setEditingCellValue] = useState<string>('');
+
+  // Multi-cell selection range state for bottom status bar statistics
+  const [selectedCells, setSelectedCells] = useState<Array<{ rowIndex: number; colId: string }>>([]);
+
+  // Delete confirmation modal state
+  const [deleteConfirmInfo, setDeleteConfirmInfo] = useState<{
+    isOpen: boolean;
+    indexesToDelete: number[];
+  }>({ isOpen: false, indexesToDelete: [] });
+
+  // Manual Row Addition Modal State
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [newRowFormData, setNewRowFormData] = useState<Record<string, string>>({});
+
+  const activeColumns = useMemo(
+    () => state.columns.filter((c) => c.visible),
+    [state.columns]
+  );
+
+  const displayData = viewRawData ? state.rawData : state.processedData;
+
+  // Derived selected row indexes
+  const selectedRowIndexes = useMemo(() => {
+    return Array.from(new Set(selectedCells.map((c) => c.rowIndex)));
+  }, [selectedCells]);
+
+  // Filter and Sort Data
+  const filteredAndSortedData = useMemo(() => {
+    let result = displayData.map((row, index) => ({ row, originalIndex: index }));
+
+    // Global Search Filter
+    if (searchQuery.trim() !== '') {
+      const q = searchQuery.toLowerCase();
+      result = result.filter(({ row }) =>
+        activeColumns.some((col) => {
+          const val = row[col.id];
+          return val !== null && val !== undefined && String(val).toLowerCase().includes(q);
+        })
+      );
+    }
+
+    // Column Sorting
+    if (sortColId) {
+      result.sort((a, b) => {
+        const valA = a.row[sortColId];
+        const valB = b.row[sortColId];
+
+        if (valA === valB) return 0;
+        if (valA === null || valA === undefined || valA === '') return 1;
+        if (valB === null || valB === undefined || valB === '') return -1;
+
+        const numA = Number(valA);
+        const numB = Number(valB);
+
+        if (!isNaN(numA) && !isNaN(numB)) {
+          return sortDirection === 'asc' ? numA - numB : numB - numA;
+        }
+
+        const strA = String(valA).toLowerCase();
+        const strB = String(valB).toLowerCase();
+
+        if (sortDirection === 'asc') {
+          return strA.localeCompare(strB, 'pt-BR');
+        } else {
+          return strB.localeCompare(strA, 'pt-BR');
+        }
+      });
+    }
+
+    return result;
+  }, [displayData, searchQuery, activeColumns, sortColId, sortDirection]);
+
+  // Selection handlers
+  const handleSelectAllRows = () => {
+    const visibleOriginalIndexes = filteredAndSortedData.map((d) => d.originalIndex);
+    const isAllSelected =
+      visibleOriginalIndexes.length > 0 &&
+      visibleOriginalIndexes.every((idx) => selectedRowIndexes.includes(idx));
+
+    if (isAllSelected) {
+      setSelectedCells([]);
+    } else {
+      const newCells: Array<{ rowIndex: number; colId: string }> = [];
+      visibleOriginalIndexes.forEach((idx) => {
+        activeColumns.forEach((col) => {
+          newCells.push({ rowIndex: idx, colId: col.id });
+        });
+      });
+      setSelectedCells(newCells);
+    }
+  };
+
+  const handleToggleRowSelection = (originalIndex: number, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    const isRowSelected = selectedRowIndexes.includes(originalIndex);
+
+    if (isRowSelected) {
+      setSelectedCells((prev) => prev.filter((c) => c.rowIndex !== originalIndex));
+    } else {
+      const newCells = activeColumns.map((col) => ({
+        rowIndex: originalIndex,
+        colId: col.id,
+      }));
+      setSelectedCells((prev) => [
+        ...prev.filter((c) => c.rowIndex !== originalIndex),
+        ...newCells,
+      ]);
+    }
+  };
+
+  const handleRequestDeleteSelected = () => {
+    if (selectedRowIndexes.length === 0) return;
+    setDeleteConfirmInfo({
+      isOpen: true,
+      indexesToDelete: selectedRowIndexes,
+    });
+  };
+
+  const handleConfirmDelete = () => {
+    const { indexesToDelete } = deleteConfirmInfo;
+    if (indexesToDelete.length > 0) {
+      if (onDeleteRows) {
+        onDeleteRows(indexesToDelete);
+      } else if (onDeleteRow) {
+        const sorted = [...indexesToDelete].sort((a, b) => b - a);
+        sorted.forEach((idx) => onDeleteRow(idx));
+      }
+    }
+    setDeleteConfirmInfo({ isOpen: false, indexesToDelete: [] });
+    setSelectedCells([]);
+  };
+
+  // Open Add Launch Modal
+  const handleOpenAddModal = () => {
+    const defaults: Record<string, string> = {};
+    const todayStr = new Date().toLocaleDateString('pt-BR');
+
+    state.columns.forEach((col) => {
+      const h = (col.customHeader || col.originalHeader)
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase();
+
+      if (h.includes('data') || h.includes('dt_')) {
+        defaults[col.id] = todayStr;
+      } else if (h.includes('estado') || h.includes('status') || h.includes('situacao')) {
+        defaults[col.id] = 'APROVADO';
+      } else if (h.includes('autorizacao') || h.includes('aut')) {
+        defaults[col.id] = Math.floor(100000 + Math.random() * 900000).toString();
+      } else if (h.includes('nsu')) {
+        defaults[col.id] = Math.floor(100000000 + Math.random() * 900000000).toString();
+      } else {
+        defaults[col.id] = '';
+      }
+    });
+
+    setNewRowFormData(defaults);
+    setIsAddModalOpen(true);
+  };
+
+  // Save New Launch
+  const handleSaveNewRow = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (onAddRow) {
+      onAddRow(newRowFormData);
+    }
+    setIsAddModalOpen(false);
+  };
+
+  // Handle Column Header Inline Rename Commit
+  const handleCommitHeaderRename = (col: ColumnConfig) => {
+    if (editingHeaderValue.trim() !== '') {
+      onUpdateColumn({ ...col, customHeader: editingHeaderValue.trim() });
+    }
+    setEditingHeaderColId(null);
+  };
+
+  // Handle Cell Editing Commit
+  const handleCommitCellEdit = () => {
+    if (editingCell) {
+      onUpdateCell(editingCell.rowIndex, editingCell.colId, editingCellValue);
+      setEditingCell(null);
+    }
+  };
+
+  // Selection statistics calculation for Excel status bar
+  const selectionStats = useMemo(() => {
+    if (selectedCells.length === 0) return null;
+
+    let count = selectedCells.length;
+    let numericValues: number[] = [];
+
+    selectedCells.forEach(({ rowIndex, colId }) => {
+      const row = displayData[rowIndex];
+      if (row) {
+        const val = row[colId];
+        const num = Number(val);
+        if (val !== '' && val !== null && val !== undefined && !isNaN(num)) {
+          numericValues.push(num);
+        }
+      }
+    });
+
+    const sum = numericValues.reduce((a, b) => a + b, 0);
+    const avg = numericValues.length > 0 ? sum / numericValues.length : null;
+
+    return {
+      count,
+      numericCount: numericValues.length,
+      sum: numericValues.length > 0 ? sum : null,
+      avg,
+    };
+  }, [selectedCells, displayData]);
+
+  // Convert Column Index to Excel Column Letters (A, B, C... AA, AB)
+  const getExcelColumnLabel = (index: number): string => {
+    let label = '';
+    let i = index;
+    while (i >= 0) {
+      label = String.fromCharCode((i % 26) + 65) + label;
+      i = Math.floor(i / 26) - 1;
+    }
+    return label;
+  };
+
+  if (!state.columns || state.columns.length === 0) {
+    const isDealer = activeTab === 'dealer';
+
+    return (
+      <div className="bg-slate-900/90 rounded-2xl border border-slate-800 shadow-2xl backdrop-blur-md flex flex-col h-full overflow-hidden text-slate-100">
+        <div className="p-10 text-center flex flex-col items-center justify-center my-auto space-y-5 max-w-xl mx-auto">
+          <div className="w-16 h-16 bg-amber-500/10 text-amber-400 rounded-2xl flex items-center justify-center shadow-lg border border-amber-500/30">
+            {isDealer ? (
+              <FileSpreadsheet className="w-8 h-8 text-amber-400" />
+            ) : (
+              <CreditCard className="w-8 h-8 text-amber-400" />
+            )}
+          </div>
+
+          <div className="space-y-2">
+            <h3 className="font-extrabold text-white text-lg">
+              Aba {isDealer ? 'DEALER' : 'Sitef'} (Em Branco)
+            </h3>
+            <p className="text-slate-400 text-xs leading-relaxed max-w-md">
+              O aplicativo está pronto no modelo <strong className="text-amber-400">{isDealer ? 'DEALER' : 'Sitef'}</strong>. Clique no botão abaixo para importar seu arquivo Excel e aplicar a limpeza e regras automáticas deste modelo.
+            </p>
+          </div>
+
+          <div className="bg-slate-950/80 p-4 rounded-xl border border-slate-800 text-left text-xs text-slate-300 space-y-2 w-full">
+            <div className="font-extrabold text-amber-400 text-[11px] uppercase tracking-wider flex items-center gap-1.5">
+              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+              Regras do Modelo {isDealer ? 'DEALER' : 'Sitef TEF'}:
+            </div>
+            {isDealer ? (
+              <ul className="space-y-1.5 text-[11px] list-disc list-inside text-slate-300">
+                <li>Exclusão de colunas indesejadas (Conta Classificação, Dias, Parc., Histórico, Dep., Dat Acon)</li>
+                <li>Remoção automática de linhas sem data ou sem valor na Entrada</li>
+                <li>Formatação em Moeda Brasileira (R$) para colunas de Entrada e Saída</li>
+              </ul>
+            ) : (
+              <ul className="space-y-1.5 text-[11px] list-disc list-inside text-slate-300">
+                <li>Tratamento de extratos SiTef TEF (Data Transação, Hora, NSU, Autorização, Bandeira)</li>
+                <li>Conciliação de transações e formatação de Valor Bruto, Taxa TEF e Valor Líquido em R$</li>
+                <li>Identificação de bandeiras (Visa, Mastercard, Elo, Amex, Pix) e tipo de transação</li>
+              </ul>
+            )}
+          </div>
+
+          <div className="flex flex-wrap items-center justify-center gap-3 pt-1">
+            <button
+              onClick={onTriggerFileImport}
+              className="px-5 py-2.5 bg-amber-600 hover:bg-amber-700 text-white font-extrabold rounded-xl text-xs shadow-lg transition-all flex items-center gap-2 cursor-pointer"
+            >
+              <Upload className="w-4 h-4" />
+              <span>Importar Arquivo ({isDealer ? 'Modelo DEALER' : 'Modelo Sitef'})</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-slate-900/90 rounded-2xl border border-slate-800 shadow-2xl backdrop-blur-md flex flex-col h-full overflow-hidden text-slate-100">
+      {/* Table Action Controls Toolbar */}
+      <div className="p-3 bg-slate-950/80 border-b border-slate-800 flex flex-wrap items-center justify-between gap-2 text-xs">
+        {/* Search Input & Quick Actions */}
+        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+          <div className="relative w-full sm:w-64">
+            <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Buscar na planilha..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-9 pr-3 py-1.5 border border-slate-700 rounded-lg bg-slate-900 text-xs text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500/50"
+            />
+          </div>
+
+          {/* Import Excel Button */}
+          {onTriggerFileImport && (
+            <button
+              onClick={onTriggerFileImport}
+              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-100 font-bold rounded-lg text-xs border border-slate-700 shadow-2xs transition-all flex items-center gap-1.5 cursor-pointer"
+              title={`Importar nova planilha para o modelo ${
+                activeTab === 'dealer'
+                  ? 'DEALER'
+                  : activeTab === 'sitef'
+                  ? 'Sitef'
+                  : 'PENDENTE DE CDC'
+              }`}
+            >
+              <Upload className="w-3.5 h-3.5 text-amber-400" />
+              <span>Importar Excel</span>
+            </button>
+          )}
+
+          {/* Add Launch Button */}
+          {onAddRow && (
+            <button
+              onClick={handleOpenAddModal}
+              className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs shadow-2xs transition-all flex items-center gap-1.5 cursor-pointer"
+              title="Adicionar um novo lançamento manualmente nesta aba"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Novo Lançamento</span>
+            </button>
+          )}
+
+          {/* Delete Selected Rows Button */}
+          {selectedRowIndexes.length > 0 && (
+            <div className="flex items-center gap-1">
+              <button
+                onClick={handleRequestDeleteSelected}
+                className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-md text-xs shadow-2xs transition-all flex items-center gap-1.5 cursor-pointer"
+                title="Excluir lançamentos selecionados"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Excluir Selecionados ({selectedRowIndexes.length})</span>
+              </button>
+              <button
+                onClick={() => setSelectedCells([])}
+                className="px-2 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 font-semibold rounded-md text-xs transition-colors flex items-center gap-1"
+                title="Limpar seleção"
+              >
+                <X className="w-3 h-3" />
+                <span className="hidden md:inline">Limpar</span>
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* View Toggle (Dados Tratados vs Dados Brutos) */}
+        <div className="flex items-center gap-2">
+          <div className="inline-flex bg-slate-200/70 p-0.5 rounded-md text-[11px] font-semibold">
+            <button
+              onClick={() => setViewRawData(false)}
+              className={`px-2.5 py-1 rounded transition-all ${
+                !viewRawData
+                  ? 'bg-white text-blue-700 shadow-2xs font-bold'
+                  : 'text-slate-600 hover:text-slate-800'
+              }`}
+            >
+              Dados Tratados ({state.processedData.length})
+            </button>
+            <button
+              onClick={() => setViewRawData(true)}
+              className={`px-2.5 py-1 rounded transition-all ${
+                viewRawData
+                  ? 'bg-white text-blue-700 shadow-2xs font-bold'
+                  : 'text-slate-600 hover:text-slate-800'
+              }`}
+            >
+              Dados Brutos
+            </button>
+          </div>
+
+          {/* Column Visibility Manager */}
+          <ColumnVisibilityPopover
+            columns={state.columns}
+            onToggleVisibility={(id) => {
+              const col = state.columns.find((c) => c.id === id);
+              if (col) onUpdateColumn({ ...col, visible: !col.visible });
+            }}
+            onSetAllVisibility={onSetAllColumnsVisibility}
+          />
+        </div>
+      </div>
+
+      {/* Banner / Legend for Sitef Statuses */}
+      {activeTab === 'sitef' && (
+        <div className="px-3.5 py-2 bg-amber-950/40 border-b border-amber-800/60 flex flex-wrap items-center justify-between gap-2 text-xs text-amber-200 font-medium">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 text-amber-400 flex-shrink-0" />
+            <span>
+              Transações <strong className="text-white">PENDENTES</strong> e <strong className="text-white">ESTORNADAS</strong> são mantidas na tabela e destacadas para conferência.
+            </span>
+          </div>
+          <div className="flex items-center gap-2.5 text-[11px]">
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-900/60 text-amber-300 font-extrabold border border-amber-700/60">
+              <Clock className="w-3 h-3 text-amber-400" /> Pendentes
+            </span>
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-purple-900/60 text-purple-300 font-extrabold border border-purple-700/60">
+              <RotateCcw className="w-3 h-3 text-purple-400" /> Estornadas
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* Banner for PENDENTE DE CDC Tab */}
+      {activeTab === 'pendente_cdc' && (
+        <div className="px-3.5 py-2 bg-amber-950/40 border-b border-amber-800/60 flex flex-wrap items-center justify-between gap-2 text-xs text-amber-200 font-medium">
+          <div className="flex items-center gap-2">
+            <Clock className="w-4 h-4 text-amber-400 flex-shrink-0" />
+            <span>
+              <strong className="text-white">Aba PENDENTE DE CDC:</strong> Lançamentos do DEALER com valor de entrada zerado (R$ 0,00) isolados para conferência.
+            </span>
+          </div>
+          <span className="inline-flex items-center gap-1 text-[11px] bg-amber-900/60 border border-amber-700/60 text-amber-300 font-bold px-2 py-0.5 rounded-md">
+            Excluídos automaticamente da aba DEALER
+          </span>
+        </div>
+      )}
+
+      {/* Main Grid Scroll Area */}
+      <div className="flex-1 overflow-auto max-h-[68vh] relative bg-slate-950">
+        <table className="w-full text-left border-collapse text-xs select-none">
+          {/* Header Row */}
+          <thead className="bg-slate-950 text-slate-200 font-semibold sticky top-0 z-10 border-b border-slate-800 shadow-md">
+            <tr>
+              {/* Row Number Counter Column Header */}
+              <th className="w-12 px-2 py-2.5 border-r border-slate-800 bg-slate-950 text-center text-[10px] font-bold text-slate-400 uppercase tracking-wider select-none">
+                <div className="flex items-center justify-center gap-1">
+                  <button
+                    onClick={handleSelectAllRows}
+                    className="p-0.5 text-slate-400 hover:text-amber-400 transition-colors cursor-pointer"
+                    title={
+                      selectedRowIndexes.length === filteredAndSortedData.length && filteredAndSortedData.length > 0
+                        ? 'Desmarcar todos'
+                        : 'Selecionar todos os lançamentos'
+                    }
+                  >
+                    {selectedRowIndexes.length === filteredAndSortedData.length && filteredAndSortedData.length > 0 ? (
+                      <CheckSquare className="w-3.5 h-3.5 text-amber-400" />
+                    ) : (
+                      <Square className="w-3.5 h-3.5 text-slate-600" />
+                    )}
+                  </button>
+                </div>
+              </th>
+
+              {/* Data Columns */}
+              {activeColumns.map((col, index) => {
+                const activeRulesCount = col.rules.filter((r) => r.enabled).length;
+                const isSorted = sortColId === col.id;
+
+                let ruleTagBadge = null;
+                if (col.type === 'date') {
+                  ruleTagBadge = <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-emerald-950 text-emerald-300 border border-emerald-800">DD/MM/AAAA</span>;
+                } else if (col.type === 'currency') {
+                  ruleTagBadge = <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-amber-950 text-amber-300 border border-amber-800">BRL (R$)</span>;
+                } else if (col.type === 'cpf' || col.type === 'cnpj') {
+                  ruleTagBadge = <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-blue-950 text-blue-300 border border-blue-800">{col.type.toUpperCase()}</span>;
+                } else if (activeRulesCount > 0) {
+                  ruleTagBadge = <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-indigo-950 text-indigo-300 border border-indigo-800">{activeRulesCount} REGRAS</span>;
+                }
+
+                return (
+                  <th
+                    key={col.id}
+                    className="min-w-[150px] px-3 py-2 border-r border-slate-800 bg-slate-950 hover:bg-slate-900 transition-colors relative group"
+                  >
+                    <div className="flex items-center justify-between gap-1 mb-1">
+                      {/* Excel Letter & Rules Badge */}
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[10px] font-bold text-slate-500 font-mono">
+                          {getExcelColumnLabel(index)}
+                        </span>
+                        {ruleTagBadge}
+                      </div>
+
+                      {/* Sorting & Config Buttons */}
+                      <div className="flex items-center gap-0.5 opacity-70 group-hover:opacity-100">
+                        <button
+                          onClick={() => {
+                            if (sortColId === col.id) {
+                              if (sortDirection === 'asc') setSortDirection('desc');
+                              else {
+                                setSortColId(null);
+                              }
+                            } else {
+                              setSortColId(col.id);
+                              setSortDirection('asc');
+                            }
+                          }}
+                          className={`p-1 rounded hover:bg-slate-800 transition-colors cursor-pointer ${
+                            isSorted ? 'text-amber-400 font-bold' : 'text-slate-500'
+                          }`}
+                          title="Ordenar coluna"
+                        >
+                          {isSorted ? (
+                            sortDirection === 'asc' ? (
+                              <ArrowUp className="w-3 h-3" />
+                            ) : (
+                              <ArrowDown className="w-3 h-3" />
+                            )
+                          ) : (
+                            <ArrowUpDown className="w-3 h-3" />
+                          )}
+                        </button>
+
+                        <button
+                          onClick={() => onOpenColumnModal(col.id)}
+                          className="p-1 text-slate-500 hover:text-slate-200 hover:bg-slate-800 rounded transition-colors cursor-pointer"
+                          title="Configurar regras da coluna"
+                        >
+                          <Settings2 className="w-3 h-3" />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Header Label / Inline Rename */}
+                    {editingHeaderColId === col.id ? (
+                      <div className="flex items-center gap-1 mt-1">
+                        <input
+                          type="text"
+                          value={editingHeaderValue}
+                          onChange={(e) => setEditingHeaderValue(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') handleCommitHeaderRename(col);
+                            if (e.key === 'Escape') setEditingHeaderColId(null);
+                          }}
+                          autoFocus
+                          className="w-full px-1 py-0.5 text-xs border border-amber-500 rounded bg-slate-900 text-white font-bold"
+                        />
+                        <button
+                          onClick={() => handleCommitHeaderRename(col)}
+                          className="p-0.5 bg-amber-600 text-white rounded hover:bg-amber-700"
+                        >
+                          <Check className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ) : (
+                      <div
+                        onDoubleClick={() => {
+                          setEditingHeaderColId(col.id);
+                          setEditingHeaderValue(col.customHeader || col.originalHeader);
+                        }}
+                        className="font-extrabold text-slate-200 text-[11px] uppercase tracking-wider truncate cursor-pointer hover:text-amber-400 flex items-center justify-between"
+                        title="Clique duplo para renomear"
+                      >
+                        <span className="truncate">{col.customHeader || col.originalHeader}</span>
+                      </div>
+                    )}
+                  </th>
+                );
+              })}
+            </tr>
+          </thead>
+
+          {/* Table Body */}
+          <tbody className="bg-white divide-y divide-slate-200">
+            {filteredAndSortedData.map(({ row, originalIndex }, displayRowIndex) => {
+              const rowCombinedText = Object.values(row)
+                .map((v) => (v ? String(v).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase() : ''))
+                .join(' ');
+
+              const isPendenteRow = rowCombinedText.includes('pendent');
+              const isEstornadaRow = rowCombinedText.includes('estornad') || rowCombinedText.includes('estorno');
+              const isRowSelected = selectedRowIndexes.includes(originalIndex);
+
+              let rowClass = 'hover:bg-slate-50 transition-colors';
+              if (isRowSelected) {
+                rowClass = 'bg-blue-50/80 hover:bg-blue-100/80 border-l-4 border-l-blue-600 transition-colors';
+              } else if (isPendenteRow) {
+                rowClass = 'bg-amber-50/80 hover:bg-amber-100/90 border-l-4 border-l-amber-500 transition-colors';
+              } else if (isEstornadaRow) {
+                rowClass = 'bg-purple-50/80 hover:bg-purple-100/90 border-l-4 border-l-purple-500 transition-colors';
+              }
+
+              return (
+                <tr key={`row_${originalIndex}`} className={rowClass}>
+                  {/* Row Number Cell */}
+                  <td
+                    onClick={(e) => handleToggleRowSelection(originalIndex, e)}
+                    className="px-2 py-1.5 border-r border-slate-200 bg-slate-100/50 text-center font-mono text-[11px] text-slate-500 font-semibold select-none cursor-pointer hover:bg-slate-200/80 transition-colors"
+                    title="Clique para selecionar a linha inteira"
+                  >
+                    <div className="flex items-center justify-center gap-1.5">
+                      <button
+                        onClick={(e) => handleToggleRowSelection(originalIndex, e)}
+                        className="p-0.5 text-slate-400 hover:text-blue-600"
+                      >
+                        {isRowSelected ? (
+                          <CheckSquare className="w-3.5 h-3.5 text-blue-600" />
+                        ) : (
+                          <Square className="w-3.5 h-3.5 text-slate-300" />
+                        )}
+                      </button>
+                      <span>{displayRowIndex + 1}</span>
+                      {isEstornadaRow && onDeleteRow && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setDeleteConfirmInfo({
+                              isOpen: true,
+                              indexesToDelete: [originalIndex],
+                            });
+                          }}
+                          className="p-1 bg-rose-100 hover:bg-rose-200 text-rose-700 rounded shadow-2xs transition-all flex items-center justify-center"
+                          title="Excluir transação estornada (Autorização / Cartão)"
+                        >
+                          <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                        </button>
+                      )}
+                    </div>
+                  </td>
+
+                  {/* Data Cells */}
+                  {activeColumns.map((col) => {
+                    const cellValue = row[col.id];
+                    const isEditing =
+                      editingCell?.rowIndex === originalIndex && editingCell?.colId === col.id;
+
+                    const isSelected = selectedCells.some(
+                      (sc) => sc.rowIndex === originalIndex && sc.colId === col.id
+                    );
+
+                    // Validate CPF for visual badge indicator
+                    const isCpfCol =
+                      col.type === 'cpf' ||
+                      col.rules.some((r) => r.enabled && r.type === 'format_cpf');
+                    const invalidCpf =
+                      isCpfCol && cellValue && String(cellValue).trim() !== '' && !isValidCPF(String(cellValue));
+
+                    const statusBadge = getStatusBadge(cellValue, col.customHeader || col.originalHeader);
+
+                    return (
+                      <td
+                        key={`${originalIndex}_${col.id}`}
+                        onClick={(e) => {
+                          if (e.shiftKey || e.ctrlKey) {
+                            setSelectedCells((prev) => [
+                              ...prev,
+                              { rowIndex: originalIndex, colId: col.id },
+                            ]);
+                          } else {
+                            setSelectedCells([{ rowIndex: originalIndex, colId: col.id }]);
+                          }
+                        }}
+                        onDoubleClick={() => {
+                          setEditingCell({ rowIndex: originalIndex, colId: col.id });
+                          setEditingCellValue(
+                            cellValue !== undefined && cellValue !== null ? String(cellValue) : ''
+                          );
+                        }}
+                        className={`px-2.5 py-1.5 border-r border-slate-200 font-mono text-xs transition-colors relative ${
+                          isSelected ? 'bg-blue-50/80 ring-1 ring-blue-500/50' : ''
+                        } ${invalidCpf ? 'bg-amber-50/70' : ''}`}
+                      >
+                        {isEditing ? (
+                          <div className="flex items-center gap-1">
+                            <input
+                              type="text"
+                              value={editingCellValue}
+                              onChange={(e) => setEditingCellValue(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') handleCommitCellEdit();
+                                if (e.key === 'Escape') setEditingCell(null);
+                              }}
+                              autoFocus
+                              className="w-full px-1.5 py-0.5 border border-blue-500 bg-white text-slate-900 rounded font-medium focus:outline-none text-xs"
+                            />
+                            <button
+                              onClick={handleCommitCellEdit}
+                              className="p-1 bg-blue-600 text-white rounded hover:bg-blue-700"
+                            >
+                              <Check className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-between gap-1">
+                            {statusBadge ? (
+                              <div className="flex items-center gap-1.5">
+                                {statusBadge}
+                                {isEstornadaRow && onDeleteRow && (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setDeleteConfirmInfo({
+                                        isOpen: true,
+                                        indexesToDelete: [originalIndex],
+                                      });
+                                    }}
+                                    className="p-1 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 rounded shadow-2xs transition-all flex items-center gap-1 text-[10px] font-bold"
+                                    title="Excluir estorno (Concordo com o estorno)"
+                                  >
+                                    <Trash2 className="w-3 h-3 text-rose-600" />
+                                    <span className="hidden sm:inline">Excluir</span>
+                                  </button>
+                                )}
+                              </div>
+                            ) : (
+                              <span
+                                className={`truncate ${
+                                  cellValue === null || cellValue === undefined || String(cellValue).trim() === ''
+                                    ? 'text-slate-300 italic text-[11px]'
+                                    : 'text-slate-800'
+                                }`}
+                              >
+                                {cellValue !== null && cellValue !== undefined && String(cellValue).trim() !== ''
+                                  ? String(cellValue)
+                                  : '(vazio)'}
+                              </span>
+                            )}
+
+                            {invalidCpf && (
+                              <span
+                                className="px-1.5 py-0.5 bg-amber-100 text-amber-900 rounded font-sans text-[9px] font-bold flex-shrink-0"
+                                title="CPF com dígito verificador inválido"
+                              >
+                                CPF Inválido
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            })}
+
+            {filteredAndSortedData.length === 0 && (
+              <tr>
+                <td
+                  colSpan={activeColumns.length + 1}
+                  className="p-8 text-center text-slate-400 italic text-xs"
+                >
+                  Nenhum registro encontrado para esta busca ou filtro.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Excel Sheet Multi Tab Bar (DEALER, Sitef & PENDENTE DE CDC) */}
+      <div className="px-2 pt-1 bg-slate-200/90 border-t border-slate-300 flex items-center justify-between text-xs">
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={() => onTabChange?.('dealer')}
+            className={`px-3.5 py-1.5 border-t-2 border-x rounded-t text-xs shadow-2xs flex items-center gap-1.5 transition-all cursor-pointer ${
+              activeTab === 'dealer'
+                ? 'bg-white border-t-emerald-600 border-slate-300 text-slate-900 font-extrabold'
+                : 'bg-slate-100 border-t-transparent border-slate-300/60 text-slate-600 font-medium hover:bg-slate-50'
+            }`}
+            title="Aba DEALER"
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+            <span>DEALER</span>
+            <span className={`px-1.5 py-0.2 text-[9px] font-bold rounded ${activeTab === 'dealer' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-600'}`}>
+              {tabCounts.dealer}
+            </span>
+          </button>
+
+          <button
+            onClick={() => onTabChange?.('sitef')}
+            className={`px-3.5 py-1.5 border-t-2 border-x rounded-t text-xs shadow-2xs flex items-center gap-1.5 transition-all cursor-pointer ${
+              activeTab === 'sitef'
+                ? 'bg-white border-t-blue-600 border-slate-300 text-slate-900 font-extrabold'
+                : 'bg-slate-100 border-t-transparent border-slate-300/60 text-slate-600 font-medium hover:bg-slate-50'
+            }`}
+            title="Aba Sitef"
+          >
+            <CreditCard className="w-3.5 h-3.5 text-blue-600" />
+            <span>Sitef</span>
+            <span className={`px-1.5 py-0.2 text-[9px] font-bold rounded ${activeTab === 'sitef' ? 'bg-blue-100 text-blue-800' : 'bg-slate-200 text-slate-600'}`}>
+              {tabCounts.sitef}
+            </span>
+          </button>
+
+          <button
+            onClick={() => onTabChange?.('pendente_cdc')}
+            className={`px-3.5 py-1.5 border-t-2 border-x rounded-t text-xs shadow-2xs flex items-center gap-1.5 transition-all cursor-pointer ${
+              activeTab === 'pendente_cdc'
+                ? 'bg-white border-t-amber-600 border-slate-300 text-slate-900 font-extrabold'
+                : 'bg-slate-100 border-t-transparent border-slate-300/60 text-slate-600 font-medium hover:bg-slate-50'
+            }`}
+            title="Aba PENDENTE DE CDC"
+          >
+            <Clock className="w-3.5 h-3.5 text-amber-600" />
+            <span>PENDENTE DE CDC</span>
+            <span className={`px-1.5 py-0.2 text-[9px] font-bold rounded ${activeTab === 'pendente_cdc' ? 'bg-amber-100 text-amber-800' : 'bg-slate-200 text-slate-600'}`}>
+              {tabCounts.pendente_cdc}
+            </span>
+          </button>
+
+          <button
+            onClick={() => onTabChange?.('fechamento')}
+            className={`px-3.5 py-1.5 border-t-2 border-x rounded-t text-xs shadow-2xs flex items-center gap-1.5 transition-all cursor-pointer ${
+              activeTab === 'fechamento'
+                ? 'bg-white border-t-amber-500 border-slate-300 text-slate-900 font-extrabold'
+                : 'bg-slate-100 border-t-transparent border-slate-300/60 text-slate-600 font-medium hover:bg-slate-50'
+            }`}
+            title="Aba FECHAMENTO (Conciliação e Divergências)"
+          >
+            <Scale className="w-3.5 h-3.5 text-amber-600" />
+            <span>FECHAMENTO</span>
+            <span className={`px-1.5 py-0.2 text-[9px] font-bold rounded ${activeTab === 'fechamento' ? 'bg-amber-100 text-amber-900' : 'bg-slate-200 text-slate-600'}`}>
+              {tabCounts.fechamento ?? 0}
+            </span>
+          </button>
+        </div>
+
+        <div className="text-[10px] text-slate-600 font-semibold hidden sm:flex items-center gap-1.5 pr-2">
+          <span>Abas: <strong>DEALER</strong>, <strong>Sitef</strong>, <strong>PENDENTE DE CDC</strong> e <strong>FECHAMENTO</strong></span>
+        </div>
+      </div>
+
+      {/* Excel Bottom Status Bar */}
+      <div className="px-3 py-1.5 bg-slate-100 border-t border-slate-200 text-slate-600 text-[11px] flex flex-wrap items-center justify-between gap-2 font-mono">
+        <div className="flex items-center gap-3">
+          <span>
+            Total: <strong>{displayData.length}</strong> registros
+          </span>
+          {searchQuery && (
+            <span className="text-blue-700 font-semibold">
+              Exibindo: {filteredAndSortedData.length}
+            </span>
+          )}
+          <span>
+            Colunas Visíveis: <strong>{activeColumns.length}</strong> / {state.columns.length}
+          </span>
+        </div>
+
+        {/* Selected Cells Statistics Bar */}
+        {selectionStats ? (
+          <div className="flex items-center gap-3 text-slate-700 bg-white px-2.5 py-0.5 rounded border border-slate-200 shadow-2xs font-semibold">
+            <span>Contagem: {selectionStats.count}</span>
+            {selectionStats.sum !== null && (
+              <>
+                <span className="text-slate-300">|</span>
+                <span>Soma: {selectionStats.sum.toLocaleString('pt-BR')}</span>
+                <span className="text-slate-300">|</span>
+                <span>Média: {selectionStats.avg?.toFixed(2)}</span>
+              </>
+            )}
+          </div>
+        ) : (
+          <span className="text-slate-400 italic text-[10px]">
+            Clique nas células para ver soma e média
+          </span>
+        )}
+      </div>
+
+      {/* Modal: Adicionar Novo Lançamento */}
+      {isAddModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-2xl border border-slate-200 w-full max-w-lg max-h-[85vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="px-5 py-3.5 bg-slate-900 text-white flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <PlusCircle className="w-5 h-5 text-emerald-400" />
+                <h3 className="font-bold text-sm">
+                  Novo Lançamento ({activeTab === 'dealer' ? 'Aba DEALER' : 'Aba SiTef'})
+                </h3>
+              </div>
+              <button
+                onClick={() => setIsAddModalOpen(false)}
+                className="p-1 text-slate-400 hover:text-white rounded-lg transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveNewRow} className="p-5 overflow-y-auto space-y-4 flex-1">
+              <p className="text-xs text-slate-500">
+                Preencha os campos abaixo para adicionar um novo registro manualmente nesta aba. Os totais do painel serão atualizados automaticamente.
+              </p>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {activeColumns.map((col) => {
+                  const label = col.customHeader || col.originalHeader;
+                  return (
+                    <div key={col.id} className="space-y-1">
+                      <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider block truncate">
+                        {label}
+                      </label>
+                      <input
+                        type="text"
+                        value={newRowFormData[col.id] || ''}
+                        onChange={(e) =>
+                          setNewRowFormData((prev) => ({
+                            ...prev,
+                            [col.id]: e.target.value,
+                          }))
+                        }
+                        placeholder={`Digite ${label}...`}
+                        className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500 bg-white"
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="pt-3 border-t border-slate-200 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsAddModalOpen(false)}
+                  className="px-4 py-2 border border-slate-300 hover:bg-slate-100 text-slate-700 font-bold rounded-lg text-xs transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs shadow-2xs transition-all flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Adicionar Lançamento</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Confirmar Exclusão de Lançamento(s) */}
+      {deleteConfirmInfo.isOpen && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-2xl border border-slate-200 w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-150 text-slate-800">
+            <div className="px-5 py-3.5 bg-rose-600 text-white flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Trash2 className="w-5 h-5 text-white" />
+                <h3 className="font-bold text-sm">Confirmar Exclusão</h3>
+              </div>
+              <button
+                onClick={() => setDeleteConfirmInfo({ isOpen: false, indexesToDelete: [] })}
+                className="p-1 text-white/80 hover:text-white rounded-lg transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4">
+              <p className="text-xs text-slate-700 leading-relaxed font-medium">
+                Tem certeza de que deseja excluir{' '}
+                <strong className="text-rose-600 font-bold">
+                  {deleteConfirmInfo.indexesToDelete.length}{' '}
+                  {deleteConfirmInfo.indexesToDelete.length === 1 ? 'lançamento' : 'lançamentos'}
+                </strong>{' '}
+                da aba <span className="font-bold uppercase text-slate-900">{activeTab}</span>?
+              </p>
+
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-[11px] text-amber-800 space-y-1">
+                <p className="font-bold">⚠️ Atenção:</p>
+                <p>Esta operação atualizará imediatamente os totais e saldos do painel financeiro.</p>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setDeleteConfirmInfo({ isOpen: false, indexesToDelete: [] })}
+                  className="px-4 py-2 border border-slate-300 hover:bg-slate-100 text-slate-700 font-bold rounded-lg text-xs transition-colors cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmDelete}
+                  className="px-5 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg text-xs shadow-2xs transition-all flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  <span>Excluir Definitivamente</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

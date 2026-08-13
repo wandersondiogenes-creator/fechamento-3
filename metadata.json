@@ -1,0 +1,6 @@
+{
+  "name": "TrataExcel - Minimalist Data Prep",
+  "description": "Aplicativo minimalista para importar, tratar, detectar cabeçalhos, aplicar regras por coluna, receber sugestões de IA e exportar Excel/CSV/JSON.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,1383 @@
+'use client';
+
+import React, { useState, useMemo } from 'react';
+import { FechamentoItem } from '@/lib/fechamento-utils';
+import {
+  TrendingUp,
+  Scale,
+  AlertTriangle,
+  Plus,
+  PlusCircle,
+  Trash2,
+  X,
+  Search,
+  RefreshCw,
+  Building2,
+  FolderTree,
+  CheckCircle2,
+  CreditCard,
+  Download,
+  Layers,
+  ChevronDown,
+  ChevronRight,
+  Maximize2,
+  Minimize2,
+  Check,
+} from 'lucide-react';
+import * as XLSX from 'xlsx';
+
+interface FechamentoViewProps {
+  fechamentoItems?: FechamentoItem[];
+  items?: FechamentoItem[];
+  onAddFechamentoItem: (newItem: FechamentoItem) => void;
+  onDeleteFechamentoItems: (idsToDelete: string[]) => void;
+  onUpdateFechamentoItem?: (updatedItem: FechamentoItem) => void;
+  onRecalculateAuto?: () => void;
+  onTriggerFileImport?: () => void;
+  activeTab?: 'dealer' | 'sitef' | 'pendente_cdc' | 'fechamento';
+  tabCounts?: { dealer: number; sitef: number; pendente_cdc: number; fechamento?: number };
+  onTabChange?: (tab: 'dealer' | 'sitef' | 'pendente_cdc' | 'fechamento') => void;
+}
+
+export function FechamentoView({
+  fechamentoItems: fechamentoItemsProp,
+  items: itemsProp,
+  onAddFechamentoItem,
+  onDeleteFechamentoItems,
+  onRecalculateAuto,
+  onTriggerFileImport,
+}: FechamentoViewProps) {
+  const fechamentoItems = useMemo(
+    () => fechamentoItemsProp || itemsProp || [],
+    [fechamentoItemsProp, itemsProp]
+  );
+
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedEmpresaFilter, setSelectedEmpresaFilter] = useState<string>('ALL');
+  const [filterMode, setFilterMode] = useState<'all' | 'divergent' | 'concolidated' | 'pix_validation'>('all');
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [viewMode, setViewMode] = useState<'grouped' | 'flat'>('grouped');
+
+  // Collapse / Expand states
+  const [collapsedEmpresas, setCollapsedEmpresas] = useState<Record<string, boolean>>({});
+  const [collapsedDepartamentos, setCollapsedDepartamentos] = useState<Record<string, boolean>>({});
+
+  // Modal: Add New Fechamento Launch
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [addForm, setAddForm] = useState({
+    empresa: 'Empresa 01 - Matriz',
+    departamento: 'Financeiro / Cartões',
+    contaGerencial: '1.01.02 - Cartões de Crédito',
+    caixaLoja: 'Loja 01 - Caixa Central',
+    data: new Date().toLocaleDateString('pt-BR'),
+    nsu: '',
+    tipoPagamento: 'Cartão de Crédito',
+    bandeiraDealer: 'VISA',
+    bandeiraSitef: 'VISA',
+    valorDealer: '',
+    valorSitef: '',
+    status: 'CONCILIADO',
+  });
+
+  // Modal: Confirm Delete
+  const [deleteConfirm, setDeleteConfirm] = useState<{
+    isOpen: boolean;
+    ids: string[];
+  }>({ isOpen: false, ids: [] });
+
+  const formatBRL = (val: number) => {
+    return new Intl.NumberFormat('pt-BR', {
+      style: 'currency',
+      currency: 'BRL',
+    }).format(val || 0);
+  };
+
+  // List of unique empresas for dropdown
+  const empresaList = useMemo(() => {
+    const setEmp = new Set<string>();
+    fechamentoItems.forEach((i) => {
+      if (i.empresa) setEmp.add(i.empresa);
+    });
+    return Array.from(setEmp).sort();
+  }, [fechamentoItems]);
+
+  // KPI Metrics calculation
+  const summary = useMemo(() => {
+    let totalDealer = 0;
+    let totalSitef = 0;
+    let countDivergencias = 0;
+    let countConciliados = 0;
+    let countPixValidacao = 0;
+
+    fechamentoItems.forEach((item) => {
+      totalDealer += item.valorDealer || 0;
+      totalSitef += item.valorSitef || 0;
+      if (item.isPixValidationNeeded || item.status.includes('VALIDAÇÃO NECESSÁRIA')) {
+        countPixValidacao++;
+      }
+      if (item.temDivergencia) {
+        countDivergencias++;
+      } else {
+        countConciliados++;
+      }
+    });
+
+    const diferencaTotal = Math.round((totalDealer - totalSitef) * 100) / 100;
+
+    return {
+      totalDealer,
+      totalSitef,
+      diferencaTotal,
+      countTotal: fechamentoItems.length,
+      countDivergencias,
+      countConciliados,
+      countPixValidacao,
+    };
+  }, [fechamentoItems]);
+
+  // Filter items based on searchQuery, selectedEmpresaFilter, and filterMode
+  const filteredItems = useMemo(() => {
+    return fechamentoItems.filter((item) => {
+      if (selectedEmpresaFilter !== 'ALL' && item.empresa !== selectedEmpresaFilter) {
+        return false;
+      }
+      if (filterMode === 'divergent' && !item.temDivergencia) return false;
+      if (filterMode === 'concolidated' && item.temDivergencia) return false;
+      if (
+        filterMode === 'pix_validation' &&
+        !(item.isPixValidationNeeded || item.status.includes('VALIDAÇÃO NECESSÁRIA'))
+      ) {
+        return false;
+      }
+
+      if (!searchQuery.trim()) return true;
+      const q = searchQuery.toLowerCase();
+      return (
+        item.empresa.toLowerCase().includes(q) ||
+        (item.departamento && item.departamento.toLowerCase().includes(q)) ||
+        item.contaGerencial.toLowerCase().includes(q) ||
+        item.caixaLoja.toLowerCase().includes(q) ||
+        item.nsu.toLowerCase().includes(q) ||
+        item.status.toLowerCase().includes(q) ||
+        item.data.toLowerCase().includes(q) ||
+        item.tipoPagamento.toLowerCase().includes(q) ||
+        (item.bandeiraDealer && item.bandeiraDealer.toLowerCase().includes(q)) ||
+        (item.bandeiraSitef && item.bandeiraSitef.toLowerCase().includes(q)) ||
+        (item.criterioConciliacao && item.criterioConciliacao.toLowerCase().includes(q))
+      );
+    });
+  }, [fechamentoItems, selectedEmpresaFilter, filterMode, searchQuery]);
+
+  // Grouped structure: Empresa -> Departamento -> Items
+  const groupedByEmpresa = useMemo(() => {
+    const map: Record<
+      string,
+      {
+        empresaName: string;
+        totalDealer: number;
+        totalSitef: number;
+        diferencaTotal: number;
+        countDivergencias: number;
+        countTotal: number;
+        departamentos: Record<
+          string,
+          {
+            departamentoName: string;
+            totalDealer: number;
+            totalSitef: number;
+            diferencaTotal: number;
+            countDivergencias: number;
+            items: FechamentoItem[];
+          }
+        >;
+      }
+    > = {};
+
+    filteredItems.forEach((item) => {
+      const emp = item.empresa || 'Empresa 01';
+      const dep = item.departamento || item.contaGerencial || 'Geral';
+
+      if (!map[emp]) {
+        map[emp] = {
+          empresaName: emp,
+          totalDealer: 0,
+          totalSitef: 0,
+          diferencaTotal: 0,
+          countDivergencias: 0,
+          countTotal: 0,
+          departamentos: {},
+        };
+      }
+
+      const empObj = map[emp];
+      empObj.totalDealer += item.valorDealer || 0;
+      empObj.totalSitef += item.valorSitef || 0;
+      if (item.temDivergencia) empObj.countDivergencias++;
+      empObj.countTotal++;
+
+      if (!empObj.departamentos[dep]) {
+        empObj.departamentos[dep] = {
+          departamentoName: dep,
+          totalDealer: 0,
+          totalSitef: 0,
+          diferencaTotal: 0,
+          countDivergencias: 0,
+          items: [],
+        };
+      }
+
+      const depObj = empObj.departamentos[dep];
+      depObj.items.push(item);
+      depObj.totalDealer += item.valorDealer || 0;
+      depObj.totalSitef += item.valorSitef || 0;
+      if (item.temDivergencia) depObj.countDivergencias++;
+    });
+
+    Object.values(map).forEach((emp) => {
+      emp.totalDealer = Math.round(emp.totalDealer * 100) / 100;
+      emp.totalSitef = Math.round(emp.totalSitef * 100) / 100;
+      emp.diferencaTotal = Math.round((emp.totalDealer - emp.totalSitef) * 100) / 100;
+
+      Object.values(emp.departamentos).forEach((dep) => {
+        dep.totalDealer = Math.round(dep.totalDealer * 100) / 100;
+        dep.totalSitef = Math.round(dep.totalSitef * 100) / 100;
+        dep.diferencaTotal = Math.round((dep.totalDealer - dep.totalSitef) * 100) / 100;
+      });
+    });
+
+    return map;
+  }, [filteredItems]);
+
+  // Collapse / Expand handlers
+  const toggleEmpresaCollapse = (empName: string) => {
+    setCollapsedEmpresas((prev) => {
+      const isCurrentlyCollapsed = prev[empName] ?? true;
+      return {
+        ...prev,
+        [empName]: !isCurrentlyCollapsed,
+      };
+    });
+  };
+
+  const toggleDepartamentoCollapse = (key: string) => {
+    setCollapsedDepartamentos((prev) => ({
+      ...prev,
+      [key]: !prev[key],
+    }));
+  };
+
+  const handleExpandAll = () => {
+    const newEmpState: Record<string, boolean> = {};
+    Object.keys(groupedByEmpresa).forEach((emp) => {
+      newEmpState[emp] = false;
+    });
+    setCollapsedEmpresas(newEmpState);
+    setCollapsedDepartamentos({});
+  };
+
+  const handleCollapseAll = () => {
+    const newEmpState: Record<string, boolean> = {};
+    Object.keys(groupedByEmpresa).forEach((emp) => {
+      newEmpState[emp] = true;
+    });
+    setCollapsedEmpresas(newEmpState);
+  };
+
+  // Selection handlers
+  const handleSelectAll = () => {
+    if (selectedIds.length === filteredItems.length) {
+      setSelectedIds([]);
+    } else {
+      setSelectedIds(filteredItems.map((i) => i.id));
+    }
+  };
+
+  const handleToggleSelect = (id: string) => {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  };
+
+  // Add Item Submit
+  const handleAddSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+
+    const valD = parseFloat(addForm.valorDealer.replace(',', '.')) || 0;
+    const valS = parseFloat(addForm.valorSitef.replace(',', '.')) || 0;
+    const dif = Math.round((valD - valS) * 100) / 100;
+    const isPix =
+      addForm.tipoPagamento.toLowerCase().includes('pix') ||
+      addForm.bandeiraDealer.toLowerCase().includes('pix') ||
+      addForm.bandeiraSitef.toLowerCase().includes('pix');
+    const hasBandDiv =
+      !isPix && addForm.bandeiraDealer.toUpperCase() !== addForm.bandeiraSitef.toUpperCase();
+    const temDivergencia = isPix ? false : (Math.abs(dif) > 0.01 || hasBandDiv || addForm.status !== 'CONCILIADO');
+
+    const newItem: FechamentoItem = {
+      id: `manual_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      empresa: addForm.empresa.trim() || 'Empresa 01 - Matriz',
+      departamento: addForm.departamento.trim() || 'Financeiro / Cartões',
+      contaGerencial: addForm.contaGerencial.trim() || '1.01.02 - Cartões de Crédito',
+      caixaLoja: addForm.caixaLoja.trim() || 'Loja 01 - Caixa Central',
+      data: addForm.data.trim() || new Date().toLocaleDateString('pt-BR'),
+      nsu: addForm.nsu.trim() || (isPix ? 'PIX' : 'S/N'),
+      tipoPagamento: isPix ? 'PIX' : (addForm.tipoPagamento.trim() || 'Cartão de Crédito'),
+      bandeiraDealer: isPix ? 'PIX' : addForm.bandeiraDealer.toUpperCase(),
+      bandeiraSitef: isPix ? 'PIX' : addForm.bandeiraSitef.toUpperCase(),
+      divergenciaBandeira: hasBandDiv,
+      isPix,
+      valorDealer: valD,
+      valorSitef: isPix ? valD : valS,
+      diferenca: isPix ? 0 : dif,
+      status: isPix
+        ? 'PIX – ASSOCIADO À EMPRESA'
+        : temDivergencia
+        ? hasBandDiv
+          ? 'DIVERGÊNCIA DE BANDEIRA'
+          : 'DIVERGÊNCIA DE VALOR'
+        : 'CONCILIADO',
+      temDivergencia,
+      detalhes: isPix
+        ? 'Lançamento Pix associado à empresa sem divergência'
+        : 'Lançamento manual adicionado no fechamento',
+      origem: 'manual',
+    };
+
+    onAddFechamentoItem(newItem);
+    setIsAddModalOpen(false);
+  };
+
+  // Confirm Delete Handler
+  const handleConfirmDelete = () => {
+    onDeleteFechamentoItems(deleteConfirm.ids);
+    setSelectedIds((prev) => prev.filter((id) => !deleteConfirm.ids.includes(id)));
+    setDeleteConfirm({ isOpen: false, ids: [] });
+  };
+
+  // Export Fechamento to Excel
+  const handleExportExcel = () => {
+    const dataToExport = filteredItems.map((item) => ({
+      'Empresa (Dealer)': item.empresa,
+      'Departamento': item.departamento,
+      'Conta Gerencial': item.contaGerencial,
+      'Caixa / Loja': item.caixaLoja,
+      'Data': item.data,
+      'NSU Dealer / NSU Host SiTef': item.nsu,
+      'Tipo / Forma': item.tipoPagamento,
+      'Bandeira Dealer': item.bandeiraDealer || '—',
+      'Bandeira SiTef': item.bandeiraSitef || '—',
+      'Divergência Bandeira?': item.divergenciaBandeira ? 'SIM' : 'NÃO',
+      'Coluna Dealer (R$)': item.valorDealer,
+      'Coluna Sitef (R$)': item.valorSitef,
+      'Diferença (R$)': item.diferenca,
+      'Status Conciliação': item.status,
+      'Motivo da Divergência / Conciliação': item.detalhes || item.status,
+      'Divergência?': item.temDivergencia ? 'SIM' : 'NÃO',
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(dataToExport);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'FECHAMENTO');
+    XLSX.writeFile(wb, `Fechamento_Conciliacao_${new Date().toISOString().slice(0, 10)}.xlsx`);
+  };
+
+  return (
+    <div className="space-y-4 text-slate-800">
+      {/* KPI Dashboard Panel */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        {/* Card 1: Total Dealer */}
+        <div className="bg-white border border-emerald-200 rounded-xl p-4 shadow-2xs hover:shadow-xs transition-all flex items-center justify-between gap-3">
+          <div className="space-y-1">
+            <span className="text-[11px] font-black uppercase tracking-wider text-emerald-800">
+              Total DEALER (R$)
+            </span>
+            <div className="text-2xl font-black text-emerald-950 tracking-tight">
+              {formatBRL(summary.totalDealer)}
+            </div>
+            <p className="text-[10px] text-emerald-700 font-medium">
+              Lançamentos validados no Dealer
+            </p>
+          </div>
+          <div className="w-11 h-11 bg-emerald-100 text-emerald-800 rounded-xl flex items-center justify-center flex-shrink-0 border border-emerald-200 shadow-2xs">
+            <TrendingUp className="w-6 h-6" />
+          </div>
+        </div>
+
+        {/* Card 2: Total Sitef */}
+        <div className="bg-white border border-blue-200 rounded-xl p-4 shadow-2xs hover:shadow-xs transition-all flex items-center justify-between gap-3">
+          <div className="space-y-1">
+            <span className="text-[11px] font-black uppercase tracking-wider text-blue-800">
+              Total SITEF (R$)
+            </span>
+            <div className="text-2xl font-black text-blue-950 tracking-tight">
+              {formatBRL(summary.totalSitef)}
+            </div>
+            <p className="text-[10px] text-blue-700 font-medium">
+              Extrato capturado no SiTef
+            </p>
+          </div>
+          <div className="w-11 h-11 bg-blue-100 text-blue-800 rounded-xl flex items-center justify-center flex-shrink-0 border border-blue-200 shadow-2xs">
+            <CreditCard className="w-6 h-6" />
+          </div>
+        </div>
+
+        {/* Card 3: Diferença Dealer x Sitef */}
+        <div
+          className={`bg-white border rounded-xl p-4 shadow-2xs hover:shadow-xs transition-all flex items-center justify-between gap-3 ${
+            summary.diferencaTotal === 0
+              ? 'border-emerald-300 bg-emerald-50/30'
+              : 'border-amber-300 bg-amber-50/40'
+          }`}
+        >
+          <div className="space-y-1">
+            <span
+              className={`text-[11px] font-black uppercase tracking-wider ${
+                summary.diferencaTotal === 0 ? 'text-emerald-800' : 'text-amber-900'
+              }`}
+            >
+              Diferença (Dealer - Sitef)
+            </span>
+            <div
+              className={`text-2xl font-black tracking-tight ${
+                summary.diferencaTotal === 0
+                  ? 'text-emerald-800'
+                  : summary.diferencaTotal > 0
+                  ? 'text-amber-900'
+                  : 'text-rose-700'
+              }`}
+            >
+              {formatBRL(summary.diferencaTotal)}
+            </div>
+            <p className="text-[10px] font-medium text-slate-600">
+              {summary.diferencaTotal === 0
+                ? 'Valores consolidados por empresa'
+                : 'Saldo apurado em divergência'}
+            </p>
+          </div>
+          <div
+            className={`w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 border shadow-2xs ${
+              summary.diferencaTotal === 0
+                ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                : 'bg-amber-100 text-amber-900 border-amber-300'
+            }`}
+          >
+            <Scale className="w-6 h-6" />
+          </div>
+        </div>
+
+        {/* Card 4: Qtd. Divergências */}
+        <div className="bg-white border border-amber-300 rounded-xl p-4 shadow-2xs hover:shadow-xs transition-all flex items-center justify-between gap-3">
+          <div className="space-y-1">
+            <span className="text-[11px] font-black uppercase tracking-wider text-amber-900">
+              Qtd. Divergências
+            </span>
+            <div className="text-2xl font-black text-amber-950 tracking-tight flex items-center gap-2">
+              <span>{summary.countDivergencias}</span>
+              <span className="text-xs font-bold text-amber-800 px-2 py-0.5 bg-amber-100 border border-amber-300 rounded-full">
+                {summary.countTotal > 0
+                  ? `${((summary.countDivergencias / summary.countTotal) * 100).toFixed(0)}%`
+                  : '0%'}
+              </span>
+            </div>
+            <p className="text-[10px] text-amber-800 font-semibold">
+              Destacadas para verificação
+            </p>
+          </div>
+          <div className="w-11 h-11 bg-amber-500 text-white rounded-xl flex items-center justify-center flex-shrink-0 shadow-xs">
+            <AlertTriangle className="w-6 h-6" />
+          </div>
+        </div>
+      </div>
+
+      {/* Action Bar & Controls */}
+      <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-2xs space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          {/* Left: Empresa Select Filter & Search */}
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Empresa Filter Dropdown */}
+            <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-lg border border-slate-200 text-xs">
+              <Building2 className="w-4 h-4 text-slate-500 ml-1" />
+              <span className="font-bold text-slate-700 hidden sm:inline">Empresa:</span>
+              <select
+                value={selectedEmpresaFilter}
+                onChange={(e) => setSelectedEmpresaFilter(e.target.value)}
+                className="bg-white border border-slate-300 rounded-md px-2.5 py-1 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500/50"
+              >
+                <option value="ALL">Todas as Empresas ({empresaList.length})</option>
+                {empresaList.map((emp) => (
+                  <option key={emp} value={emp}>
+                    {emp}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Search Input */}
+            <div className="relative min-w-[200px] sm:min-w-[240px]">
+              <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Buscar por NSU, Conta, Caixa, Bandeira..."
+                className="w-full pl-9 pr-3 py-1.5 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500 bg-slate-50 focus:bg-white"
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-2 top-2 text-slate-400 hover:text-slate-600"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+
+            {/* Filter Mode Buttons */}
+            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg border border-slate-200 text-xs">
+              <button
+                onClick={() => setFilterMode('all')}
+                className={`px-2.5 py-1 rounded-md font-bold transition-all ${
+                  filterMode === 'all'
+                    ? 'bg-white text-slate-900 shadow-2xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Todas ({summary.countTotal})
+              </button>
+              <button
+                onClick={() => setFilterMode('divergent')}
+                className={`px-2.5 py-1 rounded-md font-bold transition-all flex items-center gap-1 ${
+                  filterMode === 'divergent'
+                    ? 'bg-amber-500 text-white shadow-2xs'
+                    : 'text-amber-800 hover:bg-amber-100'
+                }`}
+              >
+                <AlertTriangle className="w-3.5 h-3.5" />
+                <span>Divergências ({summary.countDivergencias})</span>
+              </button>
+              <button
+                onClick={() => setFilterMode('concolidated')}
+                className={`px-2.5 py-1 rounded-md font-bold transition-all ${
+                  filterMode === 'concolidated'
+                    ? 'bg-emerald-600 text-white shadow-2xs'
+                    : 'text-emerald-800 hover:bg-emerald-100'
+                }`}
+              >
+                Conciliados ({summary.countConciliados})
+              </button>
+              <button
+                onClick={() => setFilterMode('pix_validation')}
+                className={`px-2.5 py-1 rounded-md font-bold transition-all flex items-center gap-1 ${
+                  filterMode === 'pix_validation'
+                    ? 'bg-indigo-600 text-white shadow-2xs'
+                    : 'text-indigo-800 hover:bg-indigo-100'
+                }`}
+              >
+                <AlertTriangle className="w-3.5 h-3.5 text-indigo-300" />
+                <span>Validação PIX ({summary.countPixValidacao})</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Right: Actions & Collapse/Expand All */}
+          <div className="flex items-center gap-2">
+            {/* Expand / Collapse All Controls */}
+            {viewMode === 'grouped' && (
+              <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg border border-slate-200 text-xs">
+                <button
+                  onClick={handleExpandAll}
+                  className="px-2 py-1 hover:bg-white text-slate-700 font-bold rounded flex items-center gap-1 text-[11px]"
+                  title="Expandir todas as empresas"
+                >
+                  <Maximize2 className="w-3 h-3 text-amber-600" />
+                  <span>Ampliar</span>
+                </button>
+                <button
+                  onClick={handleCollapseAll}
+                  className="px-2 py-1 hover:bg-white text-slate-700 font-bold rounded flex items-center gap-1 text-[11px]"
+                  title="Recolher todas as empresas"
+                >
+                  <Minimize2 className="w-3 h-3 text-slate-600" />
+                  <span>Recolher</span>
+                </button>
+              </div>
+            )}
+
+            {/* Toggle View Mode */}
+            <div className="flex items-center bg-slate-100 p-1 rounded-lg border border-slate-200 text-xs">
+              <button
+                onClick={() => setViewMode('grouped')}
+                className={`px-2.5 py-1 rounded-md font-bold text-[11px] flex items-center gap-1 ${
+                  viewMode === 'grouped' ? 'bg-white text-slate-900 shadow-2xs' : 'text-slate-600'
+                }`}
+                title="Agrupar por Empresa e Departamento"
+              >
+                <FolderTree className="w-3.5 h-3.5 text-amber-600" />
+                <span>Por Empresa</span>
+              </button>
+              <button
+                onClick={() => setViewMode('flat')}
+                className={`px-2.5 py-1 rounded-md font-bold text-[11px] flex items-center gap-1 ${
+                  viewMode === 'flat' ? 'bg-white text-slate-900 shadow-2xs' : 'text-slate-600'
+                }`}
+                title="Visualização em Tabela Única"
+              >
+                <Layers className="w-3.5 h-3.5 text-blue-600" />
+                <span>Lista Plana</span>
+              </button>
+            </div>
+
+            {/* Recalculate Auto Button */}
+            {onRecalculateAuto && (
+              <button
+                onClick={onRecalculateAuto}
+                className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg text-xs border border-slate-300 transition-all flex items-center gap-1.5 cursor-pointer"
+                title="Refazer comparação entre Dealer e SiTef"
+              >
+                <RefreshCw className="w-3.5 h-3.5 text-slate-600" />
+                <span>Comparar Novamente</span>
+              </button>
+            )}
+
+            {/* Export Excel Button */}
+            <button
+              onClick={handleExportExcel}
+              className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-lg text-xs transition-all flex items-center gap-1.5 cursor-pointer"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>Exportar Excel</span>
+            </button>
+
+            {/* Add Launch Button */}
+            <button
+              onClick={() => setIsAddModalOpen(true)}
+              className="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-extrabold rounded-lg text-xs shadow-2xs transition-all flex items-center gap-1.5 cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              <span>+ Adicionar Lançamento</span>
+            </button>
+
+            {/* Delete Selected Button */}
+            {selectedIds.length > 0 && (
+              <button
+                onClick={() => setDeleteConfirm({ isOpen: true, ids: selectedIds })}
+                className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg text-xs shadow-2xs transition-all flex items-center gap-1.5 cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Excluir ({selectedIds.length})</span>
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Main Table Content */}
+      <div className="bg-white border border-slate-200 rounded-xl shadow-2xs overflow-hidden">
+        {filteredItems.length === 0 ? (
+          <div className="p-12 text-center space-y-3">
+            <div className="w-12 h-12 bg-amber-50 text-amber-600 rounded-2xl flex items-center justify-center mx-auto border border-amber-200">
+              <Scale className="w-6 h-6" />
+            </div>
+            <h4 className="font-bold text-slate-800 text-sm">
+              Nenhum lançamento de fechamento encontrado
+            </h4>
+            <p className="text-slate-500 text-xs max-w-md mx-auto">
+              Importe planilhas nas abas <strong>DEALER</strong> e <strong>Sitef</strong> ou clique no botão <strong>&quot;+ Adicionar Lançamento&quot;</strong> para incluir registros manuais no fechamento.
+            </p>
+            {onTriggerFileImport && (
+              <button
+                onClick={onTriggerFileImport}
+                className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg text-xs transition-all inline-flex items-center gap-2 mt-2"
+              >
+                Importar Planilha Excel
+              </button>
+            )}
+          </div>
+        ) : viewMode === 'grouped' ? (
+          /* Grouped Accordion View: Empresa -> Departamento */
+          <div className="divide-y divide-slate-200">
+            {Object.entries(groupedByEmpresa).map(([empName, empData]) => {
+              const isEmpCollapsed = collapsedEmpresas[empName] ?? true;
+
+              return (
+                <div key={empName} className="bg-slate-50/40">
+                  {/* Level 1: Empresa Accordion Header */}
+                  <div
+                    onClick={() => toggleEmpresaCollapse(empName)}
+                    className="px-4 py-3 bg-slate-900 text-white flex flex-wrap items-center justify-between gap-3 cursor-pointer hover:bg-slate-950 transition-colors select-none"
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <button className="p-1 bg-slate-800 text-amber-400 rounded-md">
+                        {isEmpCollapsed ? (
+                          <ChevronRight className="w-4 h-4" />
+                        ) : (
+                          <ChevronDown className="w-4 h-4" />
+                        )}
+                      </button>
+                      <Building2 className="w-5 h-5 text-amber-400" />
+                      <div>
+                        <span className="font-black text-xs uppercase tracking-wider text-amber-400">
+                          Empresa (Dealer):
+                        </span>{' '}
+                        <span className="font-extrabold text-sm text-white">{empName}</span>
+                        <span className="ml-2 text-[11px] bg-slate-800 text-slate-300 px-2 py-0.5 rounded-full font-bold">
+                          {empData.countTotal} lançamento(s)
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Totals for Empresa */}
+                    <div className="flex items-center gap-4 text-xs">
+                      <div className="bg-slate-800 px-2.5 py-1 rounded-md">
+                        <span className="text-[10px] uppercase text-emerald-400 font-bold block">
+                          Total Dealer:
+                        </span>
+                        <span className="font-extrabold text-emerald-300">
+                          {formatBRL(empData.totalDealer)}
+                        </span>
+                      </div>
+
+                      <div className="bg-slate-800 px-2.5 py-1 rounded-md">
+                        <span className="text-[10px] uppercase text-blue-400 font-bold block">
+                          Total Sitef:
+                        </span>
+                        <span className="font-extrabold text-blue-300">
+                          {formatBRL(empData.totalSitef)}
+                        </span>
+                      </div>
+
+                      <div className="bg-slate-800 px-2.5 py-1 rounded-md">
+                        <span className="text-[10px] uppercase text-slate-400 font-bold block">
+                          Diferença:
+                        </span>
+                        <span
+                          className={`font-black ${
+                            empData.diferencaTotal === 0
+                              ? 'text-emerald-400'
+                              : 'text-amber-400 font-extrabold'
+                          }`}
+                        >
+                          {formatBRL(empData.diferencaTotal)}
+                        </span>
+                      </div>
+
+                      {empData.countDivergencias > 0 ? (
+                        <span className="bg-amber-500 text-slate-950 font-black px-2.5 py-1 rounded-md text-[11px] flex items-center gap-1 shadow-2xs">
+                          <AlertTriangle className="w-3.5 h-3.5" />
+                          {empData.countDivergencias} Divergência(s)
+                        </span>
+                      ) : (
+                        <span className="bg-emerald-600 text-white font-bold px-2 py-1 rounded-md text-[11px] flex items-center gap-1">
+                          <Check className="w-3.5 h-3.5" />
+                          100% Conciliado
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Level 2: Departamentos inside Empresa (Visible if not collapsed) */}
+                  {!isEmpCollapsed && (
+                    <div className="divide-y divide-slate-200">
+                      {Object.entries(empData.departamentos).map(([depName, depData]) => {
+                        const depKey = `${empName}_${depName}`;
+                        const isDepCollapsed = Boolean(collapsedDepartamentos[depKey]);
+
+                        return (
+                          <div key={depKey} className="border-t border-slate-200">
+                            {/* Departamento Header */}
+                            <div
+                              onClick={() => toggleDepartamentoCollapse(depKey)}
+                              className="px-5 py-2 bg-slate-800 text-slate-100 flex flex-wrap items-center justify-between gap-3 cursor-pointer hover:bg-slate-850 text-xs font-bold select-none"
+                            >
+                              <div className="flex items-center gap-2">
+                                <button className="p-0.5 text-slate-300">
+                                  {isDepCollapsed ? (
+                                    <ChevronRight className="w-3.5 h-3.5" />
+                                  ) : (
+                                    <ChevronDown className="w-3.5 h-3.5" />
+                                  )}
+                                </button>
+                                <FolderTree className="w-4 h-4 text-amber-400" />
+                                <span>Departamento: {depName}</span>
+                                <span className="text-[10px] bg-slate-700 text-slate-200 px-2 py-0.2 rounded-full font-bold">
+                                  {depData.items.length} item(ns)
+                                </span>
+                              </div>
+
+                              {/* Department Totals */}
+                              <div className="flex items-center gap-3 text-[11px]">
+                                <span>
+                                  Dealer:{' '}
+                                  <strong className="text-emerald-400">
+                                    {formatBRL(depData.totalDealer)}
+                                  </strong>
+                                </span>
+                                <span>
+                                  Sitef:{' '}
+                                  <strong className="text-blue-400">
+                                    {formatBRL(depData.totalSitef)}
+                                  </strong>
+                                </span>
+                                <span
+                                  className={
+                                    depData.diferencaTotal !== 0
+                                      ? 'text-amber-400 font-extrabold'
+                                      : 'text-emerald-400 font-bold'
+                                  }
+                                >
+                                  Diferença: {formatBRL(depData.diferencaTotal)}
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Table of Items (Visible if department not collapsed) */}
+                            {!isDepCollapsed && (
+                              <div className="overflow-x-auto">
+                                <table className="w-full text-left text-xs border-collapse">
+                                  <thead>
+                                    <tr className="bg-slate-200/80 text-slate-800 font-extrabold uppercase text-[10px] tracking-wider border-b border-slate-300">
+                                      <th className="p-2.5 w-10 text-center">
+                                        <input
+                                          type="checkbox"
+                                          checked={
+                                            depData.items.length > 0 &&
+                                            depData.items.every((i) => selectedIds.includes(i.id))
+                                          }
+                                          onChange={() => {
+                                            const depIds = depData.items.map((i) => i.id);
+                                            const allSelected = depIds.every((id) =>
+                                              selectedIds.includes(id)
+                                            );
+                                            if (allSelected) {
+                                              setSelectedIds((prev) =>
+                                                prev.filter((id) => !depIds.includes(id))
+                                              );
+                                            } else {
+                                              setSelectedIds((prev) =>
+                                                Array.from(new Set([...prev, ...depIds]))
+                                              );
+                                            }
+                                          }}
+                                          className="rounded border-slate-300 text-amber-600 focus:ring-amber-500"
+                                        />
+                                      </th>
+                                      <th className="p-2.5">Data</th>
+                                      <th className="p-2.5">NSU (Cartão)</th>
+                                      <th className="p-2.5">Tipo / Bandeira</th>
+                                      <th className="p-2.5 text-right bg-emerald-50/50 text-emerald-900 border-x border-emerald-200">
+                                        Coluna Dealer (R$)
+                                      </th>
+                                      <th className="p-2.5 text-right bg-blue-50/50 text-blue-900 border-r border-blue-200">
+                                        Coluna Sitef (R$)
+                                      </th>
+                                      <th className="p-2.5 text-right">Diferença (R$)</th>
+                                      <th className="p-2.5 text-center">Status / Conciliação</th>
+                                      <th className="p-2.5 w-12 text-center">Ações</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-slate-200 bg-white">
+                                    {depData.items.map((item) => {
+                                      const isSelected = selectedIds.includes(item.id);
+                                      const isBandDiv = item.divergenciaBandeira;
+                                      const isPixValNeeded =
+                                        item.isPixValidationNeeded || item.status.includes('VALIDAÇÃO NECESSÁRIA');
+
+                                      return (
+                                        <tr
+                                          key={item.id}
+                                          className={`transition-colors text-xs ${
+                                            isPixValNeeded
+                                              ? 'bg-indigo-50/90 hover:bg-indigo-100/90 border-l-4 border-l-indigo-600'
+                                              : isBandDiv
+                                              ? 'bg-purple-50/90 hover:bg-purple-100/90 border-l-4 border-l-purple-600'
+                                              : item.temDivergencia
+                                              ? 'bg-amber-50/90 hover:bg-amber-100/90 border-l-4 border-l-amber-500'
+                                              : 'hover:bg-slate-50 border-l-4 border-l-transparent'
+                                          } ${isSelected ? 'bg-amber-100/70' : ''}`}
+                                        >
+                                          <td className="p-2.5 text-center">
+                                            <input
+                                              type="checkbox"
+                                              checked={isSelected}
+                                              onChange={() => handleToggleSelect(item.id)}
+                                              className="rounded border-slate-300 text-amber-600 focus:ring-amber-500"
+                                            />
+                                          </td>
+                                          <td className="p-2.5 font-medium text-slate-700 whitespace-nowrap">
+                                            {item.data || '—'}
+                                          </td>
+                                          <td className="p-2.5 font-mono font-bold text-slate-900 whitespace-nowrap">
+                                            {item.nsu}
+                                          </td>
+                                          <td className="p-2.5 whitespace-nowrap">
+                                            <div className="flex flex-col gap-0.5">
+                                              <span className="font-bold text-slate-800">
+                                                {item.tipoPagamento}
+                                              </span>
+                                              <div className="flex items-center gap-1 text-[10px]">
+                                                <span className="px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-800 border border-emerald-300 font-semibold">
+                                                  Dealer: {item.bandeiraDealer || '—'}
+                                                </span>
+                                                <span className="px-1.5 py-0.2 rounded bg-blue-100 text-blue-800 border border-blue-300 font-semibold">
+                                                  Sitef: {item.bandeiraSitef || '—'}
+                                                </span>
+                                              </div>
+                                            </div>
+                                          </td>
+                                          {/* Coluna Dealer */}
+                                          <td className="p-2.5 text-right font-black text-emerald-950 bg-emerald-50/30 border-x border-emerald-200/60 whitespace-nowrap">
+                                            {formatBRL(item.valorDealer)}
+                                          </td>
+                                          {/* Coluna Sitef */}
+                                          <td className="p-2.5 text-right font-black text-blue-950 bg-blue-50/30 border-r border-blue-200/60 whitespace-nowrap">
+                                            {formatBRL(item.valorSitef)}
+                                          </td>
+                                          {/* Diferença */}
+                                          <td className="p-2.5 text-right whitespace-nowrap">
+                                            <span
+                                              className={`px-2 py-0.5 rounded font-extrabold ${
+                                                item.temDivergencia
+                                                  ? 'bg-amber-200 text-amber-950 border border-amber-300 shadow-2xs'
+                                                  : 'text-emerald-700 font-semibold'
+                                              }`}
+                                            >
+                                              {formatBRL(item.diferenca)}
+                                            </span>
+                                          </td>
+                                          {/* Status */}
+                                          <td className="p-2.5 text-center whitespace-nowrap">
+                                            {isPixValNeeded ? (
+                                              <span
+                                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-black bg-indigo-600 text-white shadow-2xs uppercase cursor-help"
+                                                title={item.detalhes || 'PIX – Validação necessária (ambiguidade de lançamentos)'}
+                                              >
+                                                <AlertTriangle className="w-3 h-3 text-indigo-200" />
+                                                PIX – VALIDAÇÃO NECESSÁRIA
+                                              </span>
+                                            ) : isBandDiv ? (
+                                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-black bg-purple-600 text-white shadow-2xs uppercase">
+                                                <AlertTriangle className="w-3 h-3 text-amber-300" />
+                                                DIVERGÊNCIA DE BANDEIRA
+                                              </span>
+                                            ) : item.temDivergencia ? (
+                                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-black bg-amber-500 text-white shadow-2xs uppercase">
+                                                <AlertTriangle className="w-3 h-3" />
+                                                {item.status}
+                                              </span>
+                                            ) : item.isPix ? (
+                                              <div className="flex flex-col items-center gap-0.5">
+                                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-bold bg-teal-100 text-teal-800 border border-teal-300">
+                                                  <CheckCircle2 className="w-3 h-3 text-teal-600" />
+                                                  CONCILIADO (PIX)
+                                                </span>
+                                                {item.criterioConciliacao && (
+                                                  <span
+                                                    className="text-[9px] text-teal-900 font-semibold max-w-[180px] truncate"
+                                                    title={item.detalhes || item.criterioConciliacao}
+                                                  >
+                                                    {item.criterioConciliacao}
+                                                  </span>
+                                                )}
+                                              </div>
+                                            ) : (
+                                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                                                <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                                CONCILIADO
+                                              </span>
+                                            )}
+                                          </td>
+                                          {/* Action */}
+                                          <td className="p-2.5 text-center">
+                                            <button
+                                              onClick={() =>
+                                                setDeleteConfirm({ isOpen: true, ids: [item.id] })
+                                              }
+                                              className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors cursor-pointer"
+                                              title="Excluir lançamento"
+                                            >
+                                              <Trash2 className="w-4 h-4" />
+                                            </button>
+                                          </td>
+                                        </tr>
+                                      );
+                                    })}
+                                  </tbody>
+                                </table>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          /* Flat Table View */
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr className="bg-slate-900 text-white font-extrabold uppercase text-[10px] tracking-wider">
+                  <th className="p-3 w-10 text-center">
+                    <input
+                      type="checkbox"
+                      checked={
+                        filteredItems.length > 0 &&
+                        filteredItems.every((i) => selectedIds.includes(i.id))
+                      }
+                      onChange={handleSelectAll}
+                      className="rounded border-slate-300 text-amber-600 focus:ring-amber-500"
+                    />
+                  </th>
+                  <th className="p-3">Empresa (Dealer)</th>
+                  <th className="p-3">Departamento / Conta</th>
+                  <th className="p-3">Data</th>
+                  <th className="p-3">NSU</th>
+                  <th className="p-3">Tipo / Bandeira</th>
+                  <th className="p-3 text-right bg-emerald-950 text-emerald-200">
+                    Coluna Dealer (R$)
+                  </th>
+                  <th className="p-3 text-right bg-blue-950 text-blue-200">
+                    Coluna Sitef (R$)
+                  </th>
+                  <th className="p-3 text-right">Diferença (R$)</th>
+                  <th className="p-3 text-center">Status Conciliação</th>
+                  <th className="p-3 w-12 text-center">Ações</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200 bg-white">
+                {filteredItems.map((item) => {
+                  const isSelected = selectedIds.includes(item.id);
+                  const isBandDiv = item.divergenciaBandeira;
+                  const isPixValNeeded =
+                    item.isPixValidationNeeded || item.status.includes('VALIDAÇÃO NECESSÁRIA');
+
+                  return (
+                    <tr
+                      key={item.id}
+                      className={`transition-colors text-xs ${
+                        isPixValNeeded
+                          ? 'bg-indigo-50/90 hover:bg-indigo-100/90 border-l-4 border-l-indigo-600'
+                          : isBandDiv
+                          ? 'bg-purple-50/90 hover:bg-purple-100/90 border-l-4 border-l-purple-600'
+                          : item.temDivergencia
+                          ? 'bg-amber-50/90 hover:bg-amber-100/90 border-l-4 border-l-amber-500'
+                          : 'hover:bg-slate-50 border-l-4 border-l-transparent'
+                      } ${isSelected ? 'bg-amber-100/70' : ''}`}
+                    >
+                      <td className="p-3 text-center">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => handleToggleSelect(item.id)}
+                          className="rounded border-slate-300 text-amber-600 focus:ring-amber-500"
+                        />
+                      </td>
+                      <td className="p-3 font-bold text-slate-900">{item.empresa}</td>
+                      <td className="p-3 text-slate-700">
+                        {item.departamento || item.contaGerencial}
+                      </td>
+                      <td className="p-3 text-slate-700 whitespace-nowrap">{item.data || '—'}</td>
+                      <td className="p-3 font-mono font-bold text-slate-900 whitespace-nowrap">
+                        {item.nsu}
+                      </td>
+                      <td className="p-3 whitespace-nowrap">
+                        <div className="flex flex-col gap-0.5">
+                          <span className="font-bold text-slate-800">{item.tipoPagamento}</span>
+                          <div className="flex items-center gap-1 text-[10px]">
+                            <span className="px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-800 border border-emerald-300 font-semibold">
+                              Dealer: {item.bandeiraDealer || '—'}
+                            </span>
+                            <span className="px-1.5 py-0.2 rounded bg-blue-100 text-blue-800 border border-blue-300 font-semibold">
+                              Sitef: {item.bandeiraSitef || '—'}
+                            </span>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="p-3 text-right font-black text-emerald-950 bg-emerald-50/30 whitespace-nowrap">
+                        {formatBRL(item.valorDealer)}
+                      </td>
+                      <td className="p-3 text-right font-black text-blue-950 bg-blue-50/30 whitespace-nowrap">
+                        {formatBRL(item.valorSitef)}
+                      </td>
+                      <td className="p-3 text-right whitespace-nowrap">
+                        <span
+                          className={`px-2.5 py-1 rounded font-extrabold ${
+                            item.temDivergencia
+                              ? 'bg-amber-200 text-amber-950 border border-amber-300 shadow-2xs'
+                              : 'text-emerald-700 font-semibold'
+                          }`}
+                        >
+                          {formatBRL(item.diferenca)}
+                        </span>
+                      </td>
+                      <td className="p-3 text-center whitespace-nowrap">
+                        {isPixValNeeded ? (
+                          <span
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-black bg-indigo-600 text-white shadow-2xs uppercase cursor-help"
+                            title={item.detalhes || 'PIX – Validação necessária (ambiguidade de lançamentos)'}
+                          >
+                            <AlertTriangle className="w-3 h-3 text-indigo-200" />
+                            PIX – VALIDAÇÃO NECESSÁRIA
+                          </span>
+                        ) : isBandDiv ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-black bg-purple-600 text-white shadow-2xs uppercase">
+                            <AlertTriangle className="w-3 h-3 text-amber-300" />
+                            DIVERGÊNCIA DE BANDEIRA
+                          </span>
+                        ) : item.temDivergencia ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-black bg-amber-500 text-white shadow-2xs uppercase">
+                            <AlertTriangle className="w-3 h-3" />
+                            {item.status}
+                          </span>
+                        ) : item.isPix ? (
+                          <div className="flex flex-col items-center gap-0.5">
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-bold bg-teal-100 text-teal-800 border border-teal-300">
+                              <CheckCircle2 className="w-3 h-3 text-teal-600" />
+                              {item.status || 'CONCILIADO (PIX)'}
+                            </span>
+                            {(item.criterioConciliacao || item.detalhes) && (
+                              <span
+                                className="text-[9px] text-teal-900 font-semibold max-w-[180px] truncate"
+                                title={item.detalhes || item.criterioConciliacao}
+                              >
+                                {item.criterioConciliacao || item.detalhes}
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                            <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                            CONCILIADO
+                          </span>
+                        )}
+                      </td>
+                      <td className="p-3 text-center">
+                        <button
+                          onClick={() => setDeleteConfirm({ isOpen: true, ids: [item.id] })}
+                          className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors cursor-pointer"
+                          title="Excluir lançamento"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Modal: Adicionar Lançamento no Fechamento */}
+      {isAddModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-2xl border border-slate-200 w-full max-w-lg overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="px-5 py-3.5 bg-amber-600 text-white flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <PlusCircle className="w-5 h-5 text-white" />
+                <h3 className="font-extrabold text-sm">
+                  + Adicionar Lançamento no Fechamento
+                </h3>
+              </div>
+              <button
+                onClick={() => setIsAddModalOpen(false)}
+                className="p-1 text-white/80 hover:text-white rounded-lg transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleAddSubmit} className="p-5 space-y-4 max-h-[80vh] overflow-y-auto">
+              <p className="text-xs text-slate-600 leading-relaxed font-medium">
+                Adicione um lançamento manual com valores para Dealer e Sitef.
+              </p>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1 sm:col-span-2">
+                  <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider block">
+                    Empresa (Dealer)
+                  </label>
+                  <input
+                    type="text"
+                    value={addForm.empresa}
+                    onChange={(e) => setAddForm({ ...addForm, empresa: e.target.value })}
+                    placeholder="Ex: Empresa 01 - Matriz"
+                    required
+                    className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500 bg-white"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider block">
+                    Departamento
+                  </label>
+                  <input
+                    type="text"
+                    value={addForm.departamento}
+                    onChange={(e) => setAddForm({ ...addForm, departamento: e.target.value })}
+                    placeholder="Ex: Cartões / Vendas"
+                    required
+                    className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500 bg-white"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider block">
+                    Data
+                  </label>
+                  <input
+                    type="text"
+                    value={addForm.data}
+                    onChange={(e) => setAddForm({ ...addForm, data: e.target.value })}
+                    placeholder="DD/MM/AAAA"
+                    className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500 bg-white"
+                  />
+                </div>
+
+                <div className="space-y-1 sm:col-span-2">
+                  <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider block">
+                    NSU
+                  </label>
+                  <input
+                    type="text"
+                    value={addForm.nsu}
+                    onChange={(e) => setAddForm({ ...addForm, nsu: e.target.value })}
+                    placeholder="Ex: 849201"
+                    className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500 bg-white font-mono"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider block">
+                    Bandeira Dealer
+                  </label>
+                  <input
+                    type="text"
+                    value={addForm.bandeiraDealer}
+                    onChange={(e) => setAddForm({ ...addForm, bandeiraDealer: e.target.value })}
+                    placeholder="Ex: VISA, MASTER, ELO"
+                    className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500 bg-white"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider block">
+                    Bandeira Sitef
+                  </label>
+                  <input
+                    type="text"
+                    value={addForm.bandeiraSitef}
+                    onChange={(e) => setAddForm({ ...addForm, bandeiraSitef: e.target.value })}
+                    placeholder="Ex: VISA, MASTER, ELO"
+                    className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500 bg-white"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider block">
+                    Coluna Dealer (R$)
+                  </label>
+                  <input
+                    type="text"
+                    value={addForm.valorDealer}
+                    onChange={(e) => setAddForm({ ...addForm, valorDealer: e.target.value })}
+                    placeholder="0,00"
+                    className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500 bg-white font-bold text-emerald-900"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider block">
+                    Coluna Sitef (R$)
+                  </label>
+                  <input
+                    type="text"
+                    value={addForm.valorSitef}
+                    onChange={(e) => setAddForm({ ...addForm, valorSitef: e.target.value })}
+                    placeholder="0,00"
+                    className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500 bg-white font-bold text-blue-900"
+                  />
+                </div>
+              </div>
+
+              <div className="pt-3 border-t border-slate-200 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsAddModalOpen(false)}
+                  className="px-4 py-2 border border-slate-300 hover:bg-slate-100 text-slate-700 font-bold rounded-lg text-xs transition-colors cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg text-xs shadow-2xs transition-all flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Adicionar Lançamento</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Confirm Exclusão */}
+      {deleteConfirm.isOpen && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-2xl border border-slate-200 w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="px-5 py-3.5 bg-rose-600 text-white flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Trash2 className="w-5 h-5 text-white" />
+                <h3 className="font-bold text-sm">Excluir Lançamento(s) do Fechamento</h3>
+              </div>
+              <button
+                onClick={() => setDeleteConfirm({ isOpen: false, ids: [] })}
+                className="p-1 text-white/80 hover:text-white rounded-lg transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4 text-slate-800">
+              <p className="text-xs text-slate-700 leading-relaxed font-medium">
+                Tem certeza de que deseja excluir{' '}
+                <strong className="text-rose-600 font-bold">
+                  {deleteConfirm.ids.length}{' '}
+                  {deleteConfirm.ids.length === 1 ? 'lançamento' : 'lançamentos'}
+                </strong>{' '}
+                do Fechamento?
+              </p>
+
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-[11px] text-amber-800 space-y-1">
+                <p className="font-bold">⚠️ Recálculo Automático:</p>
+                <p>O painel de totais e a diferença de saldos serão atualizados instantaneamente.</p>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setDeleteConfirm({ isOpen: false, ids: [] })}
+                  className="px-4 py-2 border border-slate-300 hover:bg-slate-100 text-slate-700 font-bold rounded-lg text-xs transition-colors cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmDelete}
+                  className="px-5 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg text-xs shadow-2xs transition-all flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  <span>Excluir Definitivamente</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
