@@ -12,6 +12,7 @@ import {
   separateZeroValueDealerRows,
 } from '@/lib/excel-utils';
 import { FechamentoItem, generateAutoFechamento } from '@/lib/fechamento-utils';
+import { FechamentoCaixaRecord } from '@/lib/fechamento-caixa-service';
 import { SAMPLE_DATASETS } from '@/lib/sample-data';
 import { ExcelHeader } from '@/components/ExcelHeader';
 import { ExcelTable } from '@/components/ExcelTable';
@@ -673,6 +674,25 @@ export default function Home() {
     setManualFechamentoItems([]);
   }, []);
 
+  const handleFechamentoConcluido = useCallback((record?: FechamentoCaixaRecord) => {
+    // Clear all imported spreadsheets and manual items to leave screen clean for next cash closure
+    setDealerState(buildEmptySpreadsheetState('DEALER.xlsx'));
+    setSitefState(buildEmptySpreadsheetState('SITEF.xlsx'));
+    setPendenteCdcState(buildEmptySpreadsheetState('PENDENTE_DE_CDC.xlsx'));
+    setManualFechamentoItems([]);
+    setDeletedFechamentoIds(new Set());
+  }, []);
+
+  const handleRestoreFechamentoRecord = useCallback((record: FechamentoCaixaRecord) => {
+    // Clear current raw spreadsheet state so restored items display cleanly
+    setDealerState(buildEmptySpreadsheetState('DEALER.xlsx'));
+    setSitefState(buildEmptySpreadsheetState('SITEF.xlsx'));
+    setPendenteCdcState(buildEmptySpreadsheetState('PENDENTE_DE_CDC.xlsx'));
+    setDeletedFechamentoIds(new Set());
+    setManualFechamentoItems(record.items || []);
+    setActiveTab('fechamento');
+  }, []);
+
   const formatBRL = (val: number) => {
     return new Intl.NumberFormat('pt-BR', {
       style: 'currency',
@@ -742,6 +762,8 @@ export default function Home() {
               activeTab={activeTab}
               tabCounts={tabCounts}
               onTabChange={(tab) => setActiveTab(tab)}
+              onFechamentoConcluido={handleFechamentoConcluido}
+              onRestoreFechamentoRecord={handleRestoreFechamentoRecord}
             />
           ) : (
             <>

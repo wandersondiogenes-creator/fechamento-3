@@ -2,6 +2,9 @@
 
 import React, { useState, useMemo } from 'react';
 import { FechamentoItem } from '@/lib/fechamento-utils';
+import { FechamentoCaixaModal } from './FechamentoCaixaModal';
+import { HistoricoFechamentoModal } from './HistoricoFechamentoModal';
+import { FechamentoCaixaRecord } from '@/lib/fechamento-caixa-service';
 import {
   TrendingUp,
   Scale,
@@ -23,6 +26,10 @@ import {
   Maximize2,
   Minimize2,
   Check,
+  Lock,
+  History,
+  FileCheck,
+  RotateCcw,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
@@ -37,6 +44,8 @@ interface FechamentoViewProps {
   activeTab?: 'dealer' | 'sitef' | 'pendente_cdc' | 'fechamento';
   tabCounts?: { dealer: number; sitef: number; pendente_cdc: number; fechamento?: number };
   onTabChange?: (tab: 'dealer' | 'sitef' | 'pendente_cdc' | 'fechamento') => void;
+  onFechamentoConcluido?: (record: FechamentoCaixaRecord) => void;
+  onRestoreFechamentoRecord?: (record: FechamentoCaixaRecord) => void;
 }
 
 export function FechamentoView({
@@ -46,6 +55,8 @@ export function FechamentoView({
   onDeleteFechamentoItems,
   onRecalculateAuto,
   onTriggerFileImport,
+  onFechamentoConcluido,
+  onRestoreFechamentoRecord,
 }: FechamentoViewProps) {
   const fechamentoItems = useMemo(
     () => fechamentoItemsProp || itemsProp || [],
@@ -84,6 +95,15 @@ export function FechamentoView({
     isOpen: boolean;
     ids: string[];
   }>({ isOpen: false, ids: [] });
+
+  // Modal: Fechamento de Caixa do Dia & Histórico
+  const [isFechamentoCaixaModalOpen, setIsFechamentoCaixaModalOpen] = useState(false);
+  const [isHistoricoModalOpen, setIsHistoricoModalOpen] = useState(false);
+  const [restoredRecordInfo, setRestoredRecordInfo] = useState<{
+    dataMovimento: string;
+    operador: string;
+    count: number;
+  } | null>(null);
 
   const formatBRL = (val: number) => {
     return new Intl.NumberFormat('pt-BR', {
@@ -386,6 +406,88 @@ export function FechamentoView({
 
   return (
     <div className="space-y-4 text-slate-800">
+      {/* Restored Historic Record Notice Banner */}
+      {restoredRecordInfo && (
+        <div className="bg-amber-500/10 border-2 border-amber-500/40 text-amber-200 p-3.5 rounded-2xl flex flex-wrap items-center justify-between gap-3 shadow-md backdrop-blur-xs">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-amber-500/20 text-amber-400 rounded-xl border border-amber-500/30">
+              <RotateCcw className="w-5 h-5 animate-spin-slow" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="font-extrabold text-sm text-amber-300">
+                  REEXIBINDO CAIXA HISTÓRICO - MOVIMENTO {restoredRecordInfo.dataMovimento}
+                </span>
+                <span className="bg-amber-500/30 text-amber-300 border border-amber-500/40 px-2 py-0.5 rounded-full text-[10px] font-bold">
+                  {restoredRecordInfo.count} LANÇAMENTOS
+                </span>
+              </div>
+              <p className="text-xs text-amber-200/80">
+                Operador responsável: <strong>{restoredRecordInfo.operador}</strong>. Você está reexibindo as informações salvas deste fechamento no painel.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => {
+              setRestoredRecordInfo(null);
+              onFechamentoConcluido?.({} as any);
+            }}
+            className="px-3.5 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black rounded-xl text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-xs"
+          >
+            <X className="w-4 h-4" />
+            <span>Limpar e Iniciar Novo Caixa</span>
+          </button>
+        </div>
+      )}
+
+      {/* Top Banner: Fechamento do Dia CTA */}
+      <div className="bg-slate-900 text-white p-4 rounded-2xl shadow-sm flex flex-wrap items-center justify-between gap-4 border border-slate-800">
+        <div className="flex items-center gap-3">
+          <div className="p-3 bg-emerald-500/20 text-emerald-400 rounded-xl border border-emerald-500/30">
+            <Lock className="w-6 h-6" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="font-extrabold text-base text-white">Fechamento do Caixa do Dia</h2>
+              {summary.countTotal > 0 && summary.countDivergencias === 0 && (
+                <span className="bg-emerald-500 text-slate-950 font-black px-2.5 py-0.5 rounded-full text-[10px] tracking-wide animate-pulse">
+                  100% CONCILIADO
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-slate-300 mt-0.5">
+              {summary.countTotal === 0
+                ? 'Importe planilhas para conferir e encerrar o caixa.'
+                : summary.countDivergencias === 0
+                ? 'Todos os lançamentos estão conciliados. Clique para encerrar o caixa e emitir relatórios em PDF/Excel.'
+                : `Atenção: Há ${summary.countDivergencias} divergência(s) pendente(s) a resolver antes do encerramento.`}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setIsHistoricoModalOpen(true)}
+            className="px-3.5 py-2 bg-slate-800 hover:bg-slate-750 text-slate-200 font-bold rounded-xl text-xs border border-slate-700 transition-all flex items-center gap-2 cursor-pointer shadow-2xs"
+          >
+            <History className="w-4 h-4 text-amber-400" />
+            <span>Histórico de Fechamentos</span>
+          </button>
+
+          <button
+            onClick={() => setIsFechamentoCaixaModalOpen(true)}
+            className={`px-4 py-2 font-extrabold rounded-xl text-xs shadow-md transition-all flex items-center gap-2 cursor-pointer ${
+              summary.countTotal > 0 && summary.countDivergencias === 0
+                ? 'bg-emerald-500 hover:bg-emerald-600 text-slate-950 hover:scale-102'
+                : 'bg-amber-600 hover:bg-amber-700 text-white'
+            }`}
+          >
+            <Lock className="w-4 h-4" />
+            <span>Fechar Caixa do Dia</span>
+          </button>
+        </div>
+      </div>
+
       {/* KPI Dashboard Panel */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         {/* Card 1: Total Dealer */}
@@ -649,6 +751,20 @@ export function FechamentoView({
             >
               <Download className="w-3.5 h-3.5" />
               <span>Exportar Excel</span>
+            </button>
+
+            {/* Fechamento do Dia Button */}
+            <button
+              onClick={() => setIsFechamentoCaixaModalOpen(true)}
+              className={`px-3.5 py-1.5 font-extrabold rounded-lg text-xs shadow-2xs transition-all flex items-center gap-1.5 cursor-pointer ${
+                summary.countTotal > 0 && summary.countDivergencias === 0
+                  ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                  : 'bg-slate-800 hover:bg-slate-900 text-white'
+              }`}
+              title="Encerrar Caixa do Dia e Gerar Relatórios"
+            >
+              <Lock className="w-3.5 h-3.5" />
+              <span>Fechar Caixa do Dia</span>
             </button>
 
             {/* Add Launch Button */}
@@ -1378,6 +1494,32 @@ export function FechamentoView({
           </div>
         </div>
       )}
+
+      {/* Modal: Fechamento do Caixa do Dia */}
+      <FechamentoCaixaModal
+        isOpen={isFechamentoCaixaModalOpen}
+        onClose={() => setIsFechamentoCaixaModalOpen(false)}
+        fechamentoItems={fechamentoItems}
+        onSuccessClosure={(record) => {
+          setRestoredRecordInfo(null);
+          onFechamentoConcluido?.(record);
+        }}
+        onFilterDivergences={() => setFilterMode('divergent')}
+      />
+
+      {/* Modal: Histórico de Fechamentos do Caixa */}
+      <HistoricoFechamentoModal
+        isOpen={isHistoricoModalOpen}
+        onClose={() => setIsHistoricoModalOpen(false)}
+        onRestoreRecord={(record) => {
+          setRestoredRecordInfo({
+            dataMovimento: record.dataMovimento,
+            operador: record.operador,
+            count: record.countTotal,
+          });
+          onRestoreFechamentoRecord?.(record);
+        }}
+      />
     </div>
   );
 }
