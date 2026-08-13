@@ -5,6 +5,12 @@ import { ColumnConfig, SpreadsheetState } from '@/types/spreadsheet';
 import { ColumnVisibilityPopover } from './ColumnVisibilityPopover';
 import { isValidCPF } from '@/lib/validators';
 import {
+  CADASTRO_EMPRESAS,
+  CADASTRO_DEPARTAMENTOS,
+  isEmpresaColumn,
+  isDepartamentoColumn,
+} from '@/lib/cadastros';
+import {
   Search,
   ArrowUpDown,
   ArrowUp,
@@ -30,6 +36,8 @@ import {
   CheckSquare,
   Square,
   Scale,
+  Building2,
+  FolderTree,
 } from 'lucide-react';
 
 interface ExcelTableProps {
@@ -259,12 +267,17 @@ export function ExcelTable({
     const todayStr = new Date().toLocaleDateString('pt-BR');
 
     state.columns.forEach((col) => {
-      const h = (col.customHeader || col.originalHeader)
+      const headerText = col.customHeader || col.originalHeader;
+      const h = headerText
         .normalize('NFD')
         .replace(/[\u0300-\u036f]/g, '')
         .toLowerCase();
 
-      if (h.includes('data') || h.includes('dt_')) {
+      if (isEmpresaColumn(headerText)) {
+        defaults[col.id] = CADASTRO_EMPRESAS[0]; // "BYD - ARRUDA"
+      } else if (isDepartamentoColumn(headerText)) {
+        defaults[col.id] = CADASTRO_DEPARTAMENTOS[0]; // "30129-CAIXA LOJA - DEPTO.OFICINA"
+      } else if (h.includes('data') || h.includes('dt_')) {
         defaults[col.id] = todayStr;
       } else if (h.includes('estado') || h.includes('status') || h.includes('situacao')) {
         defaults[col.id] = 'APROVADO';
@@ -979,64 +992,121 @@ export function ExcelTable({
 
       {/* Modal: Adicionar Novo Lançamento */}
       {isAddModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-2xl border border-slate-200 w-full max-w-lg max-h-[85vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-            <div className="px-5 py-3.5 bg-slate-900 text-white flex items-center justify-between">
-              <div className="flex items-center gap-2">
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-2xl border border-slate-200 w-full max-w-xl max-h-[85vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="px-5 py-4 bg-slate-900 text-white flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
                 <PlusCircle className="w-5 h-5 text-emerald-400" />
-                <h3 className="font-bold text-sm">
+                <h3 className="font-extrabold text-base tracking-wide">
                   Novo Lançamento ({activeTab === 'dealer' ? 'Aba DEALER' : 'Aba SiTef'})
                 </h3>
               </div>
               <button
                 onClick={() => setIsAddModalOpen(false)}
-                className="p-1 text-slate-400 hover:text-white rounded-lg transition-colors"
+                className="p-1 text-slate-400 hover:text-white rounded-lg transition-colors cursor-pointer"
               >
-                <X className="w-4 h-4" />
+                <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleSaveNewRow} className="p-5 overflow-y-auto space-y-4 flex-1">
-              <p className="text-xs text-slate-500">
-                Preencha os campos abaixo para adicionar um novo registro manualmente nesta aba. Os totais do painel serão atualizados automaticamente.
+            <form onSubmit={handleSaveNewRow} className="p-6 overflow-y-auto space-y-5 flex-1">
+              <p className="text-xs text-slate-600 leading-relaxed font-medium">
+                Preencha os campos abaixo para adicionar um novo registro. Selecione a <strong>Empresa</strong> e o <strong>Departamento</strong> nas opções disponíveis.
               </p>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {/* Datalists globais para sugestões instantâneas */}
+              <datalist id="empresas-datalist">
+                {CADASTRO_EMPRESAS.map((emp) => (
+                  <option key={emp} value={emp} />
+                ))}
+              </datalist>
+
+              <datalist id="departamentos-datalist">
+                {CADASTRO_DEPARTAMENTOS.map((dep) => (
+                  <option key={dep} value={dep} />
+                ))}
+              </datalist>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {activeColumns.map((col) => {
                   const label = col.customHeader || col.originalHeader;
+                  const isEmp = isEmpresaColumn(label);
+                  const isDep = isDepartamentoColumn(label);
+
                   return (
-                    <div key={col.id} className="space-y-1">
-                      <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider block truncate">
-                        {label}
+                    <div key={col.id} className="space-y-1.5 sm:col-span-1">
+                      <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block truncate flex items-center gap-1.5">
+                        {isEmp && <Building2 className="w-3.5 h-3.5 text-emerald-600" />}
+                        {isDep && <FolderTree className="w-3.5 h-3.5 text-blue-600" />}
+                        <span>{label}</span>
                       </label>
-                      <input
-                        type="text"
-                        value={newRowFormData[col.id] || ''}
-                        onChange={(e) =>
-                          setNewRowFormData((prev) => ({
-                            ...prev,
-                            [col.id]: e.target.value,
-                          }))
-                        }
-                        placeholder={`Digite ${label}...`}
-                        className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500 bg-white"
-                      />
+
+                      {isEmp ? (
+                        <select
+                          value={newRowFormData[col.id] || ''}
+                          onChange={(e) =>
+                            setNewRowFormData((prev) => ({
+                              ...prev,
+                              [col.id]: e.target.value,
+                            }))
+                          }
+                          className="w-full px-3.5 py-2.5 text-sm font-bold text-slate-900 bg-emerald-50/50 border-2 border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 cursor-pointer shadow-xs transition-all"
+                        >
+                          <option value="">-- Selecione a Empresa (52 Opções) --</option>
+                          {CADASTRO_EMPRESAS.map((emp) => (
+                            <option key={emp} value={emp}>
+                              {emp}
+                            </option>
+                          ))}
+                        </select>
+                      ) : isDep ? (
+                        <select
+                          value={newRowFormData[col.id] || ''}
+                          onChange={(e) =>
+                            setNewRowFormData((prev) => ({
+                              ...prev,
+                              [col.id]: e.target.value,
+                            }))
+                          }
+                          className="w-full px-3.5 py-2.5 text-sm font-bold text-slate-900 bg-blue-50/50 border-2 border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 cursor-pointer shadow-xs transition-all"
+                        >
+                          <option value="">-- Selecione o Departamento --</option>
+                          {CADASTRO_DEPARTAMENTOS.map((dep) => (
+                            <option key={dep} value={dep}>
+                              {dep}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <input
+                          type="text"
+                          value={newRowFormData[col.id] || ''}
+                          onChange={(e) =>
+                            setNewRowFormData((prev) => ({
+                              ...prev,
+                              [col.id]: e.target.value,
+                            }))
+                          }
+                          placeholder={`Digite ${label}...`}
+                          className="w-full px-3.5 py-2.5 text-sm font-semibold text-slate-900 bg-white border-2 border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500 placeholder:text-slate-400 placeholder:font-normal shadow-xs transition-all"
+                        />
+                      )}
                     </div>
                   );
                 })}
               </div>
 
-              <div className="pt-3 border-t border-slate-200 flex items-center justify-end gap-2">
+              <div className="pt-4 border-t border-slate-200 flex items-center justify-end gap-2.5">
                 <button
                   type="button"
                   onClick={() => setIsAddModalOpen(false)}
-                  className="px-4 py-2 border border-slate-300 hover:bg-slate-100 text-slate-700 font-bold rounded-lg text-xs transition-colors"
+                  className="px-4 py-2.5 border border-slate-300 hover:bg-slate-100 text-slate-700 font-bold rounded-lg text-xs transition-colors cursor-pointer"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs shadow-2xs transition-all flex items-center gap-1.5 cursor-pointer"
+                  className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs shadow-md transition-all flex items-center gap-2 cursor-pointer"
                 >
                   <Plus className="w-4 h-4" />
                   <span>Adicionar Lançamento</span>

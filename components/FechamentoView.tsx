@@ -5,6 +5,7 @@ import { FechamentoItem } from '@/lib/fechamento-utils';
 import { FechamentoCaixaModal } from './FechamentoCaixaModal';
 import { HistoricoFechamentoModal } from './HistoricoFechamentoModal';
 import { FechamentoCaixaRecord } from '@/lib/fechamento-caixa-service';
+import { CADASTRO_EMPRESAS, CADASTRO_DEPARTAMENTOS } from '@/lib/cadastros';
 import {
   TrendingUp,
   Scale,
@@ -76,8 +77,8 @@ export function FechamentoView({
   // Modal: Add New Fechamento Launch
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [addForm, setAddForm] = useState({
-    empresa: 'Empresa 01 - Matriz',
-    departamento: 'Financeiro / Cartões',
+    empresa: CADASTRO_EMPRESAS[0], // "BYD - ARRUDA"
+    departamento: CADASTRO_DEPARTAMENTOS[0], // "30129-CAIXA LOJA - DEPTO.OFICINA"
     contaGerencial: '1.01.02 - Cartões de Crédito',
     caixaLoja: 'Loja 01 - Caixa Central',
     data: new Date().toLocaleDateString('pt-BR'),
@@ -1290,12 +1291,12 @@ export function FechamentoView({
 
       {/* Modal: Adicionar Lançamento no Fechamento */}
       {isAddModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-2xl border border-slate-200 w-full max-w-lg overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-            <div className="px-5 py-3.5 bg-amber-600 text-white flex items-center justify-between">
-              <div className="flex items-center gap-2">
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-2xl border border-slate-200 w-full max-w-xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="px-5 py-4 bg-amber-600 text-white flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
                 <PlusCircle className="w-5 h-5 text-white" />
-                <h3 className="font-extrabold text-sm">
+                <h3 className="font-extrabold text-base tracking-wide">
                   + Adicionar Lançamento no Fechamento
                 </h3>
               </div>
@@ -1303,46 +1304,56 @@ export function FechamentoView({
                 onClick={() => setIsAddModalOpen(false)}
                 className="p-1 text-white/80 hover:text-white rounded-lg transition-colors cursor-pointer"
               >
-                <X className="w-4 h-4" />
+                <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleAddSubmit} className="p-5 space-y-4 max-h-[80vh] overflow-y-auto">
+            <form onSubmit={handleAddSubmit} className="p-6 space-y-5 max-h-[85vh] overflow-y-auto">
               <p className="text-xs text-slate-600 leading-relaxed font-medium">
-                Adicione um lançamento manual com valores para Dealer e Sitef.
+                Adicione um lançamento manual selecionando a empresa, departamento e informando os valores para Dealer e Sitef.
               </p>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="space-y-1 sm:col-span-2">
-                  <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider block">
-                    Empresa (Dealer)
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1.5 sm:col-span-2">
+                  <label className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                    <Building2 className="w-3.5 h-3.5 text-amber-600" />
+                    <span>Empresa (52 Cadastradas)</span>
                   </label>
-                  <input
-                    type="text"
+                  <select
                     value={addForm.empresa}
                     onChange={(e) => setAddForm({ ...addForm, empresa: e.target.value })}
-                    placeholder="Ex: Empresa 01 - Matriz"
                     required
-                    className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500 bg-white"
-                  />
+                    className="w-full px-3.5 py-2.5 text-sm font-bold text-slate-900 bg-amber-50/50 border-2 border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 cursor-pointer shadow-xs transition-all"
+                  >
+                    {CADASTRO_EMPRESAS.map((emp) => (
+                      <option key={emp} value={emp}>
+                        {emp}
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
-                <div className="space-y-1">
-                  <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider block">
-                    Departamento
+                <div className="space-y-1.5 sm:col-span-1">
+                  <label className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                    <FolderTree className="w-3.5 h-3.5 text-blue-600" />
+                    <span>Departamento</span>
                   </label>
-                  <input
-                    type="text"
+                  <select
                     value={addForm.departamento}
                     onChange={(e) => setAddForm({ ...addForm, departamento: e.target.value })}
-                    placeholder="Ex: Cartões / Vendas"
                     required
-                    className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500 bg-white"
-                  />
+                    className="w-full px-3.5 py-2.5 text-sm font-bold text-slate-900 bg-blue-50/50 border-2 border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 cursor-pointer shadow-xs transition-all"
+                  >
+                    {CADASTRO_DEPARTAMENTOS.map((dep) => (
+                      <option key={dep} value={dep}>
+                        {dep}
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
-                <div className="space-y-1">
-                  <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider block">
+                <div className="space-y-1.5 sm:col-span-1">
+                  <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
                     Data
                   </label>
                   <input
@@ -1350,25 +1361,25 @@ export function FechamentoView({
                     value={addForm.data}
                     onChange={(e) => setAddForm({ ...addForm, data: e.target.value })}
                     placeholder="DD/MM/AAAA"
-                    className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500 bg-white"
+                    className="w-full px-3.5 py-2.5 text-sm font-semibold text-slate-900 bg-white border-2 border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500 shadow-xs transition-all"
                   />
                 </div>
 
-                <div className="space-y-1 sm:col-span-2">
-                  <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider block">
-                    NSU
+                <div className="space-y-1.5 sm:col-span-2">
+                  <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
+                    NSU / Código Transação
                   </label>
                   <input
                     type="text"
                     value={addForm.nsu}
                     onChange={(e) => setAddForm({ ...addForm, nsu: e.target.value })}
                     placeholder="Ex: 849201"
-                    className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500 bg-white font-mono"
+                    className="w-full px-3.5 py-2.5 text-sm font-bold text-slate-900 bg-white border-2 border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500 font-mono shadow-xs transition-all"
                   />
                 </div>
 
-                <div className="space-y-1">
-                  <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider block">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
                     Bandeira Dealer
                   </label>
                   <input
@@ -1376,12 +1387,12 @@ export function FechamentoView({
                     value={addForm.bandeiraDealer}
                     onChange={(e) => setAddForm({ ...addForm, bandeiraDealer: e.target.value })}
                     placeholder="Ex: VISA, MASTER, ELO"
-                    className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500 bg-white"
+                    className="w-full px-3.5 py-2.5 text-sm font-semibold text-slate-900 bg-white border-2 border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500 shadow-xs transition-all"
                   />
                 </div>
 
-                <div className="space-y-1">
-                  <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider block">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
                     Bandeira Sitef
                   </label>
                   <input
@@ -1389,12 +1400,12 @@ export function FechamentoView({
                     value={addForm.bandeiraSitef}
                     onChange={(e) => setAddForm({ ...addForm, bandeiraSitef: e.target.value })}
                     placeholder="Ex: VISA, MASTER, ELO"
-                    className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500 bg-white"
+                    className="w-full px-3.5 py-2.5 text-sm font-semibold text-slate-900 bg-white border-2 border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500 shadow-xs transition-all"
                   />
                 </div>
 
-                <div className="space-y-1">
-                  <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider block">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
                     Coluna Dealer (R$)
                   </label>
                   <input
@@ -1402,12 +1413,12 @@ export function FechamentoView({
                     value={addForm.valorDealer}
                     onChange={(e) => setAddForm({ ...addForm, valorDealer: e.target.value })}
                     placeholder="0,00"
-                    className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500 bg-white font-bold text-emerald-900"
+                    className="w-full px-3.5 py-2.5 text-sm font-extrabold text-emerald-950 bg-emerald-50/70 border-2 border-emerald-400 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-xs transition-all"
                   />
                 </div>
 
-                <div className="space-y-1">
-                  <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider block">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
                     Coluna Sitef (R$)
                   </label>
                   <input
@@ -1415,22 +1426,22 @@ export function FechamentoView({
                     value={addForm.valorSitef}
                     onChange={(e) => setAddForm({ ...addForm, valorSitef: e.target.value })}
                     placeholder="0,00"
-                    className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500 bg-white font-bold text-blue-900"
+                    className="w-full px-3.5 py-2.5 text-sm font-extrabold text-blue-950 bg-blue-50/70 border-2 border-blue-400 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-xs transition-all"
                   />
                 </div>
               </div>
 
-              <div className="pt-3 border-t border-slate-200 flex items-center justify-end gap-2">
+              <div className="pt-4 border-t border-slate-200 flex items-center justify-end gap-2.5">
                 <button
                   type="button"
                   onClick={() => setIsAddModalOpen(false)}
-                  className="px-4 py-2 border border-slate-300 hover:bg-slate-100 text-slate-700 font-bold rounded-lg text-xs transition-colors cursor-pointer"
+                  className="px-4 py-2.5 border border-slate-300 hover:bg-slate-100 text-slate-700 font-bold rounded-lg text-xs transition-colors cursor-pointer"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg text-xs shadow-2xs transition-all flex items-center gap-1.5 cursor-pointer"
+                  className="px-5 py-2.5 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg text-xs shadow-md transition-all flex items-center gap-2 cursor-pointer"
                 >
                   <Plus className="w-4 h-4" />
                   <span>Adicionar Lançamento</span>

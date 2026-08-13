@@ -44,7 +44,7 @@ Sua tarefa: Responda de forma clara, direta e sucinta (em Português do Brasil) 
 Importante: Não inclua gráficos nem markdown de tabelas pesadas. Responda com tópicos curtos, objetivos e práticos.`;
 
       const response = await ai.models.generateContent({
-        model: 'gemini-3.6-flash',
+        model: 'gemini-2.5-flash',
         contents: prompt,
       });
 
@@ -74,7 +74,7 @@ Para cada sugestão, identifique o ID exato da coluna e o tipo de regra sugerido
 - 'remove_null_rows' (Remover linhas totalmente vazias nesta coluna)`;
 
     const response = await ai.models.generateContent({
-      model: 'gemini-3.6-flash',
+      model: 'gemini-2.5-flash',
       contents: prompt,
       config: {
         responseMimeType: 'application/json',
