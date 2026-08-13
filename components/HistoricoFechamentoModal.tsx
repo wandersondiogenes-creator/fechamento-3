@@ -9,6 +9,8 @@ import {
   exportFechamentoCaixaPDF,
   clearHistoricoFechamento,
 } from '@/lib/fechamento-caixa-service';
+import { getCurrentUser, hasPermission } from '@/lib/auth-service';
+import { logAuditAction } from '@/lib/audit-service';
 import {
   History,
   X,
@@ -26,6 +28,7 @@ import {
   Download,
   AlertTriangle,
   RotateCcw,
+  Unlock,
 } from 'lucide-react';
 
 interface HistoricoFechamentoModalProps {
@@ -39,6 +42,13 @@ export function HistoricoFechamentoModal({ isOpen, onClose, onRestoreRecord }: H
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedRecordDetails, setSelectedRecordDetails] = useState<FechamentoCaixaRecord | null>(null);
   const [confirmClear, setConfirmClear] = useState(false);
+
+  // Reopen Modal State
+  const [reopenRecord, setReopenRecord] = useState<FechamentoCaixaRecord | null>(null);
+  const [reopenReason, setReopenReason] = useState('');
+
+  const currentUser = getCurrentUser();
+  const canReopen = hasPermission('reabrir_fechamento', currentUser);
 
   const loadHistory = () => {
     const list = getHistoricoFechamento();
@@ -229,17 +239,31 @@ export function HistoricoFechamentoModal({ isOpen, onClose, onRestoreRecord }: H
 
                         {/* Action Buttons */}
                         <div className="flex items-center gap-1.5">
+                          {canReopen && (
+                            <button
+                              onClick={() => {
+                                setReopenRecord(rec);
+                                setReopenReason('');
+                              }}
+                              className="px-3 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black rounded-xl text-xs flex items-center gap-1.5 transition-all shadow-2xs cursor-pointer hover:scale-102"
+                              title="Reabrir este fechamento com justificativa gravada na auditoria"
+                            >
+                              <Unlock className="w-3.5 h-3.5" />
+                              <span>Reabrir Lote</span>
+                            </button>
+                          )}
+
                           {onRestoreRecord && (
                             <button
                               onClick={() => {
                                 onRestoreRecord(rec);
                                 onClose();
                               }}
-                              className="px-3 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black rounded-xl text-xs flex items-center gap-1.5 transition-all shadow-2xs cursor-pointer hover:scale-102"
+                              className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 transition-all shadow-2xs cursor-pointer"
                               title="Reexibir este fechamento no painel de conciliação"
                             >
-                              <RotateCcw className="w-3.5 h-3.5" />
-                              <span>Reexibir no Painel</span>
+                              <RotateCcw className="w-3.5 h-3.5 text-amber-400" />
+                              <span>Reexibir</span>
                             </button>
                           )}
 
@@ -365,6 +389,80 @@ export function HistoricoFechamentoModal({ isOpen, onClose, onRestoreRecord }: H
           </button>
         </div>
       </div>
+
+      {/* Modal Confirmar Reabertura do Fechamento */}
+      {reopenRecord && (
+        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-xs z-60 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-md w-full p-6 space-y-4 animate-in zoom-in-95 duration-150">
+            <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
+              <div className="p-2.5 bg-amber-100 text-amber-800 rounded-xl">
+                <Unlock className="w-6 h-6" />
+              </div>
+              <div>
+                <h4 className="font-extrabold text-base text-slate-900">Reabrir Fechamento do Caixa</h4>
+                <p className="text-xs text-slate-500 font-mono">Movimento: {reopenRecord.dataMovimento}</p>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-700 leading-relaxed font-medium">
+              Esta ação reabrirá o fechamento de R$ <strong>{formatBRL(reopenRecord.totalDealer)}</strong> para edições e correções. Uma ocorrência de <strong>REABERTURA_LOTE</strong> será gravada permanentemente na auditoria do Supabase.
+            </p>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
+                Motivo / Justificativa da Reabertura *
+              </label>
+              <textarea
+                required
+                rows={3}
+                value={reopenReason}
+                onChange={(e) => setReopenReason(e.target.value)}
+                placeholder="Ex: Ajuste de divergência encontrada pela auditoria no depto de oficina..."
+                className="w-full p-3 text-xs border-2 border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500 font-medium"
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setReopenRecord(null)}
+                className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold rounded-xl text-xs cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={!reopenReason.trim()}
+                onClick={() => {
+                  if (!reopenReason.trim()) return;
+
+                  // Registra na Auditoria
+                  logAuditAction({
+                    operacao: 'REABERTURA_LOTE',
+                    descricao: `Fechamento do movimento ${reopenRecord.dataMovimento} reaberto por ${currentUser.name}. Motivo: ${reopenReason.trim()}`,
+                    empresa: reopenRecord.empresasNomes.join(', '),
+                    valor: reopenRecord.totalDealer,
+                    situacao_anterior: '100% CONCILIADO - FECHADO',
+                    situacao_nova: 'REABERTO PARA AJUSTES',
+                    lote_id: reopenRecord.id,
+                  });
+
+                  if (onRestoreRecord) {
+                    onRestoreRecord(reopenRecord);
+                  }
+
+                  setReopenRecord(null);
+                  onClose();
+                }}
+                className="px-5 py-2 bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-slate-950 font-black rounded-xl text-xs cursor-pointer shadow-md transition-all flex items-center gap-1.5"
+              >
+                <Unlock className="w-4 h-4" />
+                <span>Confirmar Reabertura</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

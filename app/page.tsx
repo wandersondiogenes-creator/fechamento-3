@@ -13,6 +13,7 @@ import {
 } from '@/lib/excel-utils';
 import { FechamentoItem, generateAutoFechamento } from '@/lib/fechamento-utils';
 import { FechamentoCaixaRecord } from '@/lib/fechamento-caixa-service';
+import { logAuditAction } from '@/lib/audit-service';
 import { SAMPLE_DATASETS } from '@/lib/sample-data';
 import { ExcelHeader } from '@/components/ExcelHeader';
 import { ExcelTable } from '@/components/ExcelTable';
@@ -322,6 +323,13 @@ export default function Home() {
           hasHeaderRow: true,
         });
 
+        logAuditAction({
+          operacao: 'IMPORTACAO_ARQUIVO',
+          descricao: `Importação da planilha SiTef "${fileName}" com ${normalizedRaw.length} lançamentos.`,
+          documento_afetado: fileName,
+          meta_data: { aba: 'sitef', qtd_registros: normalizedRaw.length },
+        });
+
         setAutoOrganizeBanner({
           show: true,
           message: `Planilha "${fileName}" organizada, com nomes de empresas padronizados e tratada no modelo Sitef!`,
@@ -354,6 +362,14 @@ export default function Home() {
         });
 
         const countZero = report.zeroValueRawData?.length || 0;
+
+        logAuditAction({
+          operacao: 'IMPORTACAO_ARQUIVO',
+          descricao: `Importação da planilha Dealer "${fileName}" com ${report.cleanedRawData.length} lançamentos válidos e ${countZero} lançamentos zerados.`,
+          documento_afetado: fileName,
+          meta_data: { aba: activeTab, qtd_validos: report.cleanedRawData.length, qtd_zerados: countZero },
+        });
+
         setAutoOrganizeBanner({
           show: true,
           message: `Planilha "${fileName}" organizada e tratada no modelo DEALER! ${countZero > 0 ? `${countZero} lançamento(s) com valor zerado foram movidos automaticamente para a aba PENDENTE DE CDC e excluídos do DEALER.` : ''}`,
@@ -380,18 +396,38 @@ export default function Home() {
   const handleUpdateCell = (rowIndex: number, colId: string, newValue: any) => {
     const updatedRaw = [...spreadsheetState.rawData];
     if (updatedRaw[rowIndex]) {
+      const oldValue = updatedRaw[rowIndex][colId];
+      const col = spreadsheetState.columns.find((c) => c.id === colId);
+      const colName = col ? col.customHeader || col.originalHeader : colId;
+
       updatedRaw[rowIndex] = {
         ...updatedRaw[rowIndex],
         [colId]: newValue,
       };
       updateProcessedData(spreadsheetState.columns, updatedRaw);
+
+      logAuditAction({
+        operacao: 'ALTERACAO_LANCAMENTO',
+        descricao: `Edição da coluna "${colName}" na linha #${rowIndex + 1} (Aba: ${activeTab.toUpperCase()})`,
+        situacao_anterior: String(oldValue ?? ''),
+        situacao_nova: String(newValue ?? ''),
+        documento_afetado: `Linha #${rowIndex + 1}`,
+      });
     }
   };
 
   // Handler: Delete Row
   const handleDeleteRow = (rowIndex: number) => {
+    const rowToDelete = spreadsheetState.rawData[rowIndex];
     const updatedRaw = spreadsheetState.rawData.filter((_, idx) => idx !== rowIndex);
     updateProcessedData(spreadsheetState.columns, updatedRaw);
+
+    logAuditAction({
+      operacao: 'EXCLUSAO_LANCAMENTO',
+      descricao: `Exclusão manual do lançamento na linha #${rowIndex + 1} (Aba: ${activeTab.toUpperCase()})`,
+      documento_afetado: `Linha #${rowIndex + 1}`,
+      meta_data: rowToDelete || {},
+    });
   };
 
   // Handler: Delete Multiple Rows
@@ -399,6 +435,12 @@ export default function Home() {
     const indexSet = new Set(rowIndexes);
     const updatedRaw = spreadsheetState.rawData.filter((_, idx) => !indexSet.has(idx));
     updateProcessedData(spreadsheetState.columns, updatedRaw);
+
+    logAuditAction({
+      operacao: 'EXCLUSAO_LANCAMENTO',
+      descricao: `Exclusão em lote de ${rowIndexes.length} lançamentos (Aba: ${activeTab.toUpperCase()})`,
+      documento_afetado: `${rowIndexes.length} registros`,
+    });
   };
 
   // Handler: Add New Row / Launch
@@ -412,6 +454,12 @@ export default function Home() {
     }
     const updatedRaw = [rowToAdd, ...spreadsheetState.rawData];
     updateProcessedData(spreadsheetState.columns, updatedRaw);
+
+    logAuditAction({
+      operacao: 'CRIACAO_LANCAMENTO',
+      descricao: `Inclusão manual de novo lançamento (Aba: ${activeTab.toUpperCase()})`,
+      meta_data: rowToAdd || {},
+    });
   };
 
   // Handler: Apply Preset

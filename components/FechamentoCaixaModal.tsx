@@ -7,6 +7,8 @@ import {
   exportFechamentoCaixaExcel,
   exportFechamentoCaixaPDF,
 } from '@/lib/fechamento-caixa-service';
+import { getCurrentUser } from '@/lib/auth-service';
+import { logAuditAction } from '@/lib/audit-service';
 import { FechamentoItem } from '@/lib/fechamento-utils';
 import {
   CheckCircle2,
@@ -144,6 +146,22 @@ export function FechamentoCaixaModal({
 
     saveFechamentoCaixa(record);
     setLastRecord(record);
+
+    // Audit Logging to Supabase
+    logAuditAction({
+      operacao: 'FECHAMENTO_LOTE',
+      descricao: `Fechamento do caixa concluído com 100% de conciliação para o movimento ${formattedDateMovimentoStr}`,
+      empresa: record.empresasNomes.join(', '),
+      valor: totalDealer,
+      situacao_anterior: 'EM CONCILIACAO',
+      situacao_nova: '100% CONCILIADO - FECHADO',
+      lote_id: record.id,
+      meta_data: {
+        operador: record.operador,
+        qtd_itens: countTotal,
+        qtd_empresas: record.countEmpresas,
+      },
+    });
 
     // Downloads
     if (downloadExcel) {
