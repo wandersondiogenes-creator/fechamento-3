@@ -34,6 +34,11 @@ function buildEmptySpreadsheetState(defaultName: string = 'DEALER.xlsx'): Spread
 }
 
 export default function Home() {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   const [activeTab, setActiveTab] = useState<'dealer' | 'sitef' | 'pendente_cdc' | 'fechamento'>('dealer');
 
   const [dealerState, setDealerState] = useState<SpreadsheetState>(() =>
@@ -699,6 +704,17 @@ export default function Home() {
       currency: 'BRL',
     }).format(val);
   };
+
+  if (!mounted) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center font-sans">
+        <div className="flex items-center gap-3 bg-slate-900/80 border border-slate-800 px-5 py-3 rounded-2xl shadow-xl">
+          <div className="w-5 h-5 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin" />
+          <span className="text-sm font-semibold text-slate-300">Carregando Conciliador Financeiro...</span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 font-sans antialiased relative">
