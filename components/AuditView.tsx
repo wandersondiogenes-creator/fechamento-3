@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { AuditLogEntry, AuditLogFilters, UserProfile } from '@/types/audit';
 import {
   fetchAuditLogs,
@@ -71,7 +71,7 @@ export function AuditView() {
   const [freeQuery, setFreeQuery] = useState('');
 
   // Auto-fetch data
-  const loadLogs = async () => {
+  const loadLogs = useCallback(async () => {
     setLoading(true);
     const filters: AuditLogFilters = {
       user_id: filterUser || undefined,
@@ -91,19 +91,6 @@ export function AuditView() {
     const result = await fetchAuditLogs(filters);
     setLogs(result);
     setLoading(false);
-  };
-
-  useEffect(() => {
-    loadLogs();
-
-    // Inscrição em tempo real no Supabase
-    const unsubscribe = subscribeToAuditRealtime((newLog) => {
-      setLogs((prev) => [newLog, ...prev]);
-    });
-
-    return () => {
-      unsubscribe();
-    };
   }, [
     filterUser,
     filterEmpresa,
@@ -118,6 +105,19 @@ export function AuditView() {
     filterValorMax,
     freeQuery,
   ]);
+
+  useEffect(() => {
+    loadLogs();
+
+    // Inscrição em tempo real no Supabase
+    const unsubscribe = subscribeToAuditRealtime((newLog) => {
+      setLogs((prev) => [newLog, ...prev]);
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [loadLogs]);
 
   const allUsersList = useMemo(() => getAllUsers(), []);
 

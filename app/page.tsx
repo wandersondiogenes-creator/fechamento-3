@@ -14,14 +14,18 @@ import {
 import { FechamentoItem, generateAutoFechamento } from '@/lib/fechamento-utils';
 import { FechamentoCaixaRecord } from '@/lib/fechamento-caixa-service';
 import { logAuditAction } from '@/lib/audit-service';
+import { getCurrentUser } from '@/lib/auth-service';
+import { UserProfile } from '@/types/audit';
 import { SAMPLE_DATASETS } from '@/lib/sample-data';
 import { ExcelHeader } from '@/components/ExcelHeader';
 import { ExcelTable } from '@/components/ExcelTable';
 import { FechamentoView } from '@/components/FechamentoView';
+import { AuditView } from '@/components/AuditView';
+import { UserSelectorModal } from '@/components/UserSelectorModal';
 import { ColumnRuleModal } from '@/components/ColumnRuleModal';
 import { PresetsModal } from '@/components/PresetsModal';
 import { AIAssistantDrawer } from '@/components/AIAssistantDrawer';
-import { Sparkles, FileSpreadsheet, Zap, CheckCircle2, Bookmark, FolderOpen, X, TrendingUp, TrendingDown, Wallet, Clock, RotateCcw, CreditCard } from 'lucide-react';
+import { Sparkles, FileSpreadsheet, Zap, CheckCircle2, Bookmark, FolderOpen, X, TrendingUp, TrendingDown, Wallet, Clock, RotateCcw, CreditCard, ShieldCheck } from 'lucide-react';
 
 function buildEmptySpreadsheetState(defaultName: string = 'DEALER.xlsx'): SpreadsheetState {
   return {
@@ -40,7 +44,9 @@ export default function Home() {
     setMounted(true);
   }, []);
 
-  const [activeTab, setActiveTab] = useState<'dealer' | 'sitef' | 'pendente_cdc' | 'fechamento'>('dealer');
+  const [activeTab, setActiveTab] = useState<'dealer' | 'sitef' | 'pendente_cdc' | 'fechamento' | 'auditoria'>('dealer');
+  const [currentUser, setCurrentUser] = useState<UserProfile>(() => getCurrentUser());
+  const [isUserModalOpen, setIsUserModalOpen] = useState(false);
 
   const [dealerState, setDealerState] = useState<SpreadsheetState>(() =>
     buildEmptySpreadsheetState('DEALER.xlsx')
@@ -755,23 +761,28 @@ export default function Home() {
 
   if (!mounted) {
     return (
-      <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center font-sans">
-        <div className="flex items-center gap-3 bg-slate-900/80 border border-slate-800 px-5 py-3 rounded-2xl shadow-xl">
-          <div className="w-5 h-5 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin" />
-          <span className="text-sm font-semibold text-slate-300">Carregando Conciliador Financeiro...</span>
+      <div className="min-h-screen bg-[#0A0E17] text-slate-100 flex items-center justify-center font-sans">
+        <div className="flex items-center gap-3 bg-[#131B2A]/90 border border-white/10 px-6 py-4 rounded-2xl shadow-2xl backdrop-blur-xl">
+          <div className="w-5 h-5 border-2 border-[#007AFF] border-t-transparent rounded-full animate-spin" />
+          <span className="text-sm font-medium text-slate-200">Carregando Wanfinance Pro...</span>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans antialiased relative">
-      {/* Background Treasury Image with dark executive tone overlay */}
+    <div className="min-h-screen bg-[#080C14] text-slate-100 font-sans antialiased relative selection:bg-[#007AFF]/30 selection:text-white">
+      {/* Apple Space Black Soft Ambient Glow Backdrops */}
+      <div className="fixed top-0 left-1/4 w-[600px] h-[300px] bg-blue-600/10 rounded-full blur-[140px] pointer-events-none" />
+      <div className="fixed top-1/3 right-1/4 w-[500px] h-[300px] bg-indigo-600/10 rounded-full blur-[140px] pointer-events-none" />
+      <div className="fixed bottom-0 left-1/3 w-[600px] h-[300px] bg-purple-600/08 rounded-full blur-[160px] pointer-events-none" />
+
+      {/* Subtle Financial Wallpaper Texture */}
       <div 
-        className="fixed inset-0 z-0 bg-cover bg-center bg-no-repeat pointer-events-none opacity-25 filter contrast-125"
+        className="fixed inset-0 z-0 bg-cover bg-center bg-no-repeat pointer-events-none opacity-15 filter contrast-125 mix-blend-screen"
         style={{ backgroundImage: `url('/treasury_bg.jpg')` }}
       />
-      <div className="fixed inset-0 z-0 bg-gradient-to-b from-slate-950/85 via-slate-950/90 to-slate-950 pointer-events-none" />
+      <div className="fixed inset-0 z-0 bg-gradient-to-b from-[#080C14]/90 via-[#080C14]/95 to-[#080C14] pointer-events-none" />
 
       <div className="relative z-10 min-h-screen flex flex-col">
         {/* Hidden Master File Input */}
@@ -787,12 +798,14 @@ export default function Home() {
           className="hidden"
         />
 
-        {/* Excel Ribbon & Top System Navigation Header */}
+        {/* Apple macOS / iPadOS Pro System Header */}
         <ExcelHeader
           state={spreadsheetState}
           activeTab={activeTab}
           onTabChange={(tab) => setActiveTab(tab)}
           tabCounts={tabCounts}
+          currentUser={currentUser}
+          onOpenUserModal={() => setIsUserModalOpen(true)}
           onImportFile={handleImportFile}
           onTriggerFileImport={triggerFileImport}
           onAutoOrganize={handleAutoOrganize}
@@ -815,8 +828,10 @@ export default function Home() {
         />
 
         {/* Main Container Area */}
-        <main className="flex-1 max-w-7xl w-full mx-auto p-3 sm:p-4 flex flex-col gap-3">
-          {activeTab === 'fechamento' ? (
+        <main className="flex-1 max-w-7xl w-full mx-auto p-3 sm:p-5 flex flex-col gap-4">
+          {activeTab === 'auditoria' ? (
+            <AuditView />
+          ) : activeTab === 'fechamento' ? (
             <FechamentoView
               fechamentoItems={allFechamentoItems}
               onAddFechamentoItem={handleAddFechamentoItem}
@@ -831,59 +846,59 @@ export default function Home() {
             />
           ) : (
             <>
-          {/* Metric Summary Cards ("Quadrados com Soma do Valor de Entrada e Outros Totais") */}
-          <div className={`grid grid-cols-1 sm:grid-cols-2 ${activeTab === 'sitef' ? 'lg:grid-cols-5' : 'lg:grid-cols-4'} gap-3`}>
+          {/* Apple Metric Summary Cards */}
+          <div className={`grid grid-cols-1 sm:grid-cols-2 ${activeTab === 'sitef' ? 'lg:grid-cols-5' : 'lg:grid-cols-4'} gap-3.5`}>
             {/* Card 1: Total de Entrada / Valor Bruto */}
-            <div className="bg-slate-900/90 border border-emerald-500/30 rounded-xl p-3.5 shadow-xl backdrop-blur-md hover:border-emerald-500/50 transition-all flex items-center justify-between gap-3">
+            <div className="bg-[#121927]/80 border border-white/[0.08] hover:border-emerald-500/40 rounded-2xl p-4 shadow-xl shadow-black/40 backdrop-blur-2xl transition-all duration-200 group flex items-center justify-between gap-3">
               <div className="space-y-1">
-                <span className="text-[11px] font-extrabold uppercase tracking-wider text-emerald-400">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-400">
                   {summaryMetrics.labelEntrada}
                 </span>
-                <div className="text-xl font-black text-white tracking-tight">
+                <div className="text-2xl font-black text-white tracking-tight font-mono">
                   {formatBRL(summaryMetrics.totalEntrada)}
                 </div>
-                <p className="text-[10px] text-emerald-300/80 font-semibold">
+                <p className="text-[11px] text-slate-400 font-medium">
                   {summaryMetrics.hasData ? `${summaryMetrics.count} registros calculados` : 'Aguardando importação'}
                 </p>
               </div>
-              <div className="w-10 h-10 bg-emerald-500/20 text-emerald-400 rounded-xl flex items-center justify-center flex-shrink-0 border border-emerald-500/30">
+              <div className="w-11 h-11 bg-emerald-500/15 text-emerald-400 rounded-2xl flex items-center justify-center flex-shrink-0 border border-emerald-500/25 shadow-inner">
                 <TrendingUp className="w-5 h-5" />
               </div>
             </div>
 
             {/* Card 2: Total de Saída / Taxas */}
-            <div className="bg-slate-900/90 border border-rose-500/30 rounded-xl p-3.5 shadow-xl backdrop-blur-md hover:border-rose-500/50 transition-all flex items-center justify-between gap-3">
+            <div className="bg-[#121927]/80 border border-white/[0.08] hover:border-rose-500/40 rounded-2xl p-4 shadow-xl shadow-black/40 backdrop-blur-2xl transition-all duration-200 group flex items-center justify-between gap-3">
               <div className="space-y-1">
-                <span className="text-[11px] font-extrabold uppercase tracking-wider text-rose-400">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-rose-400">
                   {summaryMetrics.labelSaida}
                 </span>
-                <div className="text-xl font-black text-white tracking-tight">
+                <div className="text-2xl font-black text-white tracking-tight font-mono">
                   {formatBRL(summaryMetrics.totalSaida)}
                 </div>
-                <p className="text-[10px] text-rose-300/80 font-semibold">
+                <p className="text-[11px] text-slate-400 font-medium">
                   {summaryMetrics.hasData ? 'Soma de taxas / saídas' : 'Aguardando importação'}
                 </p>
               </div>
-              <div className="w-10 h-10 bg-rose-500/20 text-rose-400 rounded-xl flex items-center justify-center flex-shrink-0 border border-rose-500/30">
+              <div className="w-11 h-11 bg-rose-500/15 text-rose-400 rounded-2xl flex items-center justify-center flex-shrink-0 border border-rose-500/25 shadow-inner">
                 <TrendingDown className="w-5 h-5" />
               </div>
             </div>
 
             {/* Card 3 (Sitef only): Estornados */}
             {activeTab === 'sitef' && (
-              <div className="bg-slate-900/90 border border-purple-500/30 rounded-xl p-3.5 shadow-xl backdrop-blur-md hover:border-purple-500/50 transition-all flex items-center justify-between gap-3">
+              <div className="bg-[#121927]/80 border border-white/[0.08] hover:border-purple-500/40 rounded-2xl p-4 shadow-xl shadow-black/40 backdrop-blur-2xl transition-all duration-200 group flex items-center justify-between gap-3">
                 <div className="space-y-1">
-                  <span className="text-[11px] font-extrabold uppercase tracking-wider text-purple-400">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-purple-400">
                     Estornados
                   </span>
-                  <div className="text-xl font-black text-white tracking-tight">
+                  <div className="text-2xl font-black text-white tracking-tight font-mono">
                     {formatBRL(summaryMetrics.totalEstornados)}
                   </div>
-                  <p className="text-[10px] text-purple-300/80 font-semibold">
+                  <p className="text-[11px] text-slate-400 font-medium">
                     {summaryMetrics.countEstornados} transação(ões) estornada(s)
                   </p>
                 </div>
-                <div className="w-10 h-10 bg-purple-500/20 text-purple-400 rounded-xl flex items-center justify-center flex-shrink-0 border border-purple-500/30">
+                <div className="w-11 h-11 bg-purple-500/15 text-purple-400 rounded-2xl flex items-center justify-center flex-shrink-0 border border-purple-500/25 shadow-inner">
                   <RotateCcw className="w-5 h-5" />
                 </div>
               </div>
@@ -891,57 +906,57 @@ export default function Home() {
 
             {/* Card 4 (Sitef only): Pendentes */}
             {activeTab === 'sitef' && (
-              <div className="bg-slate-900/90 border border-amber-500/30 rounded-xl p-3.5 shadow-xl backdrop-blur-md hover:border-amber-500/50 transition-all flex items-center justify-between gap-3">
+              <div className="bg-[#121927]/80 border border-white/[0.08] hover:border-amber-500/40 rounded-2xl p-4 shadow-xl shadow-black/40 backdrop-blur-2xl transition-all duration-200 group flex items-center justify-between gap-3">
                 <div className="space-y-1">
-                  <span className="text-[11px] font-extrabold uppercase tracking-wider text-amber-400">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-amber-400">
                     Pendentes
                   </span>
-                  <div className="text-xl font-black text-white tracking-tight">
+                  <div className="text-2xl font-black text-white tracking-tight font-mono">
                     {formatBRL(summaryMetrics.totalPendentes)}
                   </div>
-                  <p className="text-[10px] text-amber-300/80 font-semibold">
+                  <p className="text-[11px] text-slate-400 font-medium">
                     {summaryMetrics.countPendentes} transação(ões) pendente(s)
                   </p>
                 </div>
-                <div className="w-10 h-10 bg-amber-500/20 text-amber-400 rounded-xl flex items-center justify-center flex-shrink-0 border border-amber-500/30">
+                <div className="w-11 h-11 bg-amber-500/15 text-amber-400 rounded-2xl flex items-center justify-center flex-shrink-0 border border-amber-500/25 shadow-inner">
                   <Clock className="w-5 h-5" />
                 </div>
               </div>
             )}
 
             {/* Card: Saldo / Valor Líquido */}
-            <div className="bg-slate-900/90 border border-blue-500/30 rounded-xl p-3.5 shadow-xl backdrop-blur-md hover:border-blue-500/50 transition-all flex items-center justify-between gap-3">
+            <div className="bg-[#121927]/80 border border-white/[0.08] hover:border-blue-500/40 rounded-2xl p-4 shadow-xl shadow-black/40 backdrop-blur-2xl transition-all duration-200 group flex items-center justify-between gap-3">
               <div className="space-y-1">
-                <span className="text-[11px] font-extrabold uppercase tracking-wider text-blue-400">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-[#0A84FF]">
                   {summaryMetrics.labelSaldo}
                 </span>
-                <div className={`text-xl font-black tracking-tight ${summaryMetrics.saldo >= 0 ? 'text-white' : 'text-rose-400'}`}>
+                <div className={`text-2xl font-black tracking-tight font-mono ${summaryMetrics.saldo >= 0 ? 'text-white' : 'text-rose-400'}`}>
                   {formatBRL(summaryMetrics.saldo)}
                 </div>
-                <p className="text-[10px] text-blue-300/80 font-semibold">
+                <p className="text-[11px] text-slate-400 font-medium">
                   {activeTab === 'dealer' ? 'Resultado (Entradas − Saídas)' : 'Total líquido repassado'}
                 </p>
               </div>
-              <div className="w-10 h-10 bg-blue-500/20 text-blue-400 rounded-xl flex items-center justify-center flex-shrink-0 border border-blue-500/30">
+              <div className="w-11 h-11 bg-blue-500/15 text-[#0A84FF] rounded-2xl flex items-center justify-center flex-shrink-0 border border-blue-500/25 shadow-inner">
                 <Wallet className="w-5 h-5" />
               </div>
             </div>
 
             {/* Card (Dealer only): Total de Registros */}
             {activeTab === 'dealer' && (
-              <div className="bg-slate-900/90 border border-slate-700 rounded-xl p-3.5 shadow-xl backdrop-blur-md hover:border-slate-600 transition-all flex items-center justify-between gap-3">
+              <div className="bg-[#121927]/80 border border-white/[0.08] hover:border-white/20 rounded-2xl p-4 shadow-xl shadow-black/40 backdrop-blur-2xl transition-all duration-200 group flex items-center justify-between gap-3">
                 <div className="space-y-1">
-                  <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-300">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-slate-300">
                     Total de Registros
                   </span>
-                  <div className="text-xl font-black text-white tracking-tight">
+                  <div className="text-2xl font-black text-white tracking-tight font-mono">
                     {summaryMetrics.count} <span className="text-xs font-semibold text-slate-400">linhas</span>
                   </div>
-                  <p className="text-[10px] text-slate-400 font-semibold">
+                  <p className="text-[11px] text-slate-400 font-medium">
                     Aba DEALER
                   </p>
                 </div>
-                <div className="w-10 h-10 bg-slate-800 text-slate-300 rounded-xl flex items-center justify-center flex-shrink-0 border border-slate-700">
+                <div className="w-11 h-11 bg-white/10 text-slate-200 rounded-2xl flex items-center justify-center flex-shrink-0 border border-white/10 shadow-inner">
                   <FileSpreadsheet className="w-5 h-5" />
                 </div>
               </div>
@@ -949,19 +964,19 @@ export default function Home() {
 
             {/* Card (Pendente CDC only): Status CDC */}
             {activeTab === 'pendente_cdc' && (
-              <div className="bg-slate-900/90 border border-amber-500/30 rounded-xl p-3.5 shadow-xl backdrop-blur-md hover:border-amber-500/50 transition-all flex items-center justify-between gap-3">
+              <div className="bg-[#121927]/80 border border-white/[0.08] hover:border-amber-500/40 rounded-2xl p-4 shadow-xl shadow-black/40 backdrop-blur-2xl transition-all duration-200 group flex items-center justify-between gap-3">
                 <div className="space-y-1">
-                  <span className="text-[11px] font-extrabold uppercase tracking-wider text-amber-400">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-amber-400">
                     Pendências CDC
                   </span>
-                  <div className="text-xl font-black text-white tracking-tight">
+                  <div className="text-2xl font-black text-white tracking-tight font-mono">
                     {summaryMetrics.count} <span className="text-xs font-semibold text-amber-300">lançamento(s)</span>
                   </div>
-                  <p className="text-[10px] text-amber-300/80 font-semibold">
+                  <p className="text-[11px] text-slate-400 font-medium">
                     Entrada zerada (R$ 0,00)
                   </p>
                 </div>
-                <div className="w-10 h-10 bg-amber-500/20 text-amber-400 rounded-xl flex items-center justify-center flex-shrink-0 border border-amber-500/30">
+                <div className="w-11 h-11 bg-amber-500/15 text-amber-400 rounded-2xl flex items-center justify-center flex-shrink-0 border border-amber-500/25 shadow-inner">
                   <Clock className="w-5 h-5" />
                 </div>
               </div>
@@ -984,6 +999,7 @@ export default function Home() {
               onOpenColumnModal={handleOpenColumnModal}
               onOpenAIDrawer={() => setIsAIDrawerOpen(true)}
               onTriggerFileImport={triggerFileImport}
+              onExport={handleExport}
             />
           </div>
             </>
@@ -1014,6 +1030,15 @@ export default function Home() {
         rawData={spreadsheetState.rawData}
         onApplySingleSuggestion={handleApplySingleAISuggestion}
         onApplyAllSuggestions={handleApplyAllAISuggestions}
+      />
+
+      {/* Operator Switcher / User Management Modal */}
+      <UserSelectorModal
+        isOpen={isUserModalOpen}
+        onClose={() => setIsUserModalOpen(false)}
+        onUserChanged={(newUser) => {
+          setCurrentUser(newUser);
+        }}
       />
     </div>
   );
