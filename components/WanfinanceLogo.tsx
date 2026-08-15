@@ -67,7 +67,7 @@ export function WanfinanceLogo({
       <div className="flex flex-col justify-center">
         <div className="flex items-center gap-1.5">
           <span
-            className={`font-extrabold tracking-tight text-white ${
+            className={`font-extrabold tracking-tight text-[#1D1D1F] ${
               isSm ? 'text-xs' : isLg ? 'text-base' : 'text-sm'
             }`}
             style={{
@@ -79,7 +79,7 @@ export function WanfinanceLogo({
           </span>
 
           {/* Pill Badge 'Pro' */}
-          <span className="px-1.5 py-0.2 bg-white/15 text-slate-200 border border-white/10 text-[9px] font-bold rounded-full tracking-wide uppercase backdrop-blur-xs">
+          <span className="px-1.5 py-0.2 bg-slate-100 text-slate-800 border border-slate-200 text-[9px] font-bold rounded-full tracking-wide uppercase shadow-2xs">
             Pro
           </span>
         </div>
@@ -87,7 +87,7 @@ export function WanfinanceLogo({
         {/* Subtitle Pill 'Excellence' */}
         {showSubtitle && (
           <div className="mt-0.5">
-            <span className="inline-block px-1.5 py-0.2 bg-slate-800/80 text-slate-400 border border-slate-700/60 rounded text-[8.5px] font-medium tracking-wide">
+            <span className="inline-block px-1.5 py-0.2 bg-slate-100 text-slate-500 border border-slate-200/80 rounded text-[8.5px] font-medium tracking-wide">
               Excellence
             </span>
           </div>

@@ -761,28 +761,24 @@ export default function Home() {
 
   if (!mounted) {
     return (
-      <div className="min-h-screen bg-[#0A0E17] text-slate-100 flex items-center justify-center font-sans">
-        <div className="flex items-center gap-3 bg-[#131B2A]/90 border border-white/10 px-6 py-4 rounded-2xl shadow-2xl backdrop-blur-xl">
+      <div className="min-h-screen bg-[#F5F5F7] text-[#1D1D1F] flex items-center justify-center font-sans">
+        <div className="flex items-center gap-3 bg-white/90 border border-black/[0.08] px-6 py-4 rounded-2xl shadow-xl backdrop-blur-xl">
           <div className="w-5 h-5 border-2 border-[#007AFF] border-t-transparent rounded-full animate-spin" />
-          <span className="text-sm font-medium text-slate-200">Carregando Wanfinance Pro...</span>
+          <span className="text-sm font-medium text-slate-700">Carregando Wanfinance Pro...</span>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[#080C14] text-slate-100 font-sans antialiased relative selection:bg-[#007AFF]/30 selection:text-white">
-      {/* Apple Space Black Soft Ambient Glow Backdrops */}
-      <div className="fixed top-0 left-1/4 w-[600px] h-[300px] bg-blue-600/10 rounded-full blur-[140px] pointer-events-none" />
-      <div className="fixed top-1/3 right-1/4 w-[500px] h-[300px] bg-indigo-600/10 rounded-full blur-[140px] pointer-events-none" />
-      <div className="fixed bottom-0 left-1/3 w-[600px] h-[300px] bg-purple-600/08 rounded-full blur-[160px] pointer-events-none" />
+    <div className="min-h-screen bg-[#F5F5F7] text-[#1D1D1F] font-sans antialiased relative selection:bg-[#007AFF]/20 selection:text-[#0071E3]">
+      {/* Apple Dynamic Light Ambient Shimmers */}
+      <div className="fixed top-0 left-1/4 w-[600px] h-[300px] bg-blue-400/[0.05] rounded-full blur-[140px] pointer-events-none" />
+      <div className="fixed top-1/3 right-1/4 w-[500px] h-[300px] bg-indigo-400/[0.04] rounded-full blur-[140px] pointer-events-none" />
+      <div className="fixed bottom-0 left-1/3 w-[600px] h-[300px] bg-purple-400/[0.04] rounded-full blur-[160px] pointer-events-none" />
 
-      {/* Subtle Financial Wallpaper Texture */}
-      <div 
-        className="fixed inset-0 z-0 bg-cover bg-center bg-no-repeat pointer-events-none opacity-15 filter contrast-125 mix-blend-screen"
-        style={{ backgroundImage: `url('/treasury_bg.jpg')` }}
-      />
-      <div className="fixed inset-0 z-0 bg-gradient-to-b from-[#080C14]/90 via-[#080C14]/95 to-[#080C14] pointer-events-none" />
+      {/* Subtle Ceramic Grid Background Texture */}
+      <div className="fixed inset-0 z-0 bg-[radial-gradient(#00000008_1px,transparent_1px)] [background-size:24px_24px] pointer-events-none" />
 
       <div className="relative z-10 min-h-screen flex flex-col">
         {/* Hidden Master File Input */}
@@ -846,59 +842,59 @@ export default function Home() {
             />
           ) : (
             <>
-          {/* Apple Metric Summary Cards */}
+          {/* Apple iPhone Pro Metric Summary Cards */}
           <div className={`grid grid-cols-1 sm:grid-cols-2 ${activeTab === 'sitef' ? 'lg:grid-cols-5' : 'lg:grid-cols-4'} gap-3.5`}>
             {/* Card 1: Total de Entrada / Valor Bruto */}
-            <div className="bg-[#121927]/80 border border-white/[0.08] hover:border-emerald-500/40 rounded-2xl p-4 shadow-xl shadow-black/40 backdrop-blur-2xl transition-all duration-200 group flex items-center justify-between gap-3">
+            <div className="bg-white/90 border border-black/[0.06] hover:border-emerald-500/40 rounded-2xl p-4 shadow-[0_2px_12px_rgba(0,0,0,0.03)] hover:shadow-md backdrop-blur-xl transition-all duration-200 group flex items-center justify-between gap-3">
               <div className="space-y-1">
-                <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-400">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-600">
                   {summaryMetrics.labelEntrada}
                 </span>
-                <div className="text-2xl font-black text-white tracking-tight font-mono">
+                <div className="text-2xl font-black text-[#1D1D1F] tracking-tight font-mono">
                   {formatBRL(summaryMetrics.totalEntrada)}
                 </div>
-                <p className="text-[11px] text-slate-400 font-medium">
+                <p className="text-[11px] text-slate-500 font-medium">
                   {summaryMetrics.hasData ? `${summaryMetrics.count} registros calculados` : 'Aguardando importação'}
                 </p>
               </div>
-              <div className="w-11 h-11 bg-emerald-500/15 text-emerald-400 rounded-2xl flex items-center justify-center flex-shrink-0 border border-emerald-500/25 shadow-inner">
+              <div className="w-11 h-11 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center flex-shrink-0 border border-emerald-100 shadow-2xs">
                 <TrendingUp className="w-5 h-5" />
               </div>
             </div>
 
             {/* Card 2: Total de Saída / Taxas */}
-            <div className="bg-[#121927]/80 border border-white/[0.08] hover:border-rose-500/40 rounded-2xl p-4 shadow-xl shadow-black/40 backdrop-blur-2xl transition-all duration-200 group flex items-center justify-between gap-3">
+            <div className="bg-white/90 border border-black/[0.06] hover:border-rose-500/40 rounded-2xl p-4 shadow-[0_2px_12px_rgba(0,0,0,0.03)] hover:shadow-md backdrop-blur-xl transition-all duration-200 group flex items-center justify-between gap-3">
               <div className="space-y-1">
-                <span className="text-[11px] font-bold uppercase tracking-wider text-rose-400">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-rose-600">
                   {summaryMetrics.labelSaida}
                 </span>
-                <div className="text-2xl font-black text-white tracking-tight font-mono">
+                <div className="text-2xl font-black text-[#1D1D1F] tracking-tight font-mono">
                   {formatBRL(summaryMetrics.totalSaida)}
                 </div>
-                <p className="text-[11px] text-slate-400 font-medium">
+                <p className="text-[11px] text-slate-500 font-medium">
                   {summaryMetrics.hasData ? 'Soma de taxas / saídas' : 'Aguardando importação'}
                 </p>
               </div>
-              <div className="w-11 h-11 bg-rose-500/15 text-rose-400 rounded-2xl flex items-center justify-center flex-shrink-0 border border-rose-500/25 shadow-inner">
+              <div className="w-11 h-11 bg-rose-50 text-rose-600 rounded-2xl flex items-center justify-center flex-shrink-0 border border-rose-100 shadow-2xs">
                 <TrendingDown className="w-5 h-5" />
               </div>
             </div>
 
             {/* Card 3 (Sitef only): Estornados */}
             {activeTab === 'sitef' && (
-              <div className="bg-[#121927]/80 border border-white/[0.08] hover:border-purple-500/40 rounded-2xl p-4 shadow-xl shadow-black/40 backdrop-blur-2xl transition-all duration-200 group flex items-center justify-between gap-3">
+              <div className="bg-white/90 border border-black/[0.06] hover:border-purple-500/40 rounded-2xl p-4 shadow-[0_2px_12px_rgba(0,0,0,0.03)] hover:shadow-md backdrop-blur-xl transition-all duration-200 group flex items-center justify-between gap-3">
                 <div className="space-y-1">
-                  <span className="text-[11px] font-bold uppercase tracking-wider text-purple-400">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-purple-600">
                     Estornados
                   </span>
-                  <div className="text-2xl font-black text-white tracking-tight font-mono">
+                  <div className="text-2xl font-black text-[#1D1D1F] tracking-tight font-mono">
                     {formatBRL(summaryMetrics.totalEstornados)}
                   </div>
-                  <p className="text-[11px] text-slate-400 font-medium">
+                  <p className="text-[11px] text-slate-500 font-medium">
                     {summaryMetrics.countEstornados} transação(ões) estornada(s)
                   </p>
                 </div>
-                <div className="w-11 h-11 bg-purple-500/15 text-purple-400 rounded-2xl flex items-center justify-center flex-shrink-0 border border-purple-500/25 shadow-inner">
+                <div className="w-11 h-11 bg-purple-50 text-purple-600 rounded-2xl flex items-center justify-center flex-shrink-0 border border-purple-100 shadow-2xs">
                   <RotateCcw className="w-5 h-5" />
                 </div>
               </div>
@@ -906,57 +902,57 @@ export default function Home() {
 
             {/* Card 4 (Sitef only): Pendentes */}
             {activeTab === 'sitef' && (
-              <div className="bg-[#121927]/80 border border-white/[0.08] hover:border-amber-500/40 rounded-2xl p-4 shadow-xl shadow-black/40 backdrop-blur-2xl transition-all duration-200 group flex items-center justify-between gap-3">
+              <div className="bg-white/90 border border-black/[0.06] hover:border-amber-500/40 rounded-2xl p-4 shadow-[0_2px_12px_rgba(0,0,0,0.03)] hover:shadow-md backdrop-blur-xl transition-all duration-200 group flex items-center justify-between gap-3">
                 <div className="space-y-1">
-                  <span className="text-[11px] font-bold uppercase tracking-wider text-amber-400">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-amber-600">
                     Pendentes
                   </span>
-                  <div className="text-2xl font-black text-white tracking-tight font-mono">
+                  <div className="text-2xl font-black text-[#1D1D1F] tracking-tight font-mono">
                     {formatBRL(summaryMetrics.totalPendentes)}
                   </div>
-                  <p className="text-[11px] text-slate-400 font-medium">
+                  <p className="text-[11px] text-slate-500 font-medium">
                     {summaryMetrics.countPendentes} transação(ões) pendente(s)
                   </p>
                 </div>
-                <div className="w-11 h-11 bg-amber-500/15 text-amber-400 rounded-2xl flex items-center justify-center flex-shrink-0 border border-amber-500/25 shadow-inner">
+                <div className="w-11 h-11 bg-amber-50 text-amber-600 rounded-2xl flex items-center justify-center flex-shrink-0 border border-amber-100 shadow-2xs">
                   <Clock className="w-5 h-5" />
                 </div>
               </div>
             )}
 
             {/* Card: Saldo / Valor Líquido */}
-            <div className="bg-[#121927]/80 border border-white/[0.08] hover:border-blue-500/40 rounded-2xl p-4 shadow-xl shadow-black/40 backdrop-blur-2xl transition-all duration-200 group flex items-center justify-between gap-3">
+            <div className="bg-white/90 border border-black/[0.06] hover:border-blue-500/40 rounded-2xl p-4 shadow-[0_2px_12px_rgba(0,0,0,0.03)] hover:shadow-md backdrop-blur-xl transition-all duration-200 group flex items-center justify-between gap-3">
               <div className="space-y-1">
-                <span className="text-[11px] font-bold uppercase tracking-wider text-[#0A84FF]">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-[#007AFF]">
                   {summaryMetrics.labelSaldo}
                 </span>
-                <div className={`text-2xl font-black tracking-tight font-mono ${summaryMetrics.saldo >= 0 ? 'text-white' : 'text-rose-400'}`}>
+                <div className={`text-2xl font-black tracking-tight font-mono ${summaryMetrics.saldo >= 0 ? 'text-[#1D1D1F]' : 'text-rose-600'}`}>
                   {formatBRL(summaryMetrics.saldo)}
                 </div>
-                <p className="text-[11px] text-slate-400 font-medium">
+                <p className="text-[11px] text-slate-500 font-medium">
                   {activeTab === 'dealer' ? 'Resultado (Entradas − Saídas)' : 'Total líquido repassado'}
                 </p>
               </div>
-              <div className="w-11 h-11 bg-blue-500/15 text-[#0A84FF] rounded-2xl flex items-center justify-center flex-shrink-0 border border-blue-500/25 shadow-inner">
+              <div className="w-11 h-11 bg-blue-50 text-[#007AFF] rounded-2xl flex items-center justify-center flex-shrink-0 border border-blue-100 shadow-2xs">
                 <Wallet className="w-5 h-5" />
               </div>
             </div>
 
             {/* Card (Dealer only): Total de Registros */}
             {activeTab === 'dealer' && (
-              <div className="bg-[#121927]/80 border border-white/[0.08] hover:border-white/20 rounded-2xl p-4 shadow-xl shadow-black/40 backdrop-blur-2xl transition-all duration-200 group flex items-center justify-between gap-3">
+              <div className="bg-white/90 border border-black/[0.06] hover:border-slate-300 rounded-2xl p-4 shadow-[0_2px_12px_rgba(0,0,0,0.03)] hover:shadow-md backdrop-blur-xl transition-all duration-200 group flex items-center justify-between gap-3">
                 <div className="space-y-1">
-                  <span className="text-[11px] font-bold uppercase tracking-wider text-slate-300">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-slate-600">
                     Total de Registros
                   </span>
-                  <div className="text-2xl font-black text-white tracking-tight font-mono">
+                  <div className="text-2xl font-black text-[#1D1D1F] tracking-tight font-mono">
                     {summaryMetrics.count} <span className="text-xs font-semibold text-slate-400">linhas</span>
                   </div>
-                  <p className="text-[11px] text-slate-400 font-medium">
+                  <p className="text-[11px] text-slate-500 font-medium">
                     Aba DEALER
                   </p>
                 </div>
-                <div className="w-11 h-11 bg-white/10 text-slate-200 rounded-2xl flex items-center justify-center flex-shrink-0 border border-white/10 shadow-inner">
+                <div className="w-11 h-11 bg-slate-100 text-slate-700 rounded-2xl flex items-center justify-center flex-shrink-0 border border-slate-200 shadow-2xs">
                   <FileSpreadsheet className="w-5 h-5" />
                 </div>
               </div>
@@ -964,19 +960,19 @@ export default function Home() {
 
             {/* Card (Pendente CDC only): Status CDC */}
             {activeTab === 'pendente_cdc' && (
-              <div className="bg-[#121927]/80 border border-white/[0.08] hover:border-amber-500/40 rounded-2xl p-4 shadow-xl shadow-black/40 backdrop-blur-2xl transition-all duration-200 group flex items-center justify-between gap-3">
+              <div className="bg-white/90 border border-black/[0.06] hover:border-amber-500/40 rounded-2xl p-4 shadow-[0_2px_12px_rgba(0,0,0,0.03)] hover:shadow-md backdrop-blur-xl transition-all duration-200 group flex items-center justify-between gap-3">
                 <div className="space-y-1">
-                  <span className="text-[11px] font-bold uppercase tracking-wider text-amber-400">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-amber-600">
                     Pendências CDC
                   </span>
-                  <div className="text-2xl font-black text-white tracking-tight font-mono">
-                    {summaryMetrics.count} <span className="text-xs font-semibold text-amber-300">lançamento(s)</span>
+                  <div className="text-2xl font-black text-[#1D1D1F] tracking-tight font-mono">
+                    {summaryMetrics.count} <span className="text-xs font-semibold text-amber-600">lançamento(s)</span>
                   </div>
-                  <p className="text-[11px] text-slate-400 font-medium">
+                  <p className="text-[11px] text-slate-500 font-medium">
                     Entrada zerada (R$ 0,00)
                   </p>
                 </div>
-                <div className="w-11 h-11 bg-amber-500/15 text-amber-400 rounded-2xl flex items-center justify-center flex-shrink-0 border border-amber-500/25 shadow-inner">
+                <div className="w-11 h-11 bg-amber-50 text-amber-600 rounded-2xl flex items-center justify-center flex-shrink-0 border border-amber-100 shadow-2xs">
                   <Clock className="w-5 h-5" />
                 </div>
               </div>

@@ -371,38 +371,38 @@ export function ExcelTable({
     const isDealer = activeTab === 'dealer';
 
     return (
-      <div className="bg-slate-900/90 rounded-2xl border border-slate-800 shadow-2xl backdrop-blur-md flex flex-col h-full overflow-hidden text-slate-100">
+      <div className="bg-white/90 rounded-2xl border border-black/[0.06] shadow-[0_2px_12px_rgba(0,0,0,0.03)] backdrop-blur-xl flex flex-col h-full overflow-hidden text-[#1D1D1F]">
         <div className="p-10 text-center flex flex-col items-center justify-center my-auto space-y-5 max-w-xl mx-auto">
-          <div className="w-16 h-16 bg-amber-500/10 text-amber-400 rounded-2xl flex items-center justify-center shadow-lg border border-amber-500/30">
+          <div className="w-16 h-16 bg-blue-50 text-[#007AFF] rounded-2xl flex items-center justify-center shadow-xs border border-blue-100">
             {isDealer ? (
-              <FileSpreadsheet className="w-8 h-8 text-amber-400" />
+              <FileSpreadsheet className="w-8 h-8 text-[#007AFF]" />
             ) : (
-              <CreditCard className="w-8 h-8 text-amber-400" />
+              <CreditCard className="w-8 h-8 text-[#007AFF]" />
             )}
           </div>
 
           <div className="space-y-2">
-            <h3 className="font-extrabold text-white text-lg">
+            <h3 className="font-extrabold text-[#1D1D1F] text-lg">
               Aba {isDealer ? 'DEALER' : 'Sitef'} (Em Branco)
             </h3>
-            <p className="text-slate-400 text-xs leading-relaxed max-w-md">
-              O aplicativo está pronto no modelo <strong className="text-amber-400">{isDealer ? 'DEALER' : 'Sitef'}</strong>. Clique no botão abaixo para importar seu arquivo Excel e aplicar a limpeza e regras automáticas deste modelo.
+            <p className="text-slate-600 text-xs leading-relaxed max-w-md">
+              O aplicativo está pronto no modelo <strong className="text-[#007AFF]">{isDealer ? 'DEALER' : 'Sitef'}</strong>. Clique no botão abaixo para importar seu arquivo Excel e aplicar a limpeza e regras automáticas deste modelo.
             </p>
           </div>
 
-          <div className="bg-slate-950/80 p-4 rounded-xl border border-slate-800 text-left text-xs text-slate-300 space-y-2 w-full">
-            <div className="font-extrabold text-amber-400 text-[11px] uppercase tracking-wider flex items-center gap-1.5">
-              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+          <div className="bg-slate-50/90 p-4 rounded-xl border border-slate-200 text-left text-xs text-slate-700 space-y-2 w-full">
+            <div className="font-extrabold text-blue-700 text-[11px] uppercase tracking-wider flex items-center gap-1.5">
+              <Sparkles className="w-3.5 h-3.5 text-[#007AFF]" />
               Regras do Modelo {isDealer ? 'DEALER' : 'Sitef TEF'}:
             </div>
             {isDealer ? (
-              <ul className="space-y-1.5 text-[11px] list-disc list-inside text-slate-300">
+              <ul className="space-y-1.5 text-[11px] list-disc list-inside text-slate-600">
                 <li>Exclusão de colunas indesejadas (Conta Classificação, Dias, Parc., Histórico, Dep., Dat Acon)</li>
                 <li>Remoção automática de linhas sem data ou sem valor na Entrada</li>
                 <li>Formatação em Moeda Brasileira (R$) para colunas de Entrada e Saída</li>
               </ul>
             ) : (
-              <ul className="space-y-1.5 text-[11px] list-disc list-inside text-slate-300">
+              <ul className="space-y-1.5 text-[11px] list-disc list-inside text-slate-600">
                 <li>Tratamento de extratos SiTef TEF (Data Transação, Hora, NSU, Autorização, Bandeira)</li>
                 <li>Conciliação de transações e formatação de Valor Bruto, Taxa TEF e Valor Líquido em R$</li>
                 <li>Identificação de bandeiras (Visa, Mastercard, Elo, Amex, Pix) e tipo de transação</li>
@@ -413,7 +413,7 @@ export function ExcelTable({
           <div className="flex flex-wrap items-center justify-center gap-3 pt-1">
             <button
               onClick={onTriggerFileImport}
-              className="px-5 py-2.5 bg-amber-600 hover:bg-amber-700 text-white font-extrabold rounded-xl text-xs shadow-lg transition-all flex items-center gap-2 cursor-pointer"
+              className="px-5 py-2.5 bg-gradient-to-b from-[#007AFF] to-[#0062D2] hover:brightness-105 active:scale-97 text-white font-bold rounded-xl text-xs shadow-xs transition-all flex items-center gap-2 cursor-pointer"
             >
               <Upload className="w-4 h-4" />
               <span>Importar Arquivo ({isDealer ? 'Modelo DEALER' : 'Modelo Sitef'})</span>
@@ -425,9 +425,9 @@ export function ExcelTable({
   }
 
   return (
-    <div className="bg-[#0E1524]/90 rounded-2xl border border-white/[0.08] shadow-2xl backdrop-blur-2xl flex flex-col h-full overflow-hidden text-slate-100">
+    <div className="bg-white/90 rounded-2xl border border-black/[0.06] shadow-[0_4px_20px_rgba(0,0,0,0.04)] backdrop-blur-xl flex flex-col h-full overflow-hidden text-[#1D1D1F]">
       {/* Table Action Controls Toolbar */}
-      <div className="p-3.5 bg-[#0A0E1A]/80 border-b border-white/[0.08] flex flex-wrap items-center justify-between gap-3 text-xs">
+      <div className="p-3.5 bg-slate-50/80 border-b border-slate-200/80 flex flex-wrap items-center justify-between gap-3 text-xs">
         {/* Search Input & Quick Actions */}
         <div className="flex flex-wrap items-center gap-2.5 w-full sm:w-auto">
           <div className="relative w-full sm:w-72">
@@ -437,7 +437,7 @@ export function ExcelTable({
               placeholder="Buscar em qualquer campo..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-3.5 py-1.5 border border-white/10 rounded-xl bg-white/[0.05] text-xs text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#007AFF] focus:bg-white/[0.08] transition-all"
+              className="w-full pl-9 pr-3.5 py-1.5 border border-slate-200 rounded-xl bg-white text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#007AFF] focus:border-transparent transition-all shadow-2xs"
             />
           </div>
 
@@ -445,7 +445,7 @@ export function ExcelTable({
           {onTriggerFileImport && (
             <button
               onClick={onTriggerFileImport}
-              className="px-3.5 py-1.5 bg-white/[0.06] hover:bg-white/[0.12] active:scale-97 text-slate-100 font-semibold rounded-xl text-xs border border-white/10 shadow-xs transition-all flex items-center gap-1.5 cursor-pointer backdrop-blur-md"
+              className="px-3.5 py-1.5 bg-white hover:bg-slate-100 active:scale-97 text-slate-800 font-semibold rounded-xl text-xs border border-slate-200 shadow-2xs transition-all flex items-center gap-1.5 cursor-pointer"
               title={`Importar nova planilha para o modelo ${
                 activeTab === 'dealer'
                   ? 'DEALER'
@@ -454,7 +454,7 @@ export function ExcelTable({
                   : 'PENDENTE DE CDC'
               }`}
             >
-              <Upload className="w-3.5 h-3.5 text-[#0A84FF]" />
+              <Upload className="w-3.5 h-3.5 text-[#007AFF]" />
               <span>Importar Excel</span>
             </button>
           )}
@@ -463,7 +463,7 @@ export function ExcelTable({
           {onAddRow && (
             <button
               onClick={handleOpenAddModal}
-              className="px-3.5 py-1.5 bg-gradient-to-r from-[#30D158] to-[#248A3D] hover:brightness-110 active:scale-97 text-white font-bold rounded-xl text-xs shadow-md shadow-emerald-500/20 border border-emerald-400/30 transition-all flex items-center gap-1.5 cursor-pointer"
+              className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 active:scale-97 text-white font-bold rounded-xl text-xs shadow-2xs transition-all flex items-center gap-1.5 cursor-pointer"
               title="Adicionar um novo lançamento manualmente nesta aba"
             >
               <Plus className="w-3.5 h-3.5" />
@@ -476,7 +476,7 @@ export function ExcelTable({
             <div className="flex items-center gap-1.5">
               <button
                 onClick={handleRequestDeleteSelected}
-                className="px-3 py-1.5 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-xl text-xs shadow-xs transition-all flex items-center gap-1.5 cursor-pointer border border-rose-400/30"
+                className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl text-xs shadow-2xs transition-all flex items-center gap-1.5 cursor-pointer"
                 title="Excluir lançamentos selecionados"
               >
                 <Trash2 className="w-3.5 h-3.5" />
@@ -484,7 +484,7 @@ export function ExcelTable({
               </button>
               <button
                 onClick={() => setSelectedCells([])}
-                className="px-2.5 py-1.5 bg-white/10 hover:bg-white/15 text-slate-300 font-semibold rounded-xl text-xs transition-colors flex items-center gap-1"
+                className="px-2.5 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 font-semibold rounded-xl text-xs transition-colors flex items-center gap-1 cursor-pointer"
                 title="Limpar seleção"
               >
                 <X className="w-3 h-3" />
@@ -496,13 +496,13 @@ export function ExcelTable({
 
         {/* View Toggle (Dados Tratados vs Dados Brutos) */}
         <div className="flex items-center gap-2.5">
-          <div className="inline-flex bg-black/40 border border-white/[0.08] p-1 rounded-xl text-[11px] font-semibold backdrop-blur-md">
+          <div className="inline-flex bg-slate-200/80 border border-slate-300/60 p-0.5 rounded-xl text-[11px] font-semibold">
             <button
               onClick={() => setViewRawData(false)}
               className={`px-3 py-1 rounded-lg transition-all cursor-pointer ${
                 !viewRawData
-                  ? 'bg-gradient-to-b from-[#007AFF] to-[#0A84FF] text-white shadow-xs font-bold'
-                  : 'text-slate-400 hover:text-slate-200'
+                  ? 'bg-white text-[#007AFF] shadow-2xs font-bold'
+                  : 'text-slate-600 hover:text-slate-900'
               }`}
             >
               Dados Tratados ({state.processedData.length})
@@ -511,8 +511,8 @@ export function ExcelTable({
               onClick={() => setViewRawData(true)}
               className={`px-3 py-1 rounded-lg transition-all cursor-pointer ${
                 viewRawData
-                  ? 'bg-gradient-to-b from-[#007AFF] to-[#0A84FF] text-white shadow-xs font-bold'
-                  : 'text-slate-400 hover:text-slate-200'
+                  ? 'bg-white text-[#007AFF] shadow-2xs font-bold'
+                  : 'text-slate-600 hover:text-slate-900'
               }`}
             >
               Dados Brutos
@@ -533,19 +533,19 @@ export function ExcelTable({
 
       {/* Banner / Legend for Sitef Statuses */}
       {activeTab === 'sitef' && (
-        <div className="px-3.5 py-2 bg-amber-950/40 border-b border-amber-800/60 flex flex-wrap items-center justify-between gap-2 text-xs text-amber-200 font-medium">
+        <div className="px-3.5 py-2 bg-amber-50 border-b border-amber-200/80 flex flex-wrap items-center justify-between gap-2 text-xs text-amber-900 font-medium">
           <div className="flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 text-amber-400 flex-shrink-0" />
+            <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0" />
             <span>
-              Transações <strong className="text-white">PENDENTES</strong> e <strong className="text-white">ESTORNADAS</strong> são mantidas na tabela e destacadas para conferência.
+              Transações <strong className="text-amber-950">PENDENTES</strong> e <strong className="text-purple-950">ESTORNADAS</strong> são mantidas na tabela e destacadas para conferência.
             </span>
           </div>
           <div className="flex items-center gap-2.5 text-[11px]">
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-900/60 text-amber-300 font-extrabold border border-amber-700/60">
-              <Clock className="w-3 h-3 text-amber-400" /> Pendentes
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-100 text-amber-800 font-bold border border-amber-200">
+              <Clock className="w-3 h-3 text-amber-600" /> Pendentes
             </span>
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-purple-900/60 text-purple-300 font-extrabold border border-purple-700/60">
-              <RotateCcw className="w-3 h-3 text-purple-400" /> Estornadas
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-purple-100 text-purple-800 font-bold border border-purple-200">
+              <RotateCcw className="w-3 h-3 text-purple-600" /> Estornadas
             </span>
           </div>
         </div>
@@ -553,31 +553,31 @@ export function ExcelTable({
 
       {/* Banner for PENDENTE DE CDC Tab */}
       {activeTab === 'pendente_cdc' && (
-        <div className="px-3.5 py-2 bg-amber-950/40 border-b border-amber-800/60 flex flex-wrap items-center justify-between gap-2 text-xs text-amber-200 font-medium">
+        <div className="px-3.5 py-2 bg-amber-50 border-b border-amber-200/80 flex flex-wrap items-center justify-between gap-2 text-xs text-amber-900 font-medium">
           <div className="flex items-center gap-2">
-            <Clock className="w-4 h-4 text-amber-400 flex-shrink-0" />
+            <Clock className="w-4 h-4 text-amber-600 flex-shrink-0" />
             <span>
-              <strong className="text-white">Aba PENDENTE DE CDC:</strong> Lançamentos do DEALER com valor de entrada zerado (R$ 0,00) isolados para conferência.
+              <strong className="text-amber-950">Aba PENDENTE DE CDC:</strong> Lançamentos do DEALER com valor de entrada zerado (R$ 0,00) isolados para conferência.
             </span>
           </div>
-          <span className="inline-flex items-center gap-1 text-[11px] bg-amber-900/60 border border-amber-700/60 text-amber-300 font-bold px-2 py-0.5 rounded-md">
+          <span className="inline-flex items-center gap-1 text-[11px] bg-amber-100 border border-amber-200 text-amber-800 font-bold px-2 py-0.5 rounded-md">
             Excluídos automaticamente da aba DEALER
           </span>
         </div>
       )}
 
       {/* Main Grid Scroll Area */}
-      <div className="flex-1 overflow-auto max-h-[68vh] relative bg-slate-950">
+      <div className="flex-1 overflow-auto max-h-[68vh] relative bg-white">
         <table className="w-full text-left border-collapse text-xs select-none">
           {/* Header Row */}
-          <thead className="bg-slate-950 text-slate-200 font-semibold sticky top-0 z-10 border-b border-slate-800 shadow-md">
+          <thead className="bg-slate-100/90 text-slate-800 font-semibold sticky top-0 z-10 border-b border-slate-200 shadow-2xs backdrop-blur-md">
             <tr>
               {/* Row Number Counter Column Header */}
-              <th className="w-12 px-2 py-2.5 border-r border-slate-800 bg-slate-950 text-center text-[10px] font-bold text-slate-400 uppercase tracking-wider select-none">
+              <th className="w-12 px-2 py-2.5 border-r border-slate-200 bg-slate-100 text-center text-[10px] font-bold text-slate-500 uppercase tracking-wider select-none">
                 <div className="flex items-center justify-center gap-1">
                   <button
                     onClick={handleSelectAllRows}
-                    className="p-0.5 text-slate-400 hover:text-amber-400 transition-colors cursor-pointer"
+                    className="p-0.5 text-slate-500 hover:text-[#007AFF] transition-colors cursor-pointer"
                     title={
                       selectedRowIndexes.length === filteredAndSortedData.length && filteredAndSortedData.length > 0
                         ? 'Desmarcar todos'
@@ -585,9 +585,9 @@ export function ExcelTable({
                     }
                   >
                     {selectedRowIndexes.length === filteredAndSortedData.length && filteredAndSortedData.length > 0 ? (
-                      <CheckSquare className="w-3.5 h-3.5 text-amber-400" />
+                      <CheckSquare className="w-3.5 h-3.5 text-[#007AFF]" />
                     ) : (
-                      <Square className="w-3.5 h-3.5 text-slate-600" />
+                      <Square className="w-3.5 h-3.5 text-slate-400" />
                     )}
                   </button>
                 </div>
@@ -600,19 +600,19 @@ export function ExcelTable({
 
                 let ruleTagBadge = null;
                 if (col.type === 'date') {
-                  ruleTagBadge = <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-emerald-950 text-emerald-300 border border-emerald-800">DD/MM/AAAA</span>;
+                  ruleTagBadge = <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-emerald-50 text-emerald-700 border border-emerald-200">DD/MM/AAAA</span>;
                 } else if (col.type === 'currency') {
-                  ruleTagBadge = <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-amber-950 text-amber-300 border border-amber-800">BRL (R$)</span>;
+                  ruleTagBadge = <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-blue-50 text-blue-700 border border-blue-200">BRL (R$)</span>;
                 } else if (col.type === 'cpf' || col.type === 'cnpj') {
-                  ruleTagBadge = <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-blue-950 text-blue-300 border border-blue-800">{col.type.toUpperCase()}</span>;
+                  ruleTagBadge = <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-indigo-50 text-indigo-700 border border-indigo-200">{col.type.toUpperCase()}</span>;
                 } else if (activeRulesCount > 0) {
-                  ruleTagBadge = <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-indigo-950 text-indigo-300 border border-indigo-800">{activeRulesCount} REGRAS</span>;
+                  ruleTagBadge = <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-purple-50 text-purple-700 border border-purple-200">{activeRulesCount} REGRAS</span>;
                 }
 
                 return (
                   <th
                     key={col.id}
-                    className="min-w-[150px] px-3 py-2 border-r border-slate-800 bg-slate-950 hover:bg-slate-900 transition-colors relative group"
+                    className="min-w-[150px] px-3 py-2 border-r border-slate-200 bg-slate-100/90 hover:bg-slate-200/60 transition-colors relative group"
                   >
                     <div className="flex items-center justify-between gap-1 mb-1">
                       {/* Excel Letter & Rules Badge */}
@@ -637,8 +637,8 @@ export function ExcelTable({
                               setSortDirection('asc');
                             }
                           }}
-                          className={`p-1 rounded hover:bg-slate-800 transition-colors cursor-pointer ${
-                            isSorted ? 'text-amber-400 font-bold' : 'text-slate-500'
+                          className={`p-1 rounded hover:bg-slate-200 transition-colors cursor-pointer ${
+                            isSorted ? 'text-[#007AFF] font-bold' : 'text-slate-400'
                           }`}
                           title="Ordenar coluna"
                         >
@@ -655,7 +655,7 @@ export function ExcelTable({
 
                         <button
                           onClick={() => onOpenColumnModal(col.id)}
-                          className="p-1 text-slate-500 hover:text-slate-200 hover:bg-slate-800 rounded transition-colors cursor-pointer"
+                          className="p-1 text-slate-400 hover:text-slate-800 hover:bg-slate-200 rounded transition-colors cursor-pointer"
                           title="Configurar regras da coluna"
                         >
                           <Settings2 className="w-3 h-3" />
@@ -675,11 +675,11 @@ export function ExcelTable({
                             if (e.key === 'Escape') setEditingHeaderColId(null);
                           }}
                           autoFocus
-                          className="w-full px-1 py-0.5 text-xs border border-amber-500 rounded bg-slate-900 text-white font-bold"
+                          className="w-full px-1 py-0.5 text-xs border border-[#007AFF] rounded bg-white text-slate-900 font-bold"
                         />
                         <button
                           onClick={() => handleCommitHeaderRename(col)}
-                          className="p-0.5 bg-amber-600 text-white rounded hover:bg-amber-700"
+                          className="p-0.5 bg-[#007AFF] text-white rounded hover:bg-blue-600"
                         >
                           <Check className="w-3 h-3" />
                         </button>
@@ -690,7 +690,7 @@ export function ExcelTable({
                           setEditingHeaderColId(col.id);
                           setEditingHeaderValue(col.customHeader || col.originalHeader);
                         }}
-                        className="font-extrabold text-slate-200 text-[11px] uppercase tracking-wider truncate cursor-pointer hover:text-amber-400 flex items-center justify-between"
+                        className="font-extrabold text-slate-800 text-[11px] uppercase tracking-wider truncate cursor-pointer hover:text-[#007AFF] flex items-center justify-between"
                         title="Clique duplo para renomear"
                       >
                         <span className="truncate">{col.customHeader || col.originalHeader}</span>
@@ -703,7 +703,7 @@ export function ExcelTable({
           </thead>
 
           {/* Table Body */}
-          <tbody className="bg-[#0C121E] divide-y divide-white/[0.04]">
+          <tbody className="bg-white divide-y divide-slate-100">
             {filteredAndSortedData.map(({ row, originalIndex }, displayRowIndex) => {
               const rowCombinedText = Object.values(row)
                 .map((v) => (v ? String(v).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase() : ''))
@@ -713,13 +713,13 @@ export function ExcelTable({
               const isEstornadaRow = rowCombinedText.includes('estornad') || rowCombinedText.includes('estorno');
               const isRowSelected = selectedRowIndexes.includes(originalIndex);
 
-              let rowClass = 'hover:bg-white/[0.04] transition-colors';
+              let rowClass = 'hover:bg-slate-50/80 transition-colors';
               if (isRowSelected) {
-                rowClass = 'bg-[#007AFF]/15 hover:bg-[#007AFF]/25 border-l-4 border-l-[#007AFF] transition-colors';
+                rowClass = 'bg-blue-50/80 hover:bg-blue-100/70 border-l-4 border-l-[#007AFF] transition-colors';
               } else if (isPendenteRow) {
-                rowClass = 'bg-amber-500/10 hover:bg-amber-500/15 border-l-4 border-l-amber-500 transition-colors';
+                rowClass = 'bg-amber-50/70 hover:bg-amber-100/60 border-l-4 border-l-amber-500 transition-colors';
               } else if (isEstornadaRow) {
-                rowClass = 'bg-purple-500/10 hover:bg-purple-500/15 border-l-4 border-l-purple-500 transition-colors';
+                rowClass = 'bg-purple-50/70 hover:bg-purple-100/60 border-l-4 border-l-purple-500 transition-colors';
               }
 
               return (
@@ -727,18 +727,18 @@ export function ExcelTable({
                   {/* Row Number Cell */}
                   <td
                     onClick={(e) => handleToggleRowSelection(originalIndex, e)}
-                    className="px-2 py-2 border-r border-white/[0.06] bg-black/20 text-center font-mono text-[11px] text-slate-400 font-semibold select-none cursor-pointer hover:bg-white/10 transition-colors"
+                    className="px-2 py-2 border-r border-slate-200 bg-slate-50/50 text-center font-mono text-[11px] text-slate-500 font-semibold select-none cursor-pointer hover:bg-slate-100 transition-colors"
                     title="Clique para selecionar a linha inteira"
                   >
                     <div className="flex items-center justify-center gap-1.5">
                       <button
                         onClick={(e) => handleToggleRowSelection(originalIndex, e)}
-                        className="p-0.5 text-slate-400 hover:text-[#0A84FF]"
+                        className="p-0.5 text-slate-400 hover:text-[#007AFF]"
                       >
                         {isRowSelected ? (
-                          <CheckSquare className="w-3.5 h-3.5 text-[#0A84FF]" />
+                          <CheckSquare className="w-3.5 h-3.5 text-[#007AFF]" />
                         ) : (
-                          <Square className="w-3.5 h-3.5 text-slate-600" />
+                          <Square className="w-3.5 h-3.5 text-slate-400" />
                         )}
                       </button>
                       <span>{displayRowIndex + 1}</span>
@@ -751,10 +751,10 @@ export function ExcelTable({
                               indexesToDelete: [originalIndex],
                             });
                           }}
-                          className="p-1 bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 rounded-lg shadow-xs transition-all flex items-center justify-center border border-rose-500/30"
+                          className="p-1 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg shadow-2xs transition-all flex items-center justify-center border border-rose-200"
                           title="Excluir transação estornada (Autorização / Cartão)"
                         >
-                          <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+                          <Trash2 className="w-3.5 h-3.5 text-rose-600" />
                         </button>
                       )}
                     </div>
@@ -798,9 +798,9 @@ export function ExcelTable({
                             cellValue !== undefined && cellValue !== null ? String(cellValue) : ''
                           );
                         }}
-                        className={`px-2.5 py-1.5 border-r border-white/[0.06] font-mono text-xs transition-colors relative ${
-                          isSelected ? 'bg-[#007AFF]/20 ring-1 ring-[#007AFF]' : ''
-                        } ${invalidCpf ? 'bg-amber-500/15' : ''}`}
+                        className={`px-2.5 py-1.5 border-r border-slate-200 font-mono text-xs transition-colors relative ${
+                          isSelected ? 'bg-blue-100/60 ring-1 ring-[#007AFF]' : ''
+                        } ${invalidCpf ? 'bg-amber-50' : ''}`}
                       >
                         {isEditing ? (
                           <div className="flex items-center gap-1">
@@ -813,7 +813,7 @@ export function ExcelTable({
                                 if (e.key === 'Escape') setEditingCell(null);
                               }}
                               autoFocus
-                              className="w-full px-2 py-1 border border-[#007AFF] bg-[#0A0E1A] text-white rounded-lg font-medium focus:outline-none text-xs"
+                              className="w-full px-2 py-1 border border-[#007AFF] bg-white text-slate-900 rounded-lg font-medium focus:outline-none text-xs"
                             />
                             <button
                               onClick={handleCommitCellEdit}
@@ -836,10 +836,10 @@ export function ExcelTable({
                                         indexesToDelete: [originalIndex],
                                       });
                                     }}
-                                    className="p-1 bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/30 text-rose-300 rounded-lg shadow-xs transition-all flex items-center gap-1 text-[10px] font-bold"
+                                    className="p-1 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 rounded-lg shadow-2xs transition-all flex items-center gap-1 text-[10px] font-bold"
                                     title="Excluir estorno"
                                   >
-                                    <Trash2 className="w-3 h-3 text-rose-400" />
+                                    <Trash2 className="w-3 h-3 text-rose-600" />
                                     <span className="hidden sm:inline">Excluir</span>
                                   </button>
                                 )}
@@ -848,8 +848,8 @@ export function ExcelTable({
                               <span
                                 className={`truncate ${
                                   cellValue === null || cellValue === undefined || String(cellValue).trim() === ''
-                                    ? 'text-slate-600 italic text-[11px]'
-                                    : 'text-slate-200'
+                                    ? 'text-slate-400 italic text-[11px]'
+                                    : 'text-slate-800'
                                 }`}
                               >
                                 {cellValue !== null && cellValue !== undefined && String(cellValue).trim() !== ''
@@ -860,7 +860,7 @@ export function ExcelTable({
 
                             {invalidCpf && (
                               <span
-                                className="px-1.5 py-0.5 bg-amber-500/20 text-amber-300 border border-amber-500/40 rounded font-sans text-[9px] font-bold flex-shrink-0"
+                                className="px-1.5 py-0.5 bg-amber-100 text-amber-800 border border-amber-300 rounded font-sans text-[9px] font-bold flex-shrink-0"
                                 title="CPF com dígito verificador inválido"
                               >
                                 CPF Inválido
@@ -879,7 +879,7 @@ export function ExcelTable({
               <tr>
                 <td
                   colSpan={activeColumns.length + 1}
-                  className="p-12 text-center text-slate-500 italic text-xs"
+                  className="p-12 text-center text-slate-400 italic text-xs"
                 >
                   Nenhum registro encontrado para esta busca ou filtro.
                 </td>
@@ -890,10 +890,10 @@ export function ExcelTable({
       </div>
 
       {/* Apple Pro Bottom Sheet Bar */}
-      <div className="px-4 py-2 bg-[#0A0E1A]/95 border-t border-white/[0.08] flex items-center justify-between text-xs backdrop-blur-xl">
+      <div className="px-4 py-2 bg-slate-50 border-t border-slate-200 flex items-center justify-between text-xs backdrop-blur-xl">
         <div className="flex items-center gap-2">
-          <span className="text-slate-400 text-[11px]">Aba Ativa:</span>
-          <span className="px-2.5 py-0.5 rounded-lg bg-white/10 text-white font-bold text-xs uppercase tracking-wide">
+          <span className="text-slate-500 text-[11px]">Aba Ativa:</span>
+          <span className="px-2.5 py-0.5 rounded-lg bg-slate-200 text-slate-800 font-bold text-xs uppercase tracking-wide">
             {activeTab === 'dealer'
               ? 'DEALER'
               : activeTab === 'sitef'
@@ -904,31 +904,31 @@ export function ExcelTable({
           </span>
         </div>
 
-        <div className="text-[11px] text-slate-400 font-mono flex items-center gap-3">
+        <div className="text-[11px] text-slate-500 font-mono flex items-center gap-3">
           <span>
-            Total: <strong className="text-slate-200">{displayData.length}</strong> registros
+            Total: <strong className="text-slate-800">{displayData.length}</strong> registros
           </span>
           {searchQuery && (
-            <span className="text-[#0A84FF] font-semibold">
+            <span className="text-[#007AFF] font-semibold">
               Filtrados: {filteredAndSortedData.length}
             </span>
           )}
           <span className="hidden sm:inline">
-            Colunas: <strong className="text-slate-200">{activeColumns.length}</strong> / {state.columns.length}
+            Colunas: <strong className="text-slate-800">{activeColumns.length}</strong> / {state.columns.length}
           </span>
         </div>
       </div>
 
       {/* Excel Bottom Selection Stats Bar */}
-      <div className="px-4 py-1.5 bg-black/40 border-t border-white/[0.06] text-slate-400 text-[11px] flex flex-wrap items-center justify-between gap-2 font-mono">
+      <div className="px-4 py-1.5 bg-slate-100 border-t border-slate-200 text-slate-600 text-[11px] flex flex-wrap items-center justify-between gap-2 font-mono">
         <div className="flex items-center gap-3">
           <span>
             {selectedRowIndexes.length > 0 ? (
-              <span className="text-[#0A84FF] font-bold">
+              <span className="text-[#007AFF] font-bold">
                 {selectedRowIndexes.length} linha(s) selecionada(s)
               </span>
             ) : selectedCells.length > 0 ? (
-              <span className="text-[#0A84FF] font-bold">
+              <span className="text-[#007AFF] font-bold">
                 {selectedCells.length} célula(s) selecionada(s)
               </span>
             ) : (
@@ -939,7 +939,7 @@ export function ExcelTable({
 
         {/* Selected Cells Statistics Bar */}
         {selectionStats ? (
-          <div className="flex items-center gap-3 text-slate-700 bg-white px-2.5 py-0.5 rounded border border-slate-200 shadow-2xs font-semibold">
+          <div className="flex items-center gap-3 text-slate-800 bg-white px-2.5 py-0.5 rounded-lg border border-slate-200 shadow-2xs font-semibold">
             <span>Contagem: {selectionStats.count}</span>
             {selectionStats.sum !== null && (
               <>
