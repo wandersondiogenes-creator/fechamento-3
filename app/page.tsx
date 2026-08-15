@@ -555,6 +555,14 @@ export default function Home() {
     setIsColumnModalOpen(true);
   };
 
+  // Handler: Export data
+  const handleExport = useCallback(
+    (format: 'xlsx' | 'csv' | 'json', includeHidden?: boolean) => {
+      exportProcessedData(spreadsheetState, format, includeHidden);
+    },
+    [spreadsheetState]
+  );
+
   // Summary metrics calculation for financial cards ("quadrados")
   const summaryMetrics = useMemo(() => {
     if (!spreadsheetState.processedData || spreadsheetState.processedData.length === 0) {
@@ -811,9 +819,7 @@ export default function Home() {
           onAutoOrganize={handleAutoOrganize}
           onOpenPresetsModal={() => setIsPresetsModalOpen(true)}
           onOpenAIDrawer={() => setIsAIDrawerOpen(true)}
-          onExport={(format, includeHidden) =>
-            exportProcessedData(spreadsheetState, format, includeHidden)
-          }
+          onExport={handleExport}
           onReset={() =>
             setSpreadsheetState(
               buildEmptySpreadsheetState(
