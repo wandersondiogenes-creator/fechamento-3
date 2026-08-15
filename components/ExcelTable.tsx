@@ -108,6 +108,190 @@ function getStatusBadge(val: any, header?: string) {
   return null;
 }
 
+interface ColumnLayoutInfo {
+  widthClass: string;
+  alignClass: string;
+  isNumeric: boolean;
+  isDate: boolean;
+  shortTypeLabel: string | null;
+}
+
+function getColumnLayout(
+  col: ColumnConfig,
+  totalCols: number,
+  activeTab: string
+): ColumnLayoutInfo {
+  const norm = (col.customHeader || col.originalHeader || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+
+  const isCurr =
+    col.type === 'currency' ||
+    col.rules.some((r) => r.enabled && r.type === 'format_currency_brl') ||
+    norm.includes('entrada') ||
+    norm.includes('saida') ||
+    norm.includes('saída') ||
+    norm.includes('bruto') ||
+    norm.includes('liquido') ||
+    norm.includes('taxa') ||
+    (norm.includes('valor') && !norm.includes('nsu'));
+
+  const isDate =
+    col.type === 'date' ||
+    col.rules.some((r) => r.enabled && r.type === 'convert_date') ||
+    norm.includes('data') ||
+    norm.includes('dt_');
+
+  const isTime = norm === 'hora' || norm.includes('hora ');
+  const isStatus = norm.includes('estado') || norm.includes('status') || norm.includes('situacao');
+
+  let shortTypeLabel: string | null = null;
+  if (isDate) shortTypeLabel = 'Data';
+  else if (isCurr) shortTypeLabel = 'R$';
+  else if (col.type === 'cpf') shortTypeLabel = 'CPF';
+  else if (col.type === 'cnpj') shortTypeLabel = 'CNPJ';
+
+  // DEALER / PENDENTE_CDC (3-4 columns) -> Spread out across 100% width cleanly
+  if (activeTab === 'dealer' || activeTab === 'pendente_cdc' || totalCols <= 4) {
+    if (isDate) {
+      return {
+        widthClass: 'w-[22%] min-w-[100px]',
+        alignClass: 'text-center text-slate-700',
+        isNumeric: false,
+        isDate: true,
+        shortTypeLabel,
+      };
+    }
+    if (norm.includes('entrada')) {
+      return {
+        widthClass: 'w-[39%] min-w-[130px]',
+        alignClass: 'text-right font-semibold text-emerald-700',
+        isNumeric: true,
+        isDate: false,
+        shortTypeLabel,
+      };
+    }
+    if (norm.includes('saida') || norm.includes('saída')) {
+      return {
+        widthClass: 'w-[39%] min-w-[130px]',
+        alignClass: 'text-right font-semibold text-rose-700',
+        isNumeric: true,
+        isDate: false,
+        shortTypeLabel,
+      };
+    }
+    return {
+      widthClass: 'w-auto min-w-[110px]',
+      alignClass: isCurr ? 'text-right font-medium' : 'text-left',
+      isNumeric: isCurr,
+      isDate: false,
+      shortTypeLabel,
+    };
+  }
+
+  // SITEF (10 columns): exact proportional distribution to fit on screen without lateral scrollbar
+  if (isDate) {
+    return {
+      widthClass: 'w-[9.5%] min-w-[78px]',
+      alignClass: 'text-center text-slate-700 font-mono',
+      isNumeric: false,
+      isDate: true,
+      shortTypeLabel,
+    };
+  }
+  if (isTime) {
+    return {
+      widthClass: 'w-[6.5%] min-w-[55px]',
+      alignClass: 'text-center text-slate-600 font-mono',
+      isNumeric: false,
+      isDate: false,
+      shortTypeLabel: null,
+    };
+  }
+  if (norm.includes('nsu')) {
+    return {
+      widthClass: 'w-[8.5%] min-w-[68px]',
+      alignClass: 'text-center text-slate-700 font-mono',
+      isNumeric: false,
+      isDate: false,
+      shortTypeLabel: null,
+    };
+  }
+  if (norm.includes('autoriz')) {
+    return {
+      widthClass: 'w-[9%] min-w-[72px]',
+      alignClass: 'text-center text-slate-700 font-mono',
+      isNumeric: false,
+      isDate: false,
+      shortTypeLabel: null,
+    };
+  }
+  if (norm.includes('bandeira')) {
+    return {
+      widthClass: 'w-[8.5%] min-w-[70px]',
+      alignClass: 'text-center font-semibold text-slate-800',
+      isNumeric: false,
+      isDate: false,
+      shortTypeLabel: null,
+    };
+  }
+  if (norm.includes('tipo')) {
+    return {
+      widthClass: 'w-[13.5%] min-w-[95px]',
+      alignClass: 'text-left text-slate-800',
+      isNumeric: false,
+      isDate: false,
+      shortTypeLabel: null,
+    };
+  }
+  if (norm.includes('bruto')) {
+    return {
+      widthClass: 'w-[11%] min-w-[80px]',
+      alignClass: 'text-right font-medium text-slate-800',
+      isNumeric: true,
+      isDate: false,
+      shortTypeLabel,
+    };
+  }
+  if (norm.includes('taxa')) {
+    return {
+      widthClass: 'w-[7.5%] min-w-[60px]',
+      alignClass: 'text-right font-medium text-rose-600',
+      isNumeric: true,
+      isDate: false,
+      shortTypeLabel,
+    };
+  }
+  if (norm.includes('liquido') || norm.includes('liq')) {
+    return {
+      widthClass: 'w-[11%] min-w-[80px]',
+      alignClass: 'text-right font-bold text-emerald-700',
+      isNumeric: true,
+      isDate: false,
+      shortTypeLabel,
+    };
+  }
+  if (isStatus) {
+    return {
+      widthClass: 'w-[12%] min-w-[85px]',
+      alignClass: 'text-center',
+      isNumeric: false,
+      isDate: false,
+      shortTypeLabel: null,
+    };
+  }
+
+  return {
+    widthClass: 'w-auto min-w-[75px]',
+    alignClass: isCurr ? 'text-right font-medium' : 'text-left',
+    isNumeric: isCurr,
+    isDate: false,
+    shortTypeLabel,
+  };
+}
+
 export function ExcelTable({
   state,
   activeTab = 'dealer',
@@ -568,12 +752,12 @@ export function ExcelTable({
 
       {/* Main Grid Scroll Area */}
       <div className="flex-1 overflow-auto max-h-[68vh] relative bg-white">
-        <table className="w-full text-left border-collapse text-xs select-none">
+        <table className={`w-full text-left border-collapse text-xs select-none ${activeColumns.length <= 12 ? 'table-fixed' : 'table-auto'}`}>
           {/* Header Row */}
           <thead className="bg-slate-100/90 text-slate-800 font-semibold sticky top-0 z-10 border-b border-slate-200 shadow-2xs backdrop-blur-md">
             <tr>
               {/* Row Number Counter Column Header */}
-              <th className="w-12 px-2 py-2.5 border-r border-slate-200 bg-slate-100 text-center text-[10px] font-bold text-slate-500 uppercase tracking-wider select-none">
+              <th className="w-10 min-w-[38px] max-w-[44px] px-1.5 py-2 border-r border-slate-200 bg-slate-100 text-center text-[10px] font-bold text-slate-500 uppercase tracking-wider select-none">
                 <div className="flex items-center justify-center gap-1">
                   <button
                     onClick={handleSelectAllRows}
@@ -595,28 +779,33 @@ export function ExcelTable({
 
               {/* Data Columns */}
               {activeColumns.map((col, index) => {
+                const layout = getColumnLayout(col, activeColumns.length, activeTab);
                 const activeRulesCount = col.rules.filter((r) => r.enabled).length;
                 const isSorted = sortColId === col.id;
 
                 let ruleTagBadge = null;
-                if (col.type === 'date') {
-                  ruleTagBadge = <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-emerald-50 text-emerald-700 border border-emerald-200">DD/MM/AAAA</span>;
-                } else if (col.type === 'currency') {
-                  ruleTagBadge = <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-blue-50 text-blue-700 border border-blue-200">BRL (R$)</span>;
-                } else if (col.type === 'cpf' || col.type === 'cnpj') {
-                  ruleTagBadge = <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-indigo-50 text-indigo-700 border border-indigo-200">{col.type.toUpperCase()}</span>;
+                if (layout.shortTypeLabel) {
+                  ruleTagBadge = (
+                    <span className="inline-flex items-center px-1 py-0.2 rounded text-[9px] font-bold bg-slate-200 text-slate-700 border border-slate-300">
+                      {layout.shortTypeLabel}
+                    </span>
+                  );
                 } else if (activeRulesCount > 0) {
-                  ruleTagBadge = <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-purple-50 text-purple-700 border border-purple-200">{activeRulesCount} REGRAS</span>;
+                  ruleTagBadge = (
+                    <span className="inline-flex items-center px-1 py-0.2 rounded text-[9px] font-bold bg-purple-50 text-purple-700 border border-purple-200">
+                      {activeRulesCount}R
+                    </span>
+                  );
                 }
 
                 return (
                   <th
                     key={col.id}
-                    className="min-w-[150px] px-3 py-2 border-r border-slate-200 bg-slate-100/90 hover:bg-slate-200/60 transition-colors relative group"
+                    className={`${layout.widthClass} px-2 py-1.5 border-r border-slate-200 bg-slate-100/90 hover:bg-slate-200/60 transition-colors relative group`}
                   >
-                    <div className="flex items-center justify-between gap-1 mb-1">
+                    <div className="flex items-center justify-between gap-1 mb-0.5">
                       {/* Excel Letter & Rules Badge */}
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-center gap-1">
                         <span className="text-[10px] font-bold text-slate-500 font-mono">
                           {getExcelColumnLabel(index)}
                         </span>
@@ -624,7 +813,7 @@ export function ExcelTable({
                       </div>
 
                       {/* Sorting & Config Buttons */}
-                      <div className="flex items-center gap-0.5 opacity-70 group-hover:opacity-100">
+                      <div className="flex items-center gap-0.5 opacity-60 group-hover:opacity-100">
                         <button
                           onClick={() => {
                             if (sortColId === col.id) {
@@ -637,7 +826,7 @@ export function ExcelTable({
                               setSortDirection('asc');
                             }
                           }}
-                          className={`p-1 rounded hover:bg-slate-200 transition-colors cursor-pointer ${
+                          className={`p-0.5 rounded hover:bg-slate-200 transition-colors cursor-pointer ${
                             isSorted ? 'text-[#007AFF] font-bold' : 'text-slate-400'
                           }`}
                           title="Ordenar coluna"
@@ -655,7 +844,7 @@ export function ExcelTable({
 
                         <button
                           onClick={() => onOpenColumnModal(col.id)}
-                          className="p-1 text-slate-400 hover:text-slate-800 hover:bg-slate-200 rounded transition-colors cursor-pointer"
+                          className="p-0.5 text-slate-400 hover:text-slate-800 hover:bg-slate-200 rounded transition-colors cursor-pointer"
                           title="Configurar regras da coluna"
                         >
                           <Settings2 className="w-3 h-3" />
@@ -665,7 +854,7 @@ export function ExcelTable({
 
                     {/* Header Label / Inline Rename */}
                     {editingHeaderColId === col.id ? (
-                      <div className="flex items-center gap-1 mt-1">
+                      <div className="flex items-center gap-1 mt-0.5">
                         <input
                           type="text"
                           value={editingHeaderValue}
@@ -690,8 +879,10 @@ export function ExcelTable({
                           setEditingHeaderColId(col.id);
                           setEditingHeaderValue(col.customHeader || col.originalHeader);
                         }}
-                        className="font-extrabold text-slate-800 text-[11px] uppercase tracking-wider truncate cursor-pointer hover:text-[#007AFF] flex items-center justify-between"
-                        title="Clique duplo para renomear"
+                        className={`font-bold text-slate-800 text-[11px] uppercase tracking-tight truncate cursor-pointer hover:text-[#007AFF] flex items-center ${
+                          layout.isNumeric ? 'justify-end' : layout.isDate ? 'justify-center' : 'justify-start'
+                        }`}
+                        title={`${col.customHeader || col.originalHeader} (Clique duplo para renomear)`}
                       >
                         <span className="truncate">{col.customHeader || col.originalHeader}</span>
                       </div>
@@ -727,10 +918,10 @@ export function ExcelTable({
                   {/* Row Number Cell */}
                   <td
                     onClick={(e) => handleToggleRowSelection(originalIndex, e)}
-                    className="px-2 py-2 border-r border-slate-200 bg-slate-50/50 text-center font-mono text-[11px] text-slate-500 font-semibold select-none cursor-pointer hover:bg-slate-100 transition-colors"
+                    className="w-10 min-w-[38px] max-w-[44px] px-1.5 py-1.5 border-r border-slate-200 bg-slate-50/50 text-center font-mono text-[11px] text-slate-500 font-semibold select-none cursor-pointer hover:bg-slate-100 transition-colors"
                     title="Clique para selecionar a linha inteira"
                   >
-                    <div className="flex items-center justify-center gap-1.5">
+                    <div className="flex items-center justify-center gap-1">
                       <button
                         onClick={(e) => handleToggleRowSelection(originalIndex, e)}
                         className="p-0.5 text-slate-400 hover:text-[#007AFF]"
@@ -751,10 +942,10 @@ export function ExcelTable({
                               indexesToDelete: [originalIndex],
                             });
                           }}
-                          className="p-1 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg shadow-2xs transition-all flex items-center justify-center border border-rose-200"
-                          title="Excluir transação estornada (Autorização / Cartão)"
+                          className="p-0.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded shadow-2xs transition-all flex items-center justify-center border border-rose-200"
+                          title="Excluir transação estornada"
                         >
-                          <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                          <Trash2 className="w-3 h-3 text-rose-600" />
                         </button>
                       )}
                     </div>
@@ -762,6 +953,7 @@ export function ExcelTable({
 
                   {/* Data Cells */}
                   {activeColumns.map((col) => {
+                    const layout = getColumnLayout(col, activeColumns.length, activeTab);
                     const cellValue = row[col.id];
                     const isEditing =
                       editingCell?.rowIndex === originalIndex && editingCell?.colId === col.id;
@@ -798,7 +990,7 @@ export function ExcelTable({
                             cellValue !== undefined && cellValue !== null ? String(cellValue) : ''
                           );
                         }}
-                        className={`px-2.5 py-1.5 border-r border-slate-200 font-mono text-xs transition-colors relative ${
+                        className={`${layout.widthClass} ${layout.alignClass} px-2 py-1.5 border-r border-slate-200 font-mono text-xs transition-colors relative ${
                           isSelected ? 'bg-blue-100/60 ring-1 ring-[#007AFF]' : ''
                         } ${invalidCpf ? 'bg-amber-50' : ''}`}
                       >
@@ -813,19 +1005,19 @@ export function ExcelTable({
                                 if (e.key === 'Escape') setEditingCell(null);
                               }}
                               autoFocus
-                              className="w-full px-2 py-1 border border-[#007AFF] bg-white text-slate-900 rounded-lg font-medium focus:outline-none text-xs"
+                              className="w-full px-1.5 py-0.5 border border-[#007AFF] bg-white text-slate-900 rounded font-medium focus:outline-none text-xs"
                             />
                             <button
                               onClick={handleCommitCellEdit}
-                              className="p-1 bg-[#007AFF] text-white rounded-lg hover:bg-blue-600"
+                              className="p-1 bg-[#007AFF] text-white rounded hover:bg-blue-600"
                             >
                               <Check className="w-3.5 h-3.5" />
                             </button>
                           </div>
                         ) : (
-                          <div className="flex items-center justify-between gap-1">
+                          <div className={`flex items-center gap-1 ${layout.isNumeric ? 'justify-end' : layout.isDate ? 'justify-center' : 'justify-between'}`}>
                             {statusBadge ? (
-                              <div className="flex items-center gap-1.5">
+                              <div className="flex items-center justify-center w-full gap-1">
                                 {statusBadge}
                                 {isEstornadaRow && onDeleteRow && (
                                   <button
@@ -836,21 +1028,21 @@ export function ExcelTable({
                                         indexesToDelete: [originalIndex],
                                       });
                                     }}
-                                    className="p-1 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 rounded-lg shadow-2xs transition-all flex items-center gap-1 text-[10px] font-bold"
+                                    className="p-0.5 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 rounded shadow-2xs transition-all flex items-center"
                                     title="Excluir estorno"
                                   >
                                     <Trash2 className="w-3 h-3 text-rose-600" />
-                                    <span className="hidden sm:inline">Excluir</span>
                                   </button>
                                 )}
                               </div>
                             ) : (
                               <span
-                                className={`truncate ${
+                                className={`truncate block ${
                                   cellValue === null || cellValue === undefined || String(cellValue).trim() === ''
                                     ? 'text-slate-400 italic text-[11px]'
                                     : 'text-slate-800'
                                 }`}
+                                title={cellValue !== null && cellValue !== undefined ? String(cellValue) : ''}
                               >
                                 {cellValue !== null && cellValue !== undefined && String(cellValue).trim() !== ''
                                   ? String(cellValue)
@@ -860,10 +1052,10 @@ export function ExcelTable({
 
                             {invalidCpf && (
                               <span
-                                className="px-1.5 py-0.5 bg-amber-100 text-amber-800 border border-amber-300 rounded font-sans text-[9px] font-bold flex-shrink-0"
+                                className="px-1 py-0.2 bg-amber-100 text-amber-800 border border-amber-300 rounded font-sans text-[8.5px] font-bold flex-shrink-0"
                                 title="CPF com dígito verificador inválido"
                               >
-                                CPF Inválido
+                                Inválido
                               </span>
                             )}
                           </div>

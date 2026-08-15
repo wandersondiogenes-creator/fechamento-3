@@ -824,7 +824,7 @@ export default function Home() {
         />
 
         {/* Main Container Area */}
-        <main className="flex-1 max-w-7xl w-full mx-auto p-3 sm:p-5 flex flex-col gap-4">
+        <main className="flex-1 max-w-[1680px] w-full mx-auto p-2.5 sm:p-4 lg:p-5 flex flex-col gap-3.5">
           {activeTab === 'auditoria' ? (
             <AuditView />
           ) : activeTab === 'fechamento' ? (
