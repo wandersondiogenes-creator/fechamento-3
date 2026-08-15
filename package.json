@@ -2,11 +2,10 @@
   "name": "ai-studio-applet",
   "version": "0.1.0",
   "private": true,
-  "type": "module",
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
-    "start": "node server.ts",
+    "build": "NODE_ENV=production next build",
+    "start": "next start",
     "lint": "eslint .",
     "clean": "next clean"
   },
