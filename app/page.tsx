@@ -14,7 +14,7 @@ import {
 import { FechamentoItem, generateAutoFechamento } from '@/lib/fechamento-utils';
 import { FechamentoCaixaRecord } from '@/lib/fechamento-caixa-service';
 import { logAuditAction } from '@/lib/audit-service';
-import { getCurrentUser } from '@/lib/auth-service';
+import { getCurrentUser, isUserLoggedIn, logoutUser } from '@/lib/auth-service';
 import { UserProfile } from '@/types/audit';
 import { SAMPLE_DATASETS } from '@/lib/sample-data';
 import { ExcelHeader } from '@/components/ExcelHeader';
@@ -25,6 +25,7 @@ import { UserSelectorModal } from '@/components/UserSelectorModal';
 import { ColumnRuleModal } from '@/components/ColumnRuleModal';
 import { PresetsModal } from '@/components/PresetsModal';
 import { AIAssistantDrawer } from '@/components/AIAssistantDrawer';
+import { ICloudLoginView } from '@/components/ICloudLoginView';
 import { Sparkles, FileSpreadsheet, Zap, CheckCircle2, Bookmark, FolderOpen, X, TrendingUp, TrendingDown, Wallet, Clock, RotateCcw, CreditCard, ShieldCheck } from 'lucide-react';
 
 function buildEmptySpreadsheetState(defaultName: string = 'DEALER.xlsx'): SpreadsheetState {
@@ -40,12 +41,26 @@ function buildEmptySpreadsheetState(defaultName: string = 'DEALER.xlsx'): Spread
 
 export default function Home() {
   const [mounted, setMounted] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const [currentUser, setCurrentUser] = useState<UserProfile>(() => getCurrentUser());
+
   useEffect(() => {
     setMounted(true);
+    setIsAuthenticated(isUserLoggedIn());
+    setCurrentUser(getCurrentUser());
   }, []);
 
+  const handleLoginSuccess = (user: UserProfile) => {
+    setCurrentUser(user);
+    setIsAuthenticated(true);
+  };
+
+  const handleLogout = () => {
+    logoutUser();
+    setIsAuthenticated(false);
+  };
+
   const [activeTab, setActiveTab] = useState<'dealer' | 'sitef' | 'pendente_cdc' | 'fechamento' | 'auditoria'>('dealer');
-  const [currentUser, setCurrentUser] = useState<UserProfile>(() => getCurrentUser());
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
 
   const [dealerState, setDealerState] = useState<SpreadsheetState>(() =>
@@ -770,6 +785,16 @@ export default function Home() {
     );
   }
 
+  // Require Gmail Login if not authenticated (iCloud styled login page)
+  if (!isAuthenticated) {
+    return (
+      <ICloudLoginView
+        onLoginSuccess={handleLoginSuccess}
+        defaultEmail="infroberto360@gmail.com"
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#F5F5F7] text-[#1D1D1F] font-sans antialiased relative selection:bg-[#007AFF]/20 selection:text-[#0071E3]">
       {/* Apple Dynamic Light Ambient Shimmers */}
@@ -807,6 +832,7 @@ export default function Home() {
           onAutoOrganize={handleAutoOrganize}
           onOpenPresetsModal={() => setIsPresetsModalOpen(true)}
           onOpenAIDrawer={() => setIsAIDrawerOpen(true)}
+          onLogout={handleLogout}
           onExport={(format, includeHidden) =>
             exportProcessedData(spreadsheetState, format, includeHidden)
           }

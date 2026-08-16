@@ -22,6 +22,9 @@ import {
   User,
   Radio,
   SlidersHorizontal,
+  LogOut,
+  Mail,
+  UserCheck,
 } from 'lucide-react';
 
 interface ExcelHeaderProps {
@@ -37,6 +40,7 @@ interface ExcelHeaderProps {
   onOpenUserModal?: () => void;
   onExport: (format: 'xlsx' | 'csv' | 'json', includeHidden: boolean) => void;
   onReset: () => void;
+  onLogout?: () => void;
   currentUser?: UserProfile;
 }
 
@@ -53,10 +57,12 @@ export function ExcelHeader({
   onOpenUserModal,
   onExport,
   onReset,
+  onLogout,
   currentUser: initialUser,
 }: ExcelHeaderProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [showExportMenu, setShowExportMenu] = useState(false);
+  const [showUserMenu, setShowUserMenu] = useState(false);
   const [includeHiddenExport, setIncludeHiddenExport] = useState(false);
   const [currentUser, setCurrentUser] = useState<UserProfile>(() => initialUser || getCurrentUser());
 
@@ -236,30 +242,112 @@ export function ExcelHeader({
           </button>
 
           {/* User Profile Pill / Switcher (Apple Control Center style) */}
-          {onOpenUserModal && (
+          <div className="relative">
             <button
-              onClick={onOpenUserModal}
+              onClick={() => setShowUserMenu(!showUserMenu)}
               id="apple-btn-user"
               className="flex items-center gap-2 px-2.5 py-1 bg-slate-100/90 hover:bg-slate-200/80 active:scale-97 text-slate-800 rounded-xl border border-slate-200/80 transition-all cursor-pointer text-xs ml-1 shadow-2xs"
-              title="Trocar operador ou gerenciar permissões"
+              title="Conta e opções de sessão"
             >
-              <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 text-white font-black text-[10px] flex items-center justify-center shadow-xs">
-                {currentUser?.avatar_initials || 'OP'}
+              <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-blue-600 via-indigo-600 to-purple-600 text-white font-black text-[10px] flex items-center justify-center shadow-xs">
+                {currentUser?.name
+                  ? currentUser.name
+                      .split(' ')
+                      .map((n) => n[0])
+                      .slice(0, 2)
+                      .join('')
+                      .toUpperCase()
+                  : 'OP'}
               </div>
               <div className="hidden sm:flex flex-col text-left">
-                <span className="text-[11px] font-bold text-slate-800 leading-tight">
+                <span className="text-[11px] font-bold text-slate-800 leading-tight truncate max-w-[130px]">
                   {currentUser?.name || 'Operador'}
                 </span>
-                <span className="text-[9px] text-slate-500 font-medium">
-                  {currentUser?.role === 'admin'
-                    ? 'Administrador'
-                    : currentUser?.role === 'auditor'
-                    ? 'Auditor'
-                    : 'Caixa / Operador'}
+                <span className="text-[9px] text-slate-500 font-medium truncate max-w-[130px]">
+                  {currentUser?.email || (currentUser?.role === 'admin' ? 'Administrador' : 'Operador')}
                 </span>
               </div>
+              <ChevronDown className="w-3 h-3 text-slate-400" />
             </button>
-          )}
+
+            {/* Apple Style Account Menu Popover */}
+            {showUserMenu && (
+              <>
+                <div className="fixed inset-0 z-20" onClick={() => setShowUserMenu(false)} />
+                <div className="absolute right-0 mt-2 w-72 bg-white/95 border border-slate-200 rounded-3xl shadow-2xl z-30 p-3 text-slate-800 space-y-3 backdrop-blur-2xl animate-in fade-in-50 zoom-in-95 duration-150">
+                  {/* User Profile Card */}
+                  <div className="p-3 bg-slate-50/90 rounded-2xl border border-slate-200/70 flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-blue-600 via-indigo-600 to-purple-600 text-white font-black text-xs flex items-center justify-center shadow-md flex-shrink-0">
+                      {currentUser?.name
+                        ? currentUser.name
+                            .split(' ')
+                            .map((n) => n[0])
+                            .slice(0, 2)
+                            .join('')
+                            .toUpperCase()
+                        : 'OP'}
+                    </div>
+                    <div className="overflow-hidden text-left">
+                      <div className="font-bold text-xs text-slate-900 truncate">
+                        {currentUser?.name || 'Operador'}
+                      </div>
+                      <div className="text-[10.5px] text-slate-500 truncate flex items-center gap-1">
+                        <Mail className="w-3 h-3 text-[#007AFF]" />
+                        <span>{currentUser?.email || 'conta@gmail.com'}</span>
+                      </div>
+                      <div className="mt-1 flex items-center gap-1.5">
+                        <span className="px-1.5 py-0.2 bg-blue-100 text-blue-700 text-[9px] font-bold rounded-full uppercase tracking-wide">
+                          {currentUser?.role === 'admin'
+                            ? 'Administrador'
+                            : currentUser?.role === 'auditor'
+                            ? 'Auditor'
+                            : 'Operador'}
+                        </span>
+                        {currentUser?.empresa && (
+                          <span className="text-[9.5px] text-slate-500 truncate max-w-[110px]">
+                            {currentUser.empresa}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Actions List */}
+                  <div className="space-y-1 pt-1">
+                    {onOpenUserModal && (
+                      <button
+                        onClick={() => {
+                          setShowUserMenu(false);
+                          onOpenUserModal();
+                        }}
+                        className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-slate-100 text-xs font-semibold text-slate-700 transition-colors text-left cursor-pointer"
+                      >
+                        <UserCheck className="w-3.5 h-3.5 text-indigo-600" />
+                        <span>Gerenciar Operadores / Permissões</span>
+                      </button>
+                    )}
+
+                    {onLogout && (
+                      <button
+                        onClick={() => {
+                          setShowUserMenu(false);
+                          onLogout();
+                        }}
+                        className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-rose-50 text-xs font-semibold text-rose-600 transition-colors text-left cursor-pointer border border-transparent hover:border-rose-100"
+                      >
+                        <LogOut className="w-3.5 h-3.5 text-rose-600" />
+                        <span>Encerrar Sessão (Sair)</span>
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="text-[9.5px] text-slate-400 text-center pt-1 border-t border-slate-100">
+                    Sessão criptografada Wanfinance Pro
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </div>
 
