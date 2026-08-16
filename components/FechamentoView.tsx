@@ -387,6 +387,9 @@ export function FechamentoView({
 
   // Export Fechamento to Excel
   const handleExportExcel = () => {
+    const wb = XLSX.utils.book_new();
+
+    // Sheet 1: Itemized List
     const dataToExport = filteredItems.map((item) => ({
       'Empresa (Dealer)': item.empresa,
       'Departamento': item.departamento,
@@ -406,9 +409,100 @@ export function FechamentoView({
       'Divergência?': item.temDivergencia ? 'SIM' : 'NÃO',
     }));
 
-    const ws = XLSX.utils.json_to_sheet(dataToExport);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'FECHAMENTO');
+    const wsItems = XLSX.utils.json_to_sheet(dataToExport);
+    XLSX.utils.book_append_sheet(wb, wsItems, 'Lançamentos Fechamento');
+
+    // Sheet 2: Resumo por Empresa e Conta Gerencial
+    const resumoMap: Record<
+      string,
+      {
+        empresa: string;
+        contaGerencial: string;
+        count: number;
+        totalDealer: number;
+        totalSitef: number;
+        diferenca: number;
+      }
+    > = {};
+
+    filteredItems.forEach((item) => {
+      const emp = item.empresa || 'Empresa Geral';
+      const cta = item.contaGerencial || item.departamento || 'Conta Não Especificada';
+      const key = `${emp}__${cta}`;
+
+      if (!resumoMap[key]) {
+        resumoMap[key] = {
+          empresa: emp,
+          contaGerencial: cta,
+          count: 0,
+          totalDealer: 0,
+          totalSitef: 0,
+          diferenca: 0,
+        };
+      }
+
+      resumoMap[key].count += 1;
+      resumoMap[key].totalDealer += item.valorDealer || 0;
+      resumoMap[key].totalSitef += item.valorSitef || 0;
+      resumoMap[key].diferenca += (item.valorDealer || 0) - (item.valorSitef || 0);
+    });
+
+    const sortedResumo = Object.values(resumoMap).sort((a, b) => {
+      if (a.empresa !== b.empresa) return a.empresa.localeCompare(b.empresa);
+      return a.contaGerencial.localeCompare(b.contaGerencial);
+    });
+
+    const resumoRows = [
+      ['RESUMO CONSOLIDADO POR EMPRESA E CONTA GERENCIAL'],
+      ['GERADO EM:', new Date().toLocaleString('pt-BR')],
+      ['TOTAL DE ITENS:', filteredItems.length],
+      [''],
+      [
+        'Empresa',
+        'Conta Gerencial / Departamento',
+        'Qtd. Lançamentos',
+        'Total Dealer (R$)',
+        'Total SiTef (R$)',
+        'Diferença (R$)',
+        'Situação',
+      ],
+    ];
+
+    let sumQtd = 0;
+    let sumDealer = 0;
+    let sumSitef = 0;
+    let sumDif = 0;
+
+    sortedResumo.forEach((r) => {
+      sumQtd += r.count;
+      sumDealer += r.totalDealer;
+      sumSitef += r.totalSitef;
+      sumDif += r.diferenca;
+
+      resumoRows.push([
+        r.empresa,
+        r.contaGerencial,
+        String(r.count),
+        formatBRL(r.totalDealer),
+        formatBRL(r.totalSitef),
+        formatBRL(r.diferenca),
+        Math.abs(r.diferenca) < 0.01 ? 'CONCILIADO' : 'DIVERGENTE',
+      ]);
+    });
+
+    resumoRows.push([
+      'TOTAL GERAL',
+      'CONSOLIDAÇÃO GERAL',
+      String(sumQtd),
+      formatBRL(sumDealer),
+      formatBRL(sumSitef),
+      formatBRL(sumDif),
+      Math.abs(sumDif) < 0.01 ? '100% CONCILIADO' : 'DIVERGENTE',
+    ]);
+
+    const wsResumo = XLSX.utils.aoa_to_sheet(resumoRows);
+    XLSX.utils.book_append_sheet(wb, wsResumo, 'Resumo Empresa e Conta');
+
     XLSX.writeFile(wb, `Fechamento_Conciliacao_${new Date().toISOString().slice(0, 10)}.xlsx`);
   };
 
