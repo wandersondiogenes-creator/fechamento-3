@@ -26,7 +26,16 @@ import { ColumnRuleModal } from '@/components/ColumnRuleModal';
 import { PresetsModal } from '@/components/PresetsModal';
 import { AIAssistantDrawer } from '@/components/AIAssistantDrawer';
 import { ICloudLoginView } from '@/components/ICloudLoginView';
-import { Sparkles, FileSpreadsheet, Zap, CheckCircle2, Bookmark, FolderOpen, X, TrendingUp, TrendingDown, Wallet, Clock, RotateCcw, CreditCard, ShieldCheck } from 'lucide-react';
+import { AppErrorBoundary } from '@/components/AppErrorBoundary';
+import { SystemDiagnosticsModal } from '@/components/SystemDiagnosticsModal';
+import {
+  saveAppSession,
+  loadAppSession,
+  clearLocalSession,
+  logDiagnostic,
+  AutosaveSessionData,
+} from '@/lib/autosave-service';
+import { Sparkles, FileSpreadsheet, Zap, CheckCircle2, Bookmark, FolderOpen, X, TrendingUp, TrendingDown, Wallet, Clock, RotateCcw, CreditCard, ShieldCheck, HardDriveDownload } from 'lucide-react';
 
 function buildEmptySpreadsheetState(defaultName: string = 'DEALER.xlsx'): SpreadsheetState {
   return {
@@ -133,6 +142,128 @@ export default function Home() {
 
   const [isPresetsModalOpen, setIsPresetsModalOpen] = useState(false);
   const [isAIDrawerOpen, setIsAIDrawerOpen] = useState(false);
+  const [isDiagnosticsModalOpen, setIsDiagnosticsModalOpen] = useState(false);
+
+  // Autosave status state
+  const [autosaveStatus, setAutosaveStatus] = useState<{
+    lastSaved: Date | null;
+    isSaving: boolean;
+    cloudSaved: boolean;
+  }>({
+    lastSaved: null,
+    isSaving: false,
+    cloudSaved: false,
+  });
+
+  // Recovery banner indicator
+  const [recoveredBanner, setRecoveredBanner] = useState<{
+    show: boolean;
+    source: 'local' | 'cloud';
+    lastSavedAt: string;
+  } | null>(null);
+
+  // Autosave Trigger Function
+  const triggerAutosave = useCallback(
+    async (
+      dState = dealerState,
+      sState = sitefState,
+      pState = pendenteCdcState,
+      mItems = manualFechamentoItems,
+      dIds = deletedFechamentoIds,
+      tab = activeTab
+    ) => {
+      setAutosaveStatus((prev) => ({ ...prev, isSaving: true }));
+      const sessionData: AutosaveSessionData = {
+        version: 2,
+        lastSavedAt: new Date().toISOString(),
+        userEmail: currentUser?.email || 'infroberto360@gmail.com',
+        activeTab: tab,
+        dealerState: dState,
+        sitefState: sState,
+        pendenteCdcState: pState,
+        manualFechamentoItems: mItems,
+        deletedFechamentoIds: Array.from(dIds),
+      };
+
+      const result = await saveAppSession(sessionData);
+      setAutosaveStatus({
+        lastSaved: new Date(),
+        isSaving: false,
+        cloudSaved: result.cloudSaved,
+      });
+    },
+    [
+      dealerState,
+      sitefState,
+      pendenteCdcState,
+      manualFechamentoItems,
+      deletedFechamentoIds,
+      activeTab,
+      currentUser?.email,
+    ]
+  );
+
+  // Restore Session Function
+  const restoreSavedSession = useCallback(async () => {
+    try {
+      const res = await loadAppSession(currentUser?.email);
+      if (res.data) {
+        const { data, source } = res;
+        if (data.dealerState) setDealerState(data.dealerState);
+        if (data.sitefState) setSitefState(data.sitefState);
+        if (data.pendenteCdcState) setPendenteCdcState(data.pendenteCdcState);
+        if (data.manualFechamentoItems) setManualFechamentoItems(data.manualFechamentoItems);
+        if (data.deletedFechamentoIds) setDeletedFechamentoIds(new Set(data.deletedFechamentoIds));
+        if (data.activeTab) setActiveTab(data.activeTab as any);
+
+        setRecoveredBanner({
+          show: true,
+          source,
+          lastSavedAt: data.lastSavedAt,
+        });
+
+        logDiagnostic(
+          'success',
+          'Autosave',
+          `Sessão anterior restaurada com sucesso a partir da fonte: ${source.toUpperCase()}`,
+          { lastSavedAt: data.lastSavedAt }
+        );
+      }
+    } catch (err: any) {
+      logDiagnostic('warn', 'Autosave', 'Erro ao restaurar sessão anterior.', err?.message);
+    }
+  }, [currentUser?.email]);
+
+  // Initial mount: attempt session recovery if local/cloud session exists
+  useEffect(() => {
+    restoreSavedSession();
+  }, [restoreSavedSession]);
+
+  // Debounced Autosave on data changes
+  useEffect(() => {
+    if (!mounted) return;
+    const hasData =
+      dealerState.rawData.length > 0 ||
+      sitefState.rawData.length > 0 ||
+      pendenteCdcState.rawData.length > 0 ||
+      manualFechamentoItems.length > 0;
+
+    if (hasData) {
+      const timer = setTimeout(() => {
+        triggerAutosave();
+      }, 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [
+    dealerState,
+    sitefState,
+    pendenteCdcState,
+    manualFechamentoItems,
+    deletedFechamentoIds,
+    activeTab,
+    mounted,
+    triggerAutosave,
+  ]);
 
   // Process data whenever rawData or columns configuration changes
   const updateProcessedData = useCallback(
@@ -833,6 +964,8 @@ export default function Home() {
           onOpenPresetsModal={() => setIsPresetsModalOpen(true)}
           onOpenAIDrawer={() => setIsAIDrawerOpen(true)}
           onLogout={handleLogout}
+          onOpenDiagnostics={() => setIsDiagnosticsModalOpen(true)}
+          autosaveStatus={autosaveStatus}
           onExport={(format, includeHidden) =>
             exportProcessedData(spreadsheetState, format, includeHidden)
           }
@@ -849,26 +982,54 @@ export default function Home() {
           }
         />
 
+        {/* Autosave Recovery Notification Banner */}
+        {recoveredBanner && recoveredBanner.show && (
+          <div className="max-w-7xl mx-auto px-4 w-full pt-3">
+            <div className="bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200/80 rounded-2xl p-3.5 flex items-center justify-between shadow-xs animate-in slide-in-from-top duration-300">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-xl bg-emerald-500 text-white flex items-center justify-center shadow-xs">
+                  <ShieldCheck className="w-4 h-4" />
+                </div>
+                <div>
+                  <div className="text-xs font-bold text-emerald-900 flex items-center gap-1.5">
+                    <span>Sessão anterior restaurada com segurança</span>
+                    <span className="px-1.5 py-0.2 rounded-md bg-emerald-200/60 text-emerald-800 text-[10px] uppercase font-mono">
+                      {recoveredBanner.source === 'cloud' ? 'Supabase Cloud' : 'Cache Local'}
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-emerald-700">
+                    Seus dados, colunas tratadas e conciliações foram recuperados (salvo em{' '}
+                    {new Date(recoveredBanner.lastSavedAt).toLocaleTimeString('pt-BR')}).
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={() => setRecoveredBanner(null)}
+                className="w-7 h-7 rounded-lg hover:bg-emerald-200/50 flex items-center justify-center text-emerald-800 text-xs transition-colors cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Main Container Area */}
         <main className="flex-1 max-w-7xl w-full mx-auto p-3 sm:p-5 flex flex-col gap-4">
-          {activeTab === 'auditoria' ? (
-            <AuditView />
-          ) : activeTab === 'fechamento' ? (
-            <FechamentoView
-              fechamentoItems={allFechamentoItems}
-              onAddFechamentoItem={handleAddFechamentoItem}
-              onDeleteFechamentoItems={handleDeleteFechamentoItems}
-              onRecalculateAuto={handleRecalculateFechamento}
-              onTriggerFileImport={triggerFileImport}
-              activeTab={activeTab}
-              tabCounts={tabCounts}
-              onTabChange={(tab) => setActiveTab(tab)}
-              onFechamentoConcluido={handleFechamentoConcluido}
-              onRestoreFechamentoRecord={handleRestoreFechamentoRecord}
-            />
-          ) : (
-            <>
-          {/* Apple iPhone Pro Metric Summary Cards */}
+          <AppErrorBoundary fallbackTitle="Instabilidade no Módulo Financeiro">
+            {activeTab === 'auditoria' ? (
+              <AuditView />
+            ) : activeTab === 'fechamento' ? (
+              <FechamentoView
+                fechamentoItems={allFechamentoItems}
+                onAddFechamentoItem={handleAddFechamentoItem}
+                onDeleteFechamentoItems={handleDeleteFechamentoItems}
+                onRecalculateFechamento={handleRecalculateFechamento}
+                onFechamentoConcluido={handleFechamentoConcluido}
+                onRestoreFechamentoRecord={handleRestoreFechamentoRecord}
+              />
+            ) : (
+              <>
+                {/* Apple iPhone Pro Metric Summary Cards */}
           <div className={`grid grid-cols-1 sm:grid-cols-2 ${activeTab === 'sitef' ? 'lg:grid-cols-5' : 'lg:grid-cols-4'} gap-3.5`}>
             {/* Card 1: Total de Entrada / Valor Bruto */}
             <div className="bg-white/90 border border-black/[0.06] hover:border-emerald-500/40 rounded-2xl p-4 shadow-[0_2px_12px_rgba(0,0,0,0.03)] hover:shadow-md backdrop-blur-xl transition-all duration-200 group flex items-center justify-between gap-3">
@@ -1025,6 +1186,7 @@ export default function Home() {
           </div>
             </>
           )}
+          </AppErrorBoundary>
         </main>
       </div>
 
@@ -1060,6 +1222,15 @@ export default function Home() {
         onUserChanged={(newUser) => {
           setCurrentUser(newUser);
         }}
+      />
+
+      {/* System Diagnostics, Resilience & Autosave Telemetry Modal */}
+      <SystemDiagnosticsModal
+        isOpen={isDiagnosticsModalOpen}
+        onClose={() => setIsDiagnosticsModalOpen(false)}
+        autosaveStatus={autosaveStatus}
+        onForceSave={() => triggerAutosave()}
+        onRestoreSession={() => restoreSavedSession()}
       />
     </div>
   );
