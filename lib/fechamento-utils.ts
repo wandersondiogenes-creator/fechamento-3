@@ -219,14 +219,16 @@ export function generateAutoFechamento(
   }
 
   const parsedDealerRows: ParsedDealerRow[] = dealerRows.map((dRow, idx) => {
-    const empresaStr = String(
-      dealerEmpresaCol ? dRow[dealerEmpresaCol] || '' : 'Empresa 01'
-    ).trim() || 'Empresa 01';
+    const rawEmp = String(
+      dealerEmpresaCol ? dRow[dealerEmpresaCol] || '' : ''
+    ).trim();
+    const empresaStr = rawEmp || 'Empresa 01';
     const empKey = cleanEmpresaKey(empresaStr);
 
-    const departamento = String(
-      dealerDepartCol ? dRow[dealerDepartCol] || '' : dealerContaCol ? dRow[dealerContaCol] || '' : 'Geral'
-    ).trim() || 'Geral';
+    const rawDep = String(
+      dealerDepartCol ? dRow[dealerDepartCol] || '' : dealerContaCol ? dRow[dealerContaCol] || '' : ''
+    ).trim();
+    const departamento = rawDep || 'Lançamentos Dealer';
 
     const conta = String(
       dealerContaCol ? dRow[dealerContaCol] || '' : '1.01.02 - Cartões de Crédito'
@@ -308,14 +310,15 @@ export function generateAutoFechamento(
 
   const parsedSitefRows: ParsedSitefRow[] = sitefRows.map((sRow, idx) => {
     const rawEmp = String(
-      sitefEmpresaCol ? sRow[sitefEmpresaCol] || '' : 'Empresa 01'
-    ).trim() || 'Empresa 01';
-    const mappedEmp = mapSitefEmpresa(rawEmp);
+      sitefEmpresaCol ? sRow[sitefEmpresaCol] || '' : ''
+    ).trim();
+    const mappedEmp = rawEmp ? mapSitefEmpresa(rawEmp) : 'Empresa 01';
     const empKey = cleanEmpresaKey(mappedEmp);
 
-    const departamento = String(
-      sitefDepartCol ? sRow[sitefDepartCol] || '' : sitefContaCol ? sRow[sitefContaCol] || '' : 'Geral'
-    ).trim() || 'Geral';
+    const rawDep = String(
+      sitefDepartCol ? sRow[sitefDepartCol] || '' : sitefContaCol ? sRow[sitefContaCol] || '' : ''
+    ).trim();
+    const departamento = rawDep || 'Extrato SiTef';
 
     const conta = String(
       sitefContaCol ? sRow[sitefContaCol] || '' : '1.01.02 - Cartões de Crédito'
@@ -391,98 +394,69 @@ export function generateAutoFechamento(
 
   const fechamentoItems: FechamentoItem[] = [];
 
-  // PASS 1: Match by NSU Host (Primary - Card and PIX with identifiable NSU)
-  // When NSU is identical, if values differ, it explicitly creates a DIVERGÊNCIA DE VALOR
+  // PASS 1: Match by NSU Host and EXACT VALUE only.
+  // USER MANDATE: "não conciliar lançamentos com valores divergentes do dealer e o sitef"
+  // If values are equal (diferenca < 0.01), conciliate them together.
+  // If NSU matches but values diverge, DO NOT conciliate them into a single line; keep each in its company as unconciliated.
   parsedDealerRows.forEach((d) => {
-    // If it has a valid NSU that matches SiTef, match it first!
     if (d.nsu && d.nsu !== 'PIX' && d.nsu !== 'S/N' && sitefByNsuMap.has(d.nsu)) {
       const candidates = sitefByNsuMap.get(d.nsu)!;
-      // 1st priority: same empresa key + unused + same payment family (pix with pix or card with card)
-      let candidate = candidates.find((c) => !c.used && c.empKey === d.empKey && c.isPix === d.isPix);
-      // 2nd priority: same empresa key + unused
-      if (!candidate) {
-        candidate = candidates.find((c) => !c.used && c.empKey === d.empKey);
-      }
-      // 3rd priority: any unused candidate with same payment family
-      if (!candidate) {
-        candidate = candidates.find((c) => !c.used && c.isPix === d.isPix);
-      }
-      // 4th priority: any unused candidate with same NSU
-      if (!candidate) {
-        candidate = candidates.find((c) => !c.used);
-      }
+      // Find candidate with SAME NSU and SAME EXACT VALUE
+      const exactCandidate = candidates.find(
+        (c) => !c.used && Math.abs(d.valDealer - c.valSitef) < 0.01 && (c.empKey === d.empKey || !c.rawEmp)
+      ) || candidates.find(
+        (c) => !c.used && Math.abs(d.valDealer - c.valSitef) < 0.01
+      );
 
-      if (candidate) {
+      if (exactCandidate && !exactCandidate.isStatusProblem) {
         d.used = true;
-        candidate.used = true;
+        exactCandidate.used = true;
 
-        const rawDif = Math.round((d.valDealer - candidate.valSitef) * 100) / 100;
-        const isPixMatch = d.isPix || candidate.isPix;
-
-        // Check Bandeira divergence ONLY for Credit & Debit cards (not PIX)
+        const isPixMatch = d.isPix || exactCandidate.isPix;
         const hasBandDivergence =
           !isPixMatch &&
           Boolean(d.bandeiraNorm) &&
-          Boolean(candidate.bandeiraNorm) &&
-          d.bandeiraNorm !== candidate.bandeiraNorm;
+          Boolean(exactCandidate.bandeiraNorm) &&
+          d.bandeiraNorm !== exactCandidate.bandeiraNorm;
 
-        let temDivergencia = false;
-        let statusStr = isPixMatch ? 'CONCILIADO (PIX)' : 'CONCILIADO';
-        let detalhesStr = isPixMatch
-          ? 'Lançamento Pix conciliado com sucesso (NSU Dealer e NSU SiTef idênticos)'
-          : 'Lançamento conciliado com sucesso (NSU Dealer e NSU Host SiTef idênticos)';
-        const finalDif = rawDif;
-
-        // RULE: If NSU is equal but value is different -> DIVERGÊNCIA DE VALOR (even for PIX!)
-        if (Math.abs(rawDif) > 0.01 || candidate.isStatusProblem || hasBandDivergence) {
-          temDivergencia = true;
-          if (Math.abs(rawDif) > 0.01 && hasBandDivergence) {
-            statusStr = 'DIVERGÊNCIA DE VALOR E BANDEIRA';
-            detalhesStr = `Cartão ${d.bandeiraNorm} (Dealer) vs ${candidate.bandeiraNorm} (SiTef) | R$ ${d.valDealer.toFixed(2)} vs R$ ${candidate.valSitef.toFixed(2)} [NSU: ${d.nsu}]`;
-          } else if (Math.abs(rawDif) > 0.01) {
-            statusStr = isPixMatch ? 'DIVERGÊNCIA DE VALOR (PIX - MESMO NSU)' : 'DIVERGÊNCIA DE VALOR';
-            detalhesStr = `NSU idêntico (${d.nsu}), porém com divergência de valor: R$ ${d.valDealer.toFixed(2)} (Dealer) vs R$ ${candidate.valSitef.toFixed(2)} (SiTef)`;
-          } else if (hasBandDivergence) {
-            statusStr = 'DIVERGÊNCIA DE BANDEIRA';
-            detalhesStr = `Bandeira Dealer (${d.bandeiraNorm}) incompatível com SiTef (${candidate.bandeiraNorm}) [NSU: ${d.nsu}]`;
-          } else {
-            statusStr = `STATUS SITEF: ${candidate.sStatus}`;
-            detalhesStr = `Transação com status ${candidate.sStatus} no SiTef [NSU: ${d.nsu}]`;
-          }
-        }
+        const statusStr = hasBandDivergence
+          ? 'DIVERGÊNCIA DE BANDEIRA'
+          : isPixMatch
+          ? 'CONCILIADO (PIX)'
+          : 'CONCILIADO';
 
         fechamentoItems.push({
-          id: `auto_d_${d.index}_s_${candidate.index}`,
-          empresa: d.empresaStr,
+          id: `auto_d_${d.index}_s_${exactCandidate.index}`,
+          empresa: d.empresaStr || exactCandidate.mappedEmp,
           departamento: d.departamento,
           contaGerencial: d.conta,
           caixaLoja: d.caixa,
-          data: d.data || candidate.data,
-          nsu: d.nsu || candidate.nsu || (isPixMatch ? 'PIX' : 'S/N'),
-          tipoPagamento: isPixMatch ? 'PIX' : (d.bandeiraNorm || 'Cartão de Crédito'),
+          data: d.data || exactCandidate.data,
+          nsu: d.nsu || exactCandidate.nsu,
+          tipoPagamento: isPixMatch ? 'PIX' : (d.bandeiraNorm || exactCandidate.bandeiraNorm || 'Cartão de Crédito'),
           bandeiraDealer: isPixMatch ? 'PIX' : (d.bandeiraNorm || 'Cartão'),
-          bandeiraSitef: isPixMatch ? 'PIX' : (candidate.bandeiraNorm || 'Cartão'),
+          bandeiraSitef: isPixMatch ? 'PIX' : (exactCandidate.bandeiraNorm || 'Cartão'),
           divergenciaBandeira: hasBandDivergence,
           isPix: isPixMatch,
           valorDealer: d.valDealer,
-          valorSitef: candidate.valSitef,
-          diferenca: finalDif,
+          valorSitef: exactCandidate.valSitef,
+          diferenca: 0,
           status: statusStr,
-          temDivergencia,
-          criterioConciliacao: isPixMatch ? 'Mesmo NSU (PIX)' : 'NSU Host e Empresa',
-          detalhes: detalhesStr,
+          temDivergencia: hasBandDivergence,
+          criterioConciliacao: isPixMatch ? 'Mesmo NSU e Valor (PIX)' : 'NSU Host e Valor Idênticos',
+          detalhes: hasBandDivergence
+            ? `Valores iguais (R$ ${d.valDealer.toFixed(2)}), mas bandeiras divergentes: ${d.bandeiraNorm} (Dealer) vs ${exactCandidate.bandeiraNorm} (SiTef)`
+            : `Lançamento conciliado com sucesso (NSU ${d.nsu} e Valor R$ ${d.valDealer.toFixed(2)})`,
           origem: 'auto',
         });
       }
     }
   });
 
-  // PASS 2: Intelligent Engine for PIX Transactions (Associate to Empresa, NO divergence)
-  // Step 1: Process SiTef PIX rows and match with Dealer PIX rows in the same Empresa
+  // PASS 2: Match PIX Transactions with EXACT VALUE within the SAME Empresa
   parsedSitefRows.forEach((s) => {
     if (s.used || !s.isPix) return;
 
-    // 1. Exact value match in same Empresa
     const exactCandidates = parsedDealerRows.filter((d) => {
       if (d.used || !d.isPix) return false;
       const sameEmpresa = d.empKey === s.empKey;
@@ -507,7 +481,7 @@ export function generateAutoFechamento(
 
       fechamentoItems.push({
         id: `auto_d_${winner.index}_s_${s.index}`,
-        empresa: winner.empresaStr,
+        empresa: winner.empresaStr || s.mappedEmp,
         departamento: winner.departamento,
         contaGerencial: winner.conta,
         caixaLoja: winner.caixa,
@@ -523,88 +497,35 @@ export function generateAutoFechamento(
         valorSitef: s.valSitef,
         diferenca: 0,
         status: 'CONCILIADO (PIX)',
-        temDivergencia: false, // NO DIVERGENCE FOR PIX
+        temDivergencia: false,
         criterioConciliacao: minDateDiff === 0 ? 'Mesma Empresa, Valor Exato e Data' : 'Mesma Empresa e Valor Exato',
-        detalhes: `Lançamento Pix associado com sucesso à empresa ${winner.empresaStr}`,
+        detalhes: `Lançamento Pix conciliado com sucesso na empresa ${winner.empresaStr} (Valor R$ ${winner.valDealer.toFixed(2)})`,
         origem: 'auto',
       });
-      return;
     }
-
-    // 2. Approximate match within same Empresa (matching remaining PIX in company)
-    const sameEmpCandidates = parsedDealerRows.filter((d) => !d.used && d.isPix && d.empKey === s.empKey);
-    if (sameEmpCandidates.length > 0) {
-      let winner = sameEmpCandidates[0];
-      let minValDiff = Math.abs(winner.valDealer - s.valSitef);
-
-      for (let i = 1; i < sameEmpCandidates.length; i++) {
-        const diff = Math.abs(sameEmpCandidates[i].valDealer - s.valSitef);
-        if (diff < minValDiff) {
-          minValDiff = diff;
-          winner = sameEmpCandidates[i];
-        }
-      }
-
-      s.used = true;
-      winner.used = true;
-
-      fechamentoItems.push({
-        id: `auto_d_${winner.index}_s_${s.index}`,
-        empresa: winner.empresaStr,
-        departamento: winner.departamento,
-        contaGerencial: winner.conta,
-        caixaLoja: winner.caixa,
-        data: winner.data || s.data,
-        nsu: winner.nsu || s.nsu || 'PIX',
-        tipoPagamento: 'PIX',
-        bandeiraDealer: 'PIX',
-        bandeiraSitef: 'PIX',
-        divergenciaBandeira: false,
-        isPix: true,
-        isPixValidationNeeded: false,
-        valorDealer: winner.valDealer,
-        valorSitef: s.valSitef,
-        diferenca: 0,
-        status: 'PIX – ASSOCIADO À EMPRESA',
-        temDivergencia: false, // NO DIVERGENCE FOR PIX
-        criterioConciliacao: 'Associado por Empresa',
-        detalhes: `Lançamento Pix associado à empresa ${winner.empresaStr}`,
-        origem: 'auto',
-      });
-      return;
-    }
-
-    // 3. Unmatched SiTef PIX row -> Associate to Empresa without divergence
-    s.used = true;
-    fechamentoItems.push({
-      id: `auto_s_${s.index}`,
-      empresa: s.mappedEmp,
-      departamento: s.departamento,
-      contaGerencial: s.conta,
-      caixaLoja: s.caixa,
-      data: s.data,
-      nsu: s.nsu || 'PIX',
-      tipoPagamento: 'PIX',
-      bandeiraDealer: 'PIX',
-      bandeiraSitef: 'PIX',
-      divergenciaBandeira: false,
-      isPix: true,
-      isPixValidationNeeded: false,
-      valorDealer: s.valSitef,
-      valorSitef: s.valSitef,
-      diferenca: 0,
-      status: 'PIX – ASSOCIADO À EMPRESA',
-      temDivergencia: false, // NO DIVERGENCE FOR PIX
-      criterioConciliacao: 'Associado por Empresa',
-      detalhes: `Extrato Pix SiTef associado à empresa ${s.mappedEmp} sem divergência`,
-      origem: 'auto',
-    });
   });
 
-  // Step 2: Any remaining unused Dealer PIX rows -> Associate to Empresa without divergence
+  // PASS 3: Remaining Unconciliated Dealer Rows
+  // USER MANDATE: Do not create 'departamento diversos'; keep directly inside the company and show as unconciliated
   parsedDealerRows.forEach((d) => {
-    if (d.used || !d.isPix) return;
+    if (d.used) return;
     d.used = true;
+
+    // Check if there is a sitef transaction with same NSU but different value
+    const matchingNsuSitef = d.nsu && d.nsu !== 'PIX' && d.nsu !== 'S/N'
+      ? parsedSitefRows.find((s) => s.nsu === d.nsu)
+      : null;
+
+    let statusStr = 'NÃO CONCILIADO (DEALER)';
+    let detalhesStr = 'Lançamento presente no Dealer sem correspondência exata no SiTef';
+
+    if (matchingNsuSitef) {
+      statusStr = 'DIVERGÊNCIA DE VALOR (NÃO CONCILIADO)';
+      detalhesStr = `NSU ${d.nsu} localizado no SiTef com valor divergente: Dealer R$ ${d.valDealer.toFixed(2)} vs SiTef R$ ${matchingNsuSitef.valSitef.toFixed(2)}. Não conciliado.`;
+    } else if (d.isPix) {
+      statusStr = 'PIX NÃO CONCILIADO (DEALER)';
+      detalhesStr = `Lançamento Pix de R$ ${d.valDealer.toFixed(2)} registrado no Dealer, não localizado no extrato SiTef desta empresa.`;
+    }
 
     fechamentoItems.push({
       id: `auto_d_${d.index}`,
@@ -613,126 +534,68 @@ export function generateAutoFechamento(
       contaGerencial: d.conta,
       caixaLoja: d.caixa,
       data: d.data,
-      nsu: d.nsu || 'PIX',
-      tipoPagamento: 'PIX',
-      bandeiraDealer: 'PIX',
-      bandeiraSitef: 'PIX',
+      nsu: d.nsu || (d.isPix ? 'PIX' : 'S/N'),
+      tipoPagamento: d.isPix ? 'PIX' : (d.bandeiraNorm || 'Cartão de Crédito'),
+      bandeiraDealer: d.isPix ? 'PIX' : (d.bandeiraNorm || 'Cartão'),
+      bandeiraSitef: '—',
       divergenciaBandeira: false,
-      isPix: true,
-      isPixValidationNeeded: false,
+      isPix: d.isPix,
       valorDealer: d.valDealer,
-      valorSitef: d.valDealer,
-      diferenca: 0,
-      status: 'PIX – ASSOCIADO À EMPRESA',
-      temDivergencia: false, // NO DIVERGENCE FOR PIX
-      criterioConciliacao: 'Associado por Empresa',
-      detalhes: `Documento Pix associado à empresa ${d.empresaStr} sem divergência`,
+      valorSitef: 0,
+      diferenca: d.valDealer,
+      status: statusStr,
+      temDivergencia: true,
+      detalhes: detalhesStr,
       origem: 'auto',
     });
   });
 
-  // PASS 3: Remaining Unmatched Dealer Rows
-  parsedDealerRows.forEach((d) => {
-    if (d.used) return;
-    d.used = true;
-
-    if (d.isPix) {
-      fechamentoItems.push({
-        id: `auto_d_${d.index}`,
-        empresa: d.empresaStr,
-        departamento: d.departamento,
-        contaGerencial: d.conta,
-        caixaLoja: d.caixa,
-        data: d.data,
-        nsu: d.nsu || 'PIX',
-        tipoPagamento: 'PIX',
-        bandeiraDealer: 'PIX',
-        bandeiraSitef: 'PIX',
-        divergenciaBandeira: false,
-        isPix: true,
-        valorDealer: d.valDealer,
-        valorSitef: d.valDealer,
-        diferenca: 0,
-        status: 'PIX – ASSOCIADO À EMPRESA',
-        temDivergencia: false,
-        detalhes: `Lançamento Pix associado à empresa ${d.empresaStr} sem divergência`,
-        origem: 'auto',
-      });
-    } else {
-      fechamentoItems.push({
-        id: `auto_d_${d.index}`,
-        empresa: d.empresaStr,
-        departamento: d.departamento,
-        contaGerencial: d.conta,
-        caixaLoja: d.caixa,
-        data: d.data,
-        nsu: d.nsu || 'S/N',
-        tipoPagamento: d.bandeiraNorm || 'Cartão de Crédito',
-        bandeiraDealer: d.bandeiraNorm || 'Cartão',
-        bandeiraSitef: '—',
-        divergenciaBandeira: false,
-        isPix: false,
-        valorDealer: d.valDealer,
-        valorSitef: 0,
-        diferenca: d.valDealer,
-        status: 'Lançamento não localizado no SiTef',
-        temDivergencia: true,
-        detalhes: 'Lançamento existe no Dealer mas não foi localizado no SiTef (NSU Host ausente)',
-        origem: 'auto',
-      });
-    }
-  });
-
-  // PASS 4: Remaining Unmatched SiTef Rows
+  // PASS 4: Remaining Unconciliated SiTef Rows
+  // USER MANDATE: Do not create 'departamento diversos'; keep directly inside the company and show as unconciliated
   parsedSitefRows.forEach((s) => {
     if (s.used) return;
     s.used = true;
 
-    if (s.isPix) {
-      fechamentoItems.push({
-        id: `auto_s_${s.index}`,
-        empresa: s.mappedEmp,
-        departamento: s.departamento,
-        contaGerencial: s.conta,
-        caixaLoja: s.caixa,
-        data: s.data,
-        nsu: s.nsu || 'PIX',
-        tipoPagamento: 'PIX',
-        bandeiraDealer: 'PIX',
-        bandeiraSitef: 'PIX',
-        divergenciaBandeira: false,
-        isPix: true,
-        valorDealer: s.valSitef,
-        valorSitef: s.valSitef,
-        diferenca: 0,
-        status: 'PIX – ASSOCIADO À EMPRESA',
-        temDivergencia: false,
-        detalhes: `Extrato Pix SiTef associado à empresa ${s.mappedEmp} sem divergência`,
-        origem: 'auto',
-      });
-    } else {
-      fechamentoItems.push({
-        id: `auto_s_${s.index}`,
-        empresa: s.mappedEmp,
-        departamento: s.departamento,
-        contaGerencial: s.conta,
-        caixaLoja: s.caixa,
-        data: s.data,
-        nsu: s.nsu || 'S/N',
-        tipoPagamento: s.bandeiraNorm || 'Cartão de Crédito',
-        bandeiraDealer: '—',
-        bandeiraSitef: s.bandeiraNorm || 'Cartão',
-        divergenciaBandeira: false,
-        isPix: false,
-        valorDealer: 0,
-        valorSitef: s.valSitef,
-        diferenca: -s.valSitef,
-        status: 'Lançamento não localizado no Dealer',
-        temDivergencia: true,
-        detalhes: 'Lançamento localizado no extrato SiTef mas ausente no Dealer',
-        origem: 'auto',
-      });
+    // Check if there is a dealer transaction with same NSU but different value
+    const matchingNsuDealer = s.nsu && s.nsu !== 'PIX' && s.nsu !== 'S/N'
+      ? parsedDealerRows.find((d) => d.nsu === s.nsu)
+      : null;
+
+    let statusStr = 'NÃO CONCILIADO (SITEF)';
+    let detalhesStr = 'Lançamento no extrato SiTef sem correspondência exata no Dealer';
+
+    if (s.isStatusProblem) {
+      statusStr = `STATUS SITEF: ${s.sStatus}`;
+      detalhesStr = `Transação com status ${s.sStatus} no SiTef. Não conciliada.`;
+    } else if (matchingNsuDealer) {
+      statusStr = 'DIVERGÊNCIA DE VALOR (NÃO CONCILIADO)';
+      detalhesStr = `NSU ${s.nsu} localizado no Dealer com valor divergente: SiTef R$ ${s.valSitef.toFixed(2)} vs Dealer R$ ${matchingNsuDealer.valDealer.toFixed(2)}. Não conciliado.`;
+    } else if (s.isPix) {
+      statusStr = 'PIX NÃO CONCILIADO (SITEF)';
+      detalhesStr = `Lançamento Pix de R$ ${s.valSitef.toFixed(2)} no extrato SiTef não localizado no Dealer desta empresa.`;
     }
+
+    fechamentoItems.push({
+      id: `auto_s_${s.index}`,
+      empresa: s.mappedEmp,
+      departamento: s.departamento,
+      contaGerencial: s.conta,
+      caixaLoja: s.caixa,
+      data: s.data,
+      nsu: s.nsu || (s.isPix ? 'PIX' : 'S/N'),
+      tipoPagamento: s.isPix ? 'PIX' : (s.bandeiraNorm || 'Cartão de Crédito'),
+      bandeiraDealer: '—',
+      bandeiraSitef: s.isPix ? 'PIX' : (s.bandeiraNorm || 'Cartão'),
+      divergenciaBandeira: false,
+      isPix: s.isPix,
+      valorDealer: 0,
+      valorSitef: s.valSitef,
+      diferenca: -s.valSitef,
+      status: statusStr,
+      temDivergencia: true,
+      detalhes: detalhesStr,
+      origem: 'auto',
+    });
   });
 
   return fechamentoItems;
