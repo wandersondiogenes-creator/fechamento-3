@@ -391,17 +391,25 @@ export function generateAutoFechamento(
 
   const fechamentoItems: FechamentoItem[] = [];
 
-  // PASS 1: Match by NSU Host (Primary - EXCLUSIVE to Credit/Debit Cards, NOT PIX)
+  // PASS 1: Match by NSU Host (Primary - Card and PIX with identifiable NSU)
+  // When NSU is identical, if values differ, it explicitly creates a DIVERGÊNCIA DE VALOR
   parsedDealerRows.forEach((d) => {
-    if (d.isPix) return; // Skip PIX in PASS 1 - PIX uses the Intelligent Engine in PASS 2
-
-    if (d.nsu && sitefByNsuMap.has(d.nsu)) {
+    // If it has a valid NSU that matches SiTef, match it first!
+    if (d.nsu && d.nsu !== 'PIX' && d.nsu !== 'S/N' && sitefByNsuMap.has(d.nsu)) {
       const candidates = sitefByNsuMap.get(d.nsu)!;
-      // 1st priority: same empresa key + unused + not pix
-      let candidate = candidates.find((c) => !c.used && !c.isPix && c.empKey === d.empKey);
-      // 2nd priority: any unused non-pix candidate with same NSU
+      // 1st priority: same empresa key + unused + same payment family (pix with pix or card with card)
+      let candidate = candidates.find((c) => !c.used && c.empKey === d.empKey && c.isPix === d.isPix);
+      // 2nd priority: same empresa key + unused
       if (!candidate) {
-        candidate = candidates.find((c) => !c.used && !c.isPix);
+        candidate = candidates.find((c) => !c.used && c.empKey === d.empKey);
+      }
+      // 3rd priority: any unused candidate with same payment family
+      if (!candidate) {
+        candidate = candidates.find((c) => !c.used && c.isPix === d.isPix);
+      }
+      // 4th priority: any unused candidate with same NSU
+      if (!candidate) {
+        candidate = candidates.find((c) => !c.used);
       }
 
       if (candidate) {
@@ -409,32 +417,37 @@ export function generateAutoFechamento(
         candidate.used = true;
 
         const rawDif = Math.round((d.valDealer - candidate.valSitef) * 100) / 100;
+        const isPixMatch = d.isPix || candidate.isPix;
 
-        // Check Bandeira divergence ONLY for Credit & Debit cards
+        // Check Bandeira divergence ONLY for Credit & Debit cards (not PIX)
         const hasBandDivergence =
+          !isPixMatch &&
           Boolean(d.bandeiraNorm) &&
           Boolean(candidate.bandeiraNorm) &&
           d.bandeiraNorm !== candidate.bandeiraNorm;
 
         let temDivergencia = false;
-        let statusStr = 'CONCILIADO';
-        let detalhesStr = 'Lançamento conciliado com sucesso (NSU Dealer e NSU Host SiTef idênticos)';
+        let statusStr = isPixMatch ? 'CONCILIADO (PIX)' : 'CONCILIADO';
+        let detalhesStr = isPixMatch
+          ? 'Lançamento Pix conciliado com sucesso (NSU Dealer e NSU SiTef idênticos)'
+          : 'Lançamento conciliado com sucesso (NSU Dealer e NSU Host SiTef idênticos)';
         const finalDif = rawDif;
 
+        // RULE: If NSU is equal but value is different -> DIVERGÊNCIA DE VALOR (even for PIX!)
         if (Math.abs(rawDif) > 0.01 || candidate.isStatusProblem || hasBandDivergence) {
           temDivergencia = true;
-          if (hasBandDivergence && Math.abs(rawDif) > 0.01) {
+          if (Math.abs(rawDif) > 0.01 && hasBandDivergence) {
             statusStr = 'DIVERGÊNCIA DE VALOR E BANDEIRA';
-            detalhesStr = `Cartão ${d.bandeiraNorm} (Dealer) vs ${candidate.bandeiraNorm} (SiTef) | R$ ${d.valDealer.toFixed(2)} vs R$ ${candidate.valSitef.toFixed(2)}`;
+            detalhesStr = `Cartão ${d.bandeiraNorm} (Dealer) vs ${candidate.bandeiraNorm} (SiTef) | R$ ${d.valDealer.toFixed(2)} vs R$ ${candidate.valSitef.toFixed(2)} [NSU: ${d.nsu}]`;
+          } else if (Math.abs(rawDif) > 0.01) {
+            statusStr = isPixMatch ? 'DIVERGÊNCIA DE VALOR (PIX - MESMO NSU)' : 'DIVERGÊNCIA DE VALOR';
+            detalhesStr = `NSU idêntico (${d.nsu}), porém com divergência de valor: R$ ${d.valDealer.toFixed(2)} (Dealer) vs R$ ${candidate.valSitef.toFixed(2)} (SiTef)`;
           } else if (hasBandDivergence) {
             statusStr = 'DIVERGÊNCIA DE BANDEIRA';
-            detalhesStr = `Bandeira Dealer (${d.bandeiraNorm}) incompatível com SiTef (${candidate.bandeiraNorm})`;
-          } else if (Math.abs(rawDif) > 0.01) {
-            statusStr = 'DIVERGÊNCIA DE VALOR';
-            detalhesStr = `Divergência de valor: R$ ${d.valDealer.toFixed(2)} (Dealer) vs R$ ${candidate.valSitef.toFixed(2)} (SiTef)`;
+            detalhesStr = `Bandeira Dealer (${d.bandeiraNorm}) incompatível com SiTef (${candidate.bandeiraNorm}) [NSU: ${d.nsu}]`;
           } else {
             statusStr = `STATUS SITEF: ${candidate.sStatus}`;
-            detalhesStr = `Transação com status ${candidate.sStatus} no SiTef`;
+            detalhesStr = `Transação com status ${candidate.sStatus} no SiTef [NSU: ${d.nsu}]`;
           }
         }
 
@@ -445,18 +458,18 @@ export function generateAutoFechamento(
           contaGerencial: d.conta,
           caixaLoja: d.caixa,
           data: d.data || candidate.data,
-          nsu: d.nsu || candidate.nsu || 'S/N',
-          tipoPagamento: d.bandeiraNorm || 'Cartão de Crédito',
-          bandeiraDealer: d.bandeiraNorm || 'Cartão',
-          bandeiraSitef: candidate.bandeiraNorm || 'Cartão',
+          nsu: d.nsu || candidate.nsu || (isPixMatch ? 'PIX' : 'S/N'),
+          tipoPagamento: isPixMatch ? 'PIX' : (d.bandeiraNorm || 'Cartão de Crédito'),
+          bandeiraDealer: isPixMatch ? 'PIX' : (d.bandeiraNorm || 'Cartão'),
+          bandeiraSitef: isPixMatch ? 'PIX' : (candidate.bandeiraNorm || 'Cartão'),
           divergenciaBandeira: hasBandDivergence,
-          isPix: false,
+          isPix: isPixMatch,
           valorDealer: d.valDealer,
           valorSitef: candidate.valSitef,
           diferenca: finalDif,
           status: statusStr,
           temDivergencia,
-          criterioConciliacao: 'NSU Host e Empresa',
+          criterioConciliacao: isPixMatch ? 'Mesmo NSU (PIX)' : 'NSU Host e Empresa',
           detalhes: detalhesStr,
           origem: 'auto',
         });

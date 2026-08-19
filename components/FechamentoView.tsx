@@ -38,6 +38,10 @@ import {
   FileCheck,
   RotateCcw,
   Calendar,
+  ArrowDownAZ,
+  ArrowUpZA,
+  SortAsc,
+  Filter,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
@@ -73,6 +77,7 @@ export function FechamentoView({
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedEmpresaFilter, setSelectedEmpresaFilter] = useState<string>('ALL');
+  const [empresaSortOrder, setEmpresaSortOrder] = useState<'asc' | 'desc' | 'none'>('asc');
   const [filterMode, setFilterMode] = useState<'all' | 'divergent' | 'concolidated' | 'pix_validation'>('all');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [viewMode, setViewMode] = useState<'grouped' | 'flat'>('grouped');
@@ -193,8 +198,17 @@ export function FechamentoView({
         (item.bandeiraSitef && item.bandeiraSitef.toLowerCase().includes(q)) ||
         (item.criterioConciliacao && item.criterioConciliacao.toLowerCase().includes(q))
       );
+    }).sort((a, b) => {
+      if (empresaSortOrder === 'asc') {
+        const empDiff = a.empresa.localeCompare(b.empresa, 'pt-BR');
+        if (empDiff !== 0) return empDiff;
+      } else if (empresaSortOrder === 'desc') {
+        const empDiff = b.empresa.localeCompare(a.empresa, 'pt-BR');
+        if (empDiff !== 0) return empDiff;
+      }
+      return 0;
     });
-  }, [fechamentoItems, selectedEmpresaFilter, filterMode, searchQuery]);
+  }, [fechamentoItems, selectedEmpresaFilter, filterMode, searchQuery, empresaSortOrder]);
 
   // Grouped structure: Empresa -> Departamento -> Items
   const groupedByEmpresa = useMemo(() => {
@@ -273,8 +287,20 @@ export function FechamentoView({
       });
     });
 
-    return map;
-  }, [filteredItems]);
+    // Sort keys based on empresaSortOrder
+    const sortedEntries = Object.entries(map).sort(([empA], [empB]) => {
+      if (empresaSortOrder === 'asc') return empA.localeCompare(empB, 'pt-BR');
+      if (empresaSortOrder === 'desc') return empB.localeCompare(empA, 'pt-BR');
+      return 0;
+    });
+
+    const sortedMap: typeof map = {};
+    sortedEntries.forEach(([key, val]) => {
+      sortedMap[key] = val;
+    });
+
+    return sortedMap;
+  }, [filteredItems, empresaSortOrder]);
 
   // Collapse / Expand handlers
   const toggleEmpresaCollapse = (empName: string) => {
@@ -701,7 +727,7 @@ export function FechamentoView({
         <div className="flex flex-wrap items-center justify-between gap-3">
           {/* Left: Empresa Select Filter & Search */}
           <div className="flex flex-wrap items-center gap-2">
-            {/* Empresa Filter Dropdown */}
+            {/* Empresa Filter Dropdown & Alphabetical Sort */}
             <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-lg border border-slate-200 text-xs">
               <Building2 className="w-4 h-4 text-slate-500 ml-1" />
               <span className="font-bold text-slate-700 hidden sm:inline">Empresa:</span>
@@ -717,6 +743,47 @@ export function FechamentoView({
                   </option>
                 ))}
               </select>
+
+              {/* Botão de Ordenação Alfabética A-Z / Z-A */}
+              <button
+                type="button"
+                onClick={() =>
+                  setEmpresaSortOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'))
+                }
+                className={`px-2 py-1 rounded-md text-xs font-bold border transition-all flex items-center gap-1 cursor-pointer ${
+                  empresaSortOrder === 'asc'
+                    ? 'bg-amber-100 border-amber-300 text-amber-900 shadow-2xs'
+                    : 'bg-indigo-100 border-indigo-300 text-indigo-900 shadow-2xs'
+                }`}
+                title={
+                  empresaSortOrder === 'asc'
+                    ? 'Empresas em ordem alfabética (A → Z). Clique para inverter (Z → A)'
+                    : 'Empresas em ordem decrescente (Z → A). Clique para inverter (A → Z)'
+                }
+              >
+                {empresaSortOrder === 'asc' ? (
+                  <>
+                    <ArrowDownAZ className="w-3.5 h-3.5 text-amber-700" />
+                    <span>A → Z</span>
+                  </>
+                ) : (
+                  <>
+                    <ArrowUpZA className="w-3.5 h-3.5 text-indigo-700" />
+                    <span>Z → A</span>
+                  </>
+                )}
+              </button>
+
+              {selectedEmpresaFilter !== 'ALL' && (
+                <button
+                  type="button"
+                  onClick={() => setSelectedEmpresaFilter('ALL')}
+                  className="p-1 hover:bg-slate-200 text-slate-500 hover:text-slate-700 rounded transition-colors"
+                  title="Limpar filtro de empresa"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
             </div>
 
             {/* Search Input */}
