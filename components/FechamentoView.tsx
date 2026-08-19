@@ -48,6 +48,16 @@ import * as XLSX from 'xlsx';
 interface FechamentoViewProps {
   fechamentoItems?: FechamentoItem[];
   items?: FechamentoItem[];
+  searchQuery?: string;
+  onSearchQueryChange?: (q: string) => void;
+  selectedEmpresaFilter?: string;
+  onSelectedEmpresaFilterChange?: (emp: string) => void;
+  empresaSortOrder?: 'asc' | 'desc' | 'none';
+  onEmpresaSortOrderChange?: (order: 'asc' | 'desc' | 'none') => void;
+  filterMode?: 'all' | 'divergent' | 'concolidated' | 'pix_validation';
+  onFilterModeChange?: (mode: 'all' | 'divergent' | 'concolidated' | 'pix_validation') => void;
+  viewMode?: 'grouped' | 'flat';
+  onViewModeChange?: (view: 'grouped' | 'flat') => void;
   onAddFechamentoItem: (newItem: FechamentoItem) => void;
   onDeleteFechamentoItems: (idsToDelete: string[]) => void;
   onUpdateFechamentoItem?: (updatedItem: FechamentoItem) => void;
@@ -63,6 +73,16 @@ interface FechamentoViewProps {
 export function FechamentoView({
   fechamentoItems: fechamentoItemsProp,
   items: itemsProp,
+  searchQuery: externalSearchQuery,
+  onSearchQueryChange,
+  selectedEmpresaFilter: externalSelectedEmpresaFilter,
+  onSelectedEmpresaFilterChange,
+  empresaSortOrder: externalEmpresaSortOrder,
+  onEmpresaSortOrderChange,
+  filterMode: externalFilterMode,
+  onFilterModeChange,
+  viewMode: externalViewMode,
+  onViewModeChange,
   onAddFechamentoItem,
   onDeleteFechamentoItems,
   onRecalculateAuto,
@@ -75,12 +95,43 @@ export function FechamentoView({
     [fechamentoItemsProp, itemsProp]
   );
 
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedEmpresaFilter, setSelectedEmpresaFilter] = useState<string>('ALL');
-  const [empresaSortOrder, setEmpresaSortOrder] = useState<'asc' | 'desc' | 'none'>('asc');
-  const [filterMode, setFilterMode] = useState<'all' | 'divergent' | 'concolidated' | 'pix_validation'>('all');
+  const [internalSearchQuery, setInternalSearchQuery] = useState('');
+  const [internalSelectedEmpresaFilter, setInternalSelectedEmpresaFilter] = useState<string>('ALL');
+  const [internalEmpresaSortOrder, setInternalEmpresaSortOrder] = useState<'asc' | 'desc' | 'none'>('asc');
+  const [internalFilterMode, setInternalFilterMode] = useState<'all' | 'divergent' | 'concolidated' | 'pix_validation'>('all');
+  const [internalViewMode, setInternalViewMode] = useState<'grouped' | 'flat'>('grouped');
+
+  const searchQuery = externalSearchQuery !== undefined ? externalSearchQuery : internalSearchQuery;
+  const setSearchQuery = (val: string) => {
+    if (onSearchQueryChange) onSearchQueryChange(val);
+    else setInternalSearchQuery(val);
+  };
+
+  const selectedEmpresaFilter = externalSelectedEmpresaFilter !== undefined ? externalSelectedEmpresaFilter : internalSelectedEmpresaFilter;
+  const setSelectedEmpresaFilter = (val: string) => {
+    if (onSelectedEmpresaFilterChange) onSelectedEmpresaFilterChange(val);
+    else setInternalSelectedEmpresaFilter(val);
+  };
+
+  const empresaSortOrder = externalEmpresaSortOrder !== undefined ? externalEmpresaSortOrder : internalEmpresaSortOrder;
+  const setEmpresaSortOrder = (val: 'asc' | 'desc' | 'none') => {
+    if (onEmpresaSortOrderChange) onEmpresaSortOrderChange(val);
+    else setInternalEmpresaSortOrder(val);
+  };
+
+  const filterMode = externalFilterMode !== undefined ? externalFilterMode : internalFilterMode;
+  const setFilterMode = (val: 'all' | 'divergent' | 'concolidated' | 'pix_validation') => {
+    if (onFilterModeChange) onFilterModeChange(val);
+    else setInternalFilterMode(val);
+  };
+
+  const viewMode = externalViewMode !== undefined ? externalViewMode : internalViewMode;
+  const setViewMode = (val: 'grouped' | 'flat') => {
+    if (onViewModeChange) onViewModeChange(val);
+    else setInternalViewMode(val);
+  };
+
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [viewMode, setViewMode] = useState<'grouped' | 'flat'>('grouped');
 
   // Collapse / Expand states
   const [collapsedEmpresas, setCollapsedEmpresas] = useState<Record<string, boolean>>({});

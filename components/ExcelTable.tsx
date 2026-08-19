@@ -51,6 +51,11 @@ interface ExcelTableProps {
   activeTab?: 'dealer' | 'sitef' | 'pendente_cdc' | 'fechamento';
   onTabChange?: (tab: 'dealer' | 'sitef' | 'pendente_cdc' | 'fechamento') => void;
   tabCounts?: { dealer: number; sitef: number; pendente_cdc: number; fechamento?: number };
+  searchQuery?: string;
+  onSearchQueryChange?: (q: string) => void;
+  sortColId?: string | null;
+  sortDirection?: 'asc' | 'desc';
+  onSortChange?: (colId: string | null, direction: 'asc' | 'desc') => void;
   onUpdateColumn: (updatedCol: ColumnConfig) => void;
   onSetAllColumnsVisibility: (visible: boolean) => void;
   onUpdateCell: (rowIndex: number, colId: string, newValue: any) => void;
@@ -113,6 +118,11 @@ export function ExcelTable({
   activeTab = 'dealer',
   onTabChange,
   tabCounts = { dealer: 0, sitef: 0, pendente_cdc: 0, fechamento: 0 },
+  searchQuery: externalSearchQuery,
+  onSearchQueryChange,
+  sortColId: externalSortColId,
+  sortDirection: externalSortDirection = 'asc',
+  onSortChange,
   onUpdateColumn,
   onSetAllColumnsVisibility,
   onUpdateCell,
@@ -123,9 +133,31 @@ export function ExcelTable({
   onOpenAIDrawer,
   onTriggerFileImport,
 }: ExcelTableProps) {
-  const [searchQuery, setSearchQuery] = useState('');
-  const [sortColId, setSortColId] = useState<string | null>(null);
-  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+  // Local state fallback if not controlled externally
+  const [internalSearchQuery, setInternalSearchQuery] = useState('');
+  const [internalSortColId, setInternalSortColId] = useState<string | null>(null);
+  const [internalSortDirection, setInternalSortDirection] = useState<'asc' | 'desc'>('asc');
+
+  const searchQuery = externalSearchQuery !== undefined ? externalSearchQuery : internalSearchQuery;
+  const setSearchQuery = (val: string) => {
+    if (onSearchQueryChange) {
+      onSearchQueryChange(val);
+    } else {
+      setInternalSearchQuery(val);
+    }
+  };
+
+  const sortColId = externalSortColId !== undefined ? externalSortColId : internalSortColId;
+  const sortDirection = externalSortDirection !== undefined ? externalSortDirection : internalSortDirection;
+  const setSortColIdAndDirection = (colId: string | null, dir: 'asc' | 'desc') => {
+    if (onSortChange) {
+      onSortChange(colId, dir);
+    } else {
+      setInternalSortColId(colId);
+      setInternalSortDirection(dir);
+    }
+  };
+
   const [viewRawData, setViewRawData] = useState<boolean>(false);
 
   // Column inline renaming state
@@ -628,13 +660,13 @@ export function ExcelTable({
                         <button
                           onClick={() => {
                             if (sortColId === col.id) {
-                              if (sortDirection === 'asc') setSortDirection('desc');
-                              else {
-                                setSortColId(null);
+                              if (sortDirection === 'asc') {
+                                setSortColIdAndDirection(col.id, 'desc');
+                              } else {
+                                setSortColIdAndDirection(null, 'asc');
                               }
                             } else {
-                              setSortColId(col.id);
-                              setSortDirection('asc');
+                              setSortColIdAndDirection(col.id, 'asc');
                             }
                           }}
                           className={`p-1 rounded hover:bg-slate-200 transition-colors cursor-pointer ${

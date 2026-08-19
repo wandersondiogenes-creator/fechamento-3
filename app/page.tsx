@@ -20,7 +20,7 @@ import { SAMPLE_DATASETS } from '@/lib/sample-data';
 import { ExcelHeader } from '@/components/ExcelHeader';
 import { ExcelTable } from '@/components/ExcelTable';
 import { FechamentoView } from '@/components/FechamentoView';
-import { AuditView } from '@/components/AuditView';
+import { AuditView, AuditViewFilters } from '@/components/AuditView';
 import { UserSelectorModal } from '@/components/UserSelectorModal';
 import { ColumnRuleModal } from '@/components/ColumnRuleModal';
 import { PresetsModal } from '@/components/PresetsModal';
@@ -83,6 +83,35 @@ export default function Home() {
   const [pendenteCdcState, setPendenteCdcState] = useState<SpreadsheetState>(() =>
     buildEmptySpreadsheetState('PENDENTE_DE_CDC.xlsx')
   );
+
+  // Per-tab persistent search, filter and sort states
+  const [tabFilters, setTabFilters] = useState<{
+    dealer: { searchQuery: string; sortColId: string | null; sortDirection: 'asc' | 'desc' };
+    sitef: { searchQuery: string; sortColId: string | null; sortDirection: 'asc' | 'desc' };
+    pendente_cdc: { searchQuery: string; sortColId: string | null; sortDirection: 'asc' | 'desc' };
+    fechamento: {
+      searchQuery: string;
+      selectedEmpresaFilter: string;
+      empresaSortOrder: 'asc' | 'desc' | 'none';
+      filterMode: 'all' | 'divergent' | 'concolidated' | 'pix_validation';
+      viewMode: 'grouped' | 'flat';
+    };
+    auditoria: AuditViewFilters;
+  }>({
+    dealer: { searchQuery: '', sortColId: null, sortDirection: 'asc' },
+    sitef: { searchQuery: '', sortColId: null, sortDirection: 'asc' },
+    pendente_cdc: { searchQuery: '', sortColId: null, sortDirection: 'asc' },
+    fechamento: {
+      searchQuery: '',
+      selectedEmpresaFilter: 'ALL',
+      empresaSortOrder: 'asc',
+      filterMode: 'all',
+      viewMode: 'grouped',
+    },
+    auditoria: {
+      activeSubTab: 'dashboard',
+    },
+  });
 
   // Manual & deleted Fechamento state
   const [manualFechamentoItems, setManualFechamentoItems] = useState<FechamentoItem[]>([]);
@@ -170,7 +199,8 @@ export default function Home() {
       pState = pendenteCdcState,
       mItems = manualFechamentoItems,
       dIds = deletedFechamentoIds,
-      tab = activeTab
+      tab = activeTab,
+      filters = tabFilters
     ) => {
       setAutosaveStatus((prev) => ({ ...prev, isSaving: true }));
       const sessionData: AutosaveSessionData = {
@@ -183,6 +213,7 @@ export default function Home() {
         pendenteCdcState: pState,
         manualFechamentoItems: mItems,
         deletedFechamentoIds: Array.from(dIds),
+        tabFilters: filters,
       };
 
       const result = await saveAppSession(sessionData);
@@ -199,6 +230,7 @@ export default function Home() {
       manualFechamentoItems,
       deletedFechamentoIds,
       activeTab,
+      tabFilters,
       currentUser?.email,
     ]
   );
@@ -215,6 +247,17 @@ export default function Home() {
         if (data.manualFechamentoItems) setManualFechamentoItems(data.manualFechamentoItems);
         if (data.deletedFechamentoIds) setDeletedFechamentoIds(new Set(data.deletedFechamentoIds));
         if (data.activeTab) setActiveTab(data.activeTab as any);
+        if (data.tabFilters) {
+          setTabFilters((prev) => ({
+            ...prev,
+            ...data.tabFilters,
+            dealer: { ...prev.dealer, ...(data.tabFilters?.dealer || {}) },
+            sitef: { ...prev.sitef, ...(data.tabFilters?.sitef || {}) },
+            pendente_cdc: { ...prev.pendente_cdc, ...(data.tabFilters?.pendente_cdc || {}) },
+            fechamento: { ...prev.fechamento, ...(data.tabFilters?.fechamento || {}) },
+            auditoria: { ...prev.auditoria, ...(data.tabFilters?.auditoria || {}) },
+          }));
+        }
 
         setRecoveredBanner({
           show: true,
@@ -1017,10 +1060,53 @@ export default function Home() {
         <main className="flex-1 max-w-7xl w-full mx-auto p-3 sm:p-5 flex flex-col gap-4">
           <AppErrorBoundary fallbackTitle="Instabilidade no Módulo Financeiro">
             {activeTab === 'auditoria' ? (
-              <AuditView />
+              <AuditView
+                filters={tabFilters.auditoria}
+                onFiltersChange={(newFilters) => {
+                  setTabFilters((prev) => ({
+                    ...prev,
+                    auditoria: newFilters,
+                  }));
+                }}
+              />
             ) : activeTab === 'fechamento' ? (
               <FechamentoView
                 fechamentoItems={allFechamentoItems}
+                searchQuery={tabFilters.fechamento.searchQuery}
+                onSearchQueryChange={(q) => {
+                  setTabFilters((prev) => ({
+                    ...prev,
+                    fechamento: { ...prev.fechamento, searchQuery: q },
+                  }));
+                }}
+                selectedEmpresaFilter={tabFilters.fechamento.selectedEmpresaFilter}
+                onSelectedEmpresaFilterChange={(emp) => {
+                  setTabFilters((prev) => ({
+                    ...prev,
+                    fechamento: { ...prev.fechamento, selectedEmpresaFilter: emp },
+                  }));
+                }}
+                empresaSortOrder={tabFilters.fechamento.empresaSortOrder}
+                onEmpresaSortOrderChange={(order) => {
+                  setTabFilters((prev) => ({
+                    ...prev,
+                    fechamento: { ...prev.fechamento, empresaSortOrder: order },
+                  }));
+                }}
+                filterMode={tabFilters.fechamento.filterMode}
+                onFilterModeChange={(mode) => {
+                  setTabFilters((prev) => ({
+                    ...prev,
+                    fechamento: { ...prev.fechamento, filterMode: mode },
+                  }));
+                }}
+                viewMode={tabFilters.fechamento.viewMode}
+                onViewModeChange={(vMode) => {
+                  setTabFilters((prev) => ({
+                    ...prev,
+                    fechamento: { ...prev.fechamento, viewMode: vMode },
+                  }));
+                }}
                 onAddFechamentoItem={handleAddFechamentoItem}
                 onDeleteFechamentoItems={handleDeleteFechamentoItems}
                 onRecalculateFechamento={handleRecalculateFechamento}
@@ -1172,6 +1258,49 @@ export default function Home() {
               state={spreadsheetState}
               activeTab={activeTab}
               tabCounts={tabCounts}
+              searchQuery={
+                activeTab === 'dealer'
+                  ? tabFilters.dealer.searchQuery
+                  : activeTab === 'sitef'
+                  ? tabFilters.sitef.searchQuery
+                  : activeTab === 'pendente_cdc'
+                  ? tabFilters.pendente_cdc.searchQuery
+                  : ''
+              }
+              onSearchQueryChange={(q) => {
+                if (activeTab === 'dealer' || activeTab === 'sitef' || activeTab === 'pendente_cdc') {
+                  setTabFilters((prev) => ({
+                    ...prev,
+                    [activeTab]: { ...prev[activeTab], searchQuery: q },
+                  }));
+                }
+              }}
+              sortColId={
+                activeTab === 'dealer'
+                  ? tabFilters.dealer.sortColId
+                  : activeTab === 'sitef'
+                  ? tabFilters.sitef.sortColId
+                  : activeTab === 'pendente_cdc'
+                  ? tabFilters.pendente_cdc.sortColId
+                  : null
+              }
+              sortDirection={
+                activeTab === 'dealer'
+                  ? tabFilters.dealer.sortDirection
+                  : activeTab === 'sitef'
+                  ? tabFilters.sitef.sortDirection
+                  : activeTab === 'pendente_cdc'
+                  ? tabFilters.pendente_cdc.sortDirection
+                  : 'asc'
+              }
+              onSortChange={(colId, dir) => {
+                if (activeTab === 'dealer' || activeTab === 'sitef' || activeTab === 'pendente_cdc') {
+                  setTabFilters((prev) => ({
+                    ...prev,
+                    [activeTab]: { ...prev[activeTab], sortColId: colId, sortDirection: dir },
+                  }));
+                }
+              }}
               onTabChange={(tab) => setActiveTab(tab)}
               onUpdateColumn={handleUpdateColumn}
               onSetAllColumnsVisibility={handleSetAllColumnsVisibility}

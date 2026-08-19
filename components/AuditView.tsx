@@ -39,10 +39,40 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
-export function AuditView() {
+export interface AuditViewFilters {
+  filterUser?: string;
+  filterEmpresa?: string;
+  filterBanco?: string;
+  filterOperacao?: string;
+  filterDataInicial?: string;
+  filterDataFinal?: string;
+  filterSituacao?: string;
+  filterLote?: string;
+  filterRegistro?: string;
+  filterValorMin?: string;
+  filterValorMax?: string;
+  freeQuery?: string;
+  activeSubTab?: 'trilha' | 'dashboard' | 'usuarios';
+}
+
+interface AuditViewProps {
+  filters?: AuditViewFilters;
+  onFiltersChange?: (filters: AuditViewFilters) => void;
+}
+
+export function AuditView({ filters: externalFilters, onFiltersChange }: AuditViewProps = {}) {
   const [activeUser, setActiveUser] = useState<UserProfile>(() => getCurrentUser());
 
-  const [activeTab, setActiveTab] = useState<'trilha' | 'dashboard' | 'usuarios'>('dashboard');
+  // Sub-tab
+  const [internalActiveTab, setInternalActiveTab] = useState<'trilha' | 'dashboard' | 'usuarios'>('dashboard');
+  const activeTab = externalFilters?.activeSubTab !== undefined ? externalFilters.activeSubTab : internalActiveTab;
+  const setActiveTab = (tab: 'trilha' | 'dashboard' | 'usuarios') => {
+    if (onFiltersChange) {
+      onFiltersChange({ ...(externalFilters || {}), activeSubTab: tab });
+    } else {
+      setInternalActiveTab(tab);
+    }
+  };
 
   const [logs, setLogs] = useState<AuditLogEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -57,18 +87,78 @@ export function AuditView() {
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
 
   // Filters State
-  const [filterUser, setFilterUser] = useState('');
-  const [filterEmpresa, setFilterEmpresa] = useState('');
-  const [filterBanco, setFilterBanco] = useState('');
-  const [filterOperacao, setFilterOperacao] = useState('');
-  const [filterDataInicial, setFilterDataInicial] = useState('');
-  const [filterDataFinal, setFilterDataFinal] = useState('');
-  const [filterSituacao, setFilterSituacao] = useState('');
-  const [filterLote, setFilterLote] = useState('');
-  const [filterRegistro, setFilterRegistro] = useState('');
-  const [filterValorMin, setFilterValorMin] = useState<string>('');
-  const [filterValorMax, setFilterValorMax] = useState<string>('');
-  const [freeQuery, setFreeQuery] = useState('');
+  const [internalUser, setInternalUser] = useState('');
+  const [internalEmpresa, setInternalEmpresa] = useState('');
+  const [internalBanco, setInternalBanco] = useState('');
+  const [internalOperacao, setInternalOperacao] = useState('');
+  const [internalDataInicial, setInternalDataInicial] = useState('');
+  const [internalDataFinal, setInternalDataFinal] = useState('');
+  const [internalSituacao, setInternalSituacao] = useState('');
+  const [internalLote, setInternalLote] = useState('');
+  const [internalRegistro, setInternalRegistro] = useState('');
+  const [internalValorMin, setInternalValorMin] = useState<string>('');
+  const [internalValorMax, setInternalValorMax] = useState<string>('');
+  const [internalFreeQuery, setInternalFreeQuery] = useState('');
+
+  const filterUser = externalFilters?.filterUser !== undefined ? externalFilters.filterUser : internalUser;
+  const filterEmpresa = externalFilters?.filterEmpresa !== undefined ? externalFilters.filterEmpresa : internalEmpresa;
+  const filterBanco = externalFilters?.filterBanco !== undefined ? externalFilters.filterBanco : internalBanco;
+  const filterOperacao = externalFilters?.filterOperacao !== undefined ? externalFilters.filterOperacao : internalOperacao;
+  const filterDataInicial = externalFilters?.filterDataInicial !== undefined ? externalFilters.filterDataInicial : internalDataInicial;
+  const filterDataFinal = externalFilters?.filterDataFinal !== undefined ? externalFilters.filterDataFinal : internalDataFinal;
+  const filterSituacao = externalFilters?.filterSituacao !== undefined ? externalFilters.filterSituacao : internalSituacao;
+  const filterLote = externalFilters?.filterLote !== undefined ? externalFilters.filterLote : internalLote;
+  const filterRegistro = externalFilters?.filterRegistro !== undefined ? externalFilters.filterRegistro : internalRegistro;
+  const filterValorMin = externalFilters?.filterValorMin !== undefined ? externalFilters.filterValorMin : internalValorMin;
+  const filterValorMax = externalFilters?.filterValorMax !== undefined ? externalFilters.filterValorMax : internalValorMax;
+  const freeQuery = externalFilters?.freeQuery !== undefined ? externalFilters.freeQuery : internalFreeQuery;
+
+  const updateSingleFilter = (key: keyof AuditViewFilters, val: any) => {
+    if (onFiltersChange) {
+      onFiltersChange({
+        filterUser,
+        filterEmpresa,
+        filterBanco,
+        filterOperacao,
+        filterDataInicial,
+        filterDataFinal,
+        filterSituacao,
+        filterLote,
+        filterRegistro,
+        filterValorMin,
+        filterValorMax,
+        freeQuery,
+        activeSubTab: activeTab,
+        [key]: val,
+      });
+    } else {
+      if (key === 'filterUser') setInternalUser(val);
+      if (key === 'filterEmpresa') setInternalEmpresa(val);
+      if (key === 'filterBanco') setInternalBanco(val);
+      if (key === 'filterOperacao') setInternalOperacao(val);
+      if (key === 'filterDataInicial') setInternalDataInicial(val);
+      if (key === 'filterDataFinal') setInternalDataFinal(val);
+      if (key === 'filterSituacao') setInternalSituacao(val);
+      if (key === 'filterLote') setInternalLote(val);
+      if (key === 'filterRegistro') setInternalRegistro(val);
+      if (key === 'filterValorMin') setInternalValorMin(val);
+      if (key === 'filterValorMax') setInternalValorMax(val);
+      if (key === 'freeQuery') setInternalFreeQuery(val);
+    }
+  };
+
+  const setFilterUser = (val: string) => updateSingleFilter('filterUser', val);
+  const setFilterEmpresa = (val: string) => updateSingleFilter('filterEmpresa', val);
+  const setFilterBanco = (val: string) => updateSingleFilter('filterBanco', val);
+  const setFilterOperacao = (val: string) => updateSingleFilter('filterOperacao', val);
+  const setFilterDataInicial = (val: string) => updateSingleFilter('filterDataInicial', val);
+  const setFilterDataFinal = (val: string) => updateSingleFilter('filterDataFinal', val);
+  const setFilterSituacao = (val: string) => updateSingleFilter('filterSituacao', val);
+  const setFilterLote = (val: string) => updateSingleFilter('filterLote', val);
+  const setFilterRegistro = (val: string) => updateSingleFilter('filterRegistro', val);
+  const setFilterValorMin = (val: string) => updateSingleFilter('filterValorMin', val);
+  const setFilterValorMax = (val: string) => updateSingleFilter('filterValorMax', val);
+  const setFreeQuery = (val: string) => updateSingleFilter('freeQuery', val);
 
   // Auto-fetch data
   const loadLogs = React.useCallback(async () => {

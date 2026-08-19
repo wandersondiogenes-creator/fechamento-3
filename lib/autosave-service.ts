@@ -21,6 +21,19 @@ export interface AutosaveSessionData {
   pendenteCdcState: SpreadsheetState;
   manualFechamentoItems: FechamentoItem[];
   deletedFechamentoIds: string[];
+  tabFilters?: {
+    dealer?: { searchQuery?: string; sortColId?: string | null; sortDirection?: 'asc' | 'desc' };
+    sitef?: { searchQuery?: string; sortColId?: string | null; sortDirection?: 'asc' | 'desc' };
+    pendente_cdc?: { searchQuery?: string; sortColId?: string | null; sortDirection?: 'asc' | 'desc' };
+    fechamento?: {
+      searchQuery?: string;
+      selectedEmpresaFilter?: string;
+      empresaSortOrder?: 'asc' | 'desc' | 'none';
+      filterMode?: 'all' | 'divergent' | 'concolidated' | 'pix_validation';
+      viewMode?: 'grouped' | 'flat';
+    };
+    auditoria?: any;
+  };
 }
 
 const LOCAL_STORAGE_SESSION_KEY = 'wanfinance_active_session_v2';
