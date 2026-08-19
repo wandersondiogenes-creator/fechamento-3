@@ -448,19 +448,22 @@ export function cleanAndOrganizeRawData(
     dateFilteredData = rowsWithDate;
   }
 
-  // 3. Separate rows where value columns ("Valor", "Valor Bruto", "Valor Líquido", "Entrada") are zero or blank
-  const valueColIndices = headers
+  // 3. Separate rows where the primary Entrada/Valor column is zero or blank (Pendente de CDC)
+  // Look specifically for the Entrada column or primary Value column
+  let entradaColIndices = headers
     .map((h, i) => {
       if (!h) return -1;
       const norm = h
         .normalize('NFD')
         .replace(/[\u0300-\u036f]/g, '')
-        .toLowerCase();
+        .toLowerCase()
+        .trim();
       if (
-        norm.includes('entrada') ||
-        norm.includes('valor') ||
-        norm.includes('bruto') ||
-        norm.includes('liquido')
+        norm === 'entrada' ||
+        norm.startsWith('entrada ') ||
+        norm.endsWith(' entrada') ||
+        norm.includes('vlr entrada') ||
+        norm.includes('valor entrada')
       ) {
         return i;
       }
@@ -468,16 +471,64 @@ export function cleanAndOrganizeRawData(
     })
     .filter((i) => i !== -1);
 
+  // If no explicit 'Entrada' column found, look for primary valor bruto / valor columns (excluding taxa/saida/saldo)
+  if (entradaColIndices.length === 0) {
+    entradaColIndices = headers
+      .map((h, i) => {
+        if (!h) return -1;
+        const norm = h
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .toLowerCase()
+          .trim();
+        if (
+          (norm.includes('valor bruto') || norm.includes('bruto') || norm === 'valor' || norm.startsWith('valor ')) &&
+          !norm.includes('saida') &&
+          !norm.includes('taxa') &&
+          !norm.includes('saldo') &&
+          !norm.includes('desconto')
+        ) {
+          return i;
+        }
+        return -1;
+      })
+      .filter((i) => i !== -1);
+  }
+
+  // Fallback: any column with valor that is not saida/taxa/desconto
+  if (entradaColIndices.length === 0) {
+    entradaColIndices = headers
+      .map((h, i) => {
+        if (!h) return -1;
+        const norm = h
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .toLowerCase()
+          .trim();
+        if (
+          norm.includes('valor') &&
+          !norm.includes('saida') &&
+          !norm.includes('taxa') &&
+          !norm.includes('saldo')
+        ) {
+          return i;
+        }
+        return -1;
+      })
+      .filter((i) => i !== -1);
+  }
+
   let valueFilteredData = dateFilteredData;
   let zeroValueRawDataList: Record<string, any>[] = [];
   let removedNoEntradaRowsCount = 0;
 
-  if (valueColIndices.length > 0) {
+  if (entradaColIndices.length > 0) {
     const validValueRows: Record<string, any>[] = [];
     const zeroValueRows: Record<string, any>[] = [];
 
     dateFilteredData.forEach((row) => {
-      const isZeroOrBlank = valueColIndices.every((idx) => {
+      // A row is zero-value (Pendente de CDC) if its Entrada/Valor column is explicitly zero, empty, or null
+      const isZeroOrBlank = entradaColIndices.every((idx) => {
         const val = row[`col_${idx}`];
         if (val === null || val === undefined || String(val).trim() === '') return true;
         const num = parseCurrencyToNumber(val);
@@ -608,21 +659,51 @@ export function isZeroValueDealerRow(
 ): boolean {
   if (!columns || columns.length === 0) return false;
 
+  // 1. First search for explicit 'Entrada' column
   let valueCols = columns.filter((c) => {
     const h = (c.customHeader || c.originalHeader)
       .normalize('NFD')
       .replace(/[\u0300-\u036f]/g, '')
-      .toLowerCase();
+      .toLowerCase()
+      .trim();
     return (
-      h.includes('entrada') ||
-      h.includes('valor bruto') ||
-      h.includes('bruto') ||
-      (h.includes('valor') && !h.includes('saida') && !h.includes('taxa'))
+      h === 'entrada' ||
+      h.startsWith('entrada ') ||
+      h.endsWith(' entrada') ||
+      h.includes('vlr entrada') ||
+      h.includes('valor entrada')
     );
   });
 
+  // 2. If no Entrada column, search for valor bruto / valor without saida/taxa/saldo
   if (valueCols.length === 0) {
-    valueCols = columns.filter((c) => c.type === 'currency');
+    valueCols = columns.filter((c) => {
+      const h = (c.customHeader || c.originalHeader)
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .trim();
+      return (
+        (h.includes('valor bruto') || h.includes('bruto') || h === 'valor' || h.startsWith('valor ')) &&
+        !h.includes('saida') &&
+        !h.includes('taxa') &&
+        !h.includes('saldo') &&
+        !h.includes('desconto')
+      );
+    });
+  }
+
+  // 3. Fallback: Currency columns that are not saida or taxa
+  if (valueCols.length === 0) {
+    valueCols = columns.filter((c) => {
+      if (c.type !== 'currency') return false;
+      const h = (c.customHeader || c.originalHeader)
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .trim();
+      return !h.includes('saida') && !h.includes('taxa') && !h.includes('saldo');
+    });
   }
 
   if (valueCols.length === 0) {

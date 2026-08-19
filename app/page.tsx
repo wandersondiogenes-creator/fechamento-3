@@ -896,15 +896,15 @@ export default function Home() {
 
   const tabCounts = useMemo(
     () => ({
-      dealer: dealerState.rawData.length,
-      sitef: sitefState.rawData.length,
-      pendente_cdc: pendenteCdcState.rawData.length,
+      dealer: dealerState.processedData.length,
+      sitef: sitefState.processedData.length,
+      pendente_cdc: pendenteCdcState.processedData.length,
       fechamento: allFechamentoItems.length,
     }),
     [
-      dealerState.rawData.length,
-      sitefState.rawData.length,
-      pendenteCdcState.rawData.length,
+      dealerState.processedData.length,
+      sitefState.processedData.length,
+      pendenteCdcState.processedData.length,
       allFechamentoItems.length,
     ]
   );
