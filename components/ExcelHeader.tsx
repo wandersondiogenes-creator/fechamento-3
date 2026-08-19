@@ -386,26 +386,40 @@ export function ExcelHeader({
         </div>
       </div>
 
-      {/* LOWER TAB BAR: Apple iPadOS / iOS Segmented Glass Controller */}
-      <div className="max-w-7xl mx-auto px-4 py-2 flex items-center justify-between overflow-x-auto scrollbar-none gap-2">
-        <div className="flex items-center p-1 bg-slate-200/60 border border-black/[0.04] rounded-2xl backdrop-blur-xl shadow-inner-xs">
+      {/* LOWER TAB BAR: Apple macOS / iOS Liquid Glass Segmented Controller */}
+      <div className="max-w-7xl mx-auto px-4 py-2.5 flex items-center justify-between overflow-x-auto scrollbar-none gap-3">
+        <nav
+          aria-label="Abas de Controle e Conciliação"
+          className="flex items-center p-1.5 bg-gradient-to-b from-slate-200/90 via-slate-100/80 to-slate-200/90 border border-slate-300/80 rounded-2xl backdrop-blur-2xl shadow-[inset_0_1px_2px_rgba(0,0,0,0.08),0_2px_8px_rgba(0,0,0,0.04)] gap-1.5"
+        >
           {/* Tab 1: DEALER */}
           <button
             onClick={() => onTabChange('dealer')}
             id="apple-tab-dealer"
-            className={`px-3.5 py-1.5 rounded-xl font-bold text-xs transition-all duration-200 flex items-center gap-2 cursor-pointer select-none ${
+            className={`relative group px-4 py-2 rounded-xl font-bold text-xs tracking-wide transition-all duration-300 flex items-center gap-2 cursor-pointer select-none outline-none ${
               activeTab === 'dealer'
-                ? 'bg-white text-emerald-700 shadow-sm border border-black/[0.04]'
-                : 'text-slate-600 hover:text-slate-900 hover:bg-white/40'
+                ? 'bg-gradient-to-b from-white via-emerald-50/50 to-white text-emerald-900 shadow-[0_4px_14px_rgba(16,185,129,0.30),0_1px_3px_rgba(0,0,0,0.1),inset_0_1px_0_rgba(255,255,255,1)] border border-emerald-300/80 ring-2 ring-emerald-400/30'
+                : 'text-slate-600 hover:text-emerald-800 hover:bg-white/70 hover:shadow-xs'
             }`}
           >
-            <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
-            <span>DEALER</span>
-            <span
-              className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
+            {activeTab === 'dealer' && (
+              <span className="absolute -top-1 left-1/2 -translate-x-1/2 w-8 h-1 bg-emerald-500 rounded-full shadow-[0_0_8px_#10B981]" />
+            )}
+            <div
+              className={`p-1 rounded-lg transition-transform group-hover:scale-110 duration-200 ${
                 activeTab === 'dealer'
-                  ? 'bg-emerald-100 text-emerald-800'
-                  : 'bg-slate-300/60 text-slate-600'
+                  ? 'bg-emerald-500 text-white shadow-[0_0_10px_rgba(16,185,129,0.5)]'
+                  : 'bg-emerald-100/70 text-emerald-700'
+              }`}
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5" />
+            </div>
+            <span className="font-extrabold text-xs">DEALER</span>
+            <span
+              className={`px-2 py-0.5 rounded-full text-[11px] font-black transition-all ${
+                activeTab === 'dealer'
+                  ? 'bg-emerald-600 text-white shadow-[0_2px_6px_rgba(16,185,129,0.4)] ring-1 ring-emerald-300'
+                  : 'bg-slate-200/90 text-slate-700 group-hover:bg-emerald-100 group-hover:text-emerald-800'
               }`}
             >
               {tabCounts.dealer}
@@ -416,19 +430,30 @@ export function ExcelHeader({
           <button
             onClick={() => onTabChange('sitef')}
             id="apple-tab-sitef"
-            className={`px-3.5 py-1.5 rounded-xl font-bold text-xs transition-all duration-200 flex items-center gap-2 cursor-pointer select-none ${
+            className={`relative group px-4 py-2 rounded-xl font-bold text-xs tracking-wide transition-all duration-300 flex items-center gap-2 cursor-pointer select-none outline-none ${
               activeTab === 'sitef'
-                ? 'bg-white text-[#007AFF] shadow-sm border border-black/[0.04]'
-                : 'text-slate-600 hover:text-slate-900 hover:bg-white/40'
+                ? 'bg-gradient-to-b from-white via-blue-50/50 to-white text-[#0062D2] shadow-[0_4px_14px_rgba(0,122,255,0.32),0_1px_3px_rgba(0,0,0,0.1),inset_0_1px_0_rgba(255,255,255,1)] border border-blue-300/80 ring-2 ring-blue-400/30'
+                : 'text-slate-600 hover:text-blue-800 hover:bg-white/70 hover:shadow-xs'
             }`}
           >
-            <CreditCard className="w-3.5 h-3.5 text-[#007AFF]" />
-            <span>SITEF</span>
-            <span
-              className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
+            {activeTab === 'sitef' && (
+              <span className="absolute -top-1 left-1/2 -translate-x-1/2 w-8 h-1 bg-[#007AFF] rounded-full shadow-[0_0_8px_#007AFF]" />
+            )}
+            <div
+              className={`p-1 rounded-lg transition-transform group-hover:scale-110 duration-200 ${
                 activeTab === 'sitef'
-                  ? 'bg-blue-100 text-[#0071E3]'
-                  : 'bg-slate-300/60 text-slate-600'
+                  ? 'bg-[#007AFF] text-white shadow-[0_0_10px_rgba(0,122,255,0.5)]'
+                  : 'bg-blue-100/70 text-blue-700'
+              }`}
+            >
+              <CreditCard className="w-3.5 h-3.5" />
+            </div>
+            <span className="font-extrabold text-xs">SITEF</span>
+            <span
+              className={`px-2 py-0.5 rounded-full text-[11px] font-black transition-all ${
+                activeTab === 'sitef'
+                  ? 'bg-[#007AFF] text-white shadow-[0_2px_6px_rgba(0,122,255,0.4)] ring-1 ring-blue-300'
+                  : 'bg-slate-200/90 text-slate-700 group-hover:bg-blue-100 group-hover:text-blue-800'
               }`}
             >
               {tabCounts.sitef}
@@ -439,19 +464,30 @@ export function ExcelHeader({
           <button
             onClick={() => onTabChange('pendente_cdc')}
             id="apple-tab-pendente-cdc"
-            className={`px-3.5 py-1.5 rounded-xl font-bold text-xs transition-all duration-200 flex items-center gap-2 cursor-pointer select-none ${
+            className={`relative group px-4 py-2 rounded-xl font-bold text-xs tracking-wide transition-all duration-300 flex items-center gap-2 cursor-pointer select-none outline-none ${
               activeTab === 'pendente_cdc'
-                ? 'bg-white text-amber-700 shadow-sm border border-black/[0.04]'
-                : 'text-slate-600 hover:text-slate-900 hover:bg-white/40'
+                ? 'bg-gradient-to-b from-white via-amber-50/50 to-white text-amber-900 shadow-[0_4px_14px_rgba(245,158,11,0.30),0_1px_3px_rgba(0,0,0,0.1),inset_0_1px_0_rgba(255,255,255,1)] border border-amber-300/80 ring-2 ring-amber-400/30'
+                : 'text-slate-600 hover:text-amber-800 hover:bg-white/70 hover:shadow-xs'
             }`}
           >
-            <Clock className="w-3.5 h-3.5 text-amber-600" />
-            <span>PENDENTE DE CDC</span>
-            <span
-              className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
+            {activeTab === 'pendente_cdc' && (
+              <span className="absolute -top-1 left-1/2 -translate-x-1/2 w-8 h-1 bg-amber-500 rounded-full shadow-[0_0_8px_#F59E0B]" />
+            )}
+            <div
+              className={`p-1 rounded-lg transition-transform group-hover:scale-110 duration-200 ${
                 activeTab === 'pendente_cdc'
-                  ? 'bg-amber-100 text-amber-800'
-                  : 'bg-slate-300/60 text-slate-600'
+                  ? 'bg-amber-500 text-white shadow-[0_0_10px_rgba(245,158,11,0.5)]'
+                  : 'bg-amber-100/70 text-amber-700'
+              }`}
+            >
+              <Clock className="w-3.5 h-3.5" />
+            </div>
+            <span className="font-extrabold text-xs">PENDENTE DE CDC</span>
+            <span
+              className={`px-2 py-0.5 rounded-full text-[11px] font-black transition-all ${
+                activeTab === 'pendente_cdc'
+                  ? 'bg-amber-600 text-white shadow-[0_2px_6px_rgba(245,158,11,0.4)] ring-1 ring-amber-300'
+                  : 'bg-slate-200/90 text-slate-700 group-hover:bg-amber-100 group-hover:text-amber-800'
               }`}
             >
               {tabCounts.pendente_cdc}
@@ -462,19 +498,30 @@ export function ExcelHeader({
           <button
             onClick={() => onTabChange('fechamento')}
             id="apple-tab-fechamento"
-            className={`px-3.5 py-1.5 rounded-xl font-bold text-xs transition-all duration-200 flex items-center gap-2 cursor-pointer select-none ${
+            className={`relative group px-4 py-2 rounded-xl font-bold text-xs tracking-wide transition-all duration-300 flex items-center gap-2 cursor-pointer select-none outline-none ${
               activeTab === 'fechamento'
-                ? 'bg-white text-purple-700 shadow-sm border border-black/[0.04]'
-                : 'text-slate-600 hover:text-slate-900 hover:bg-white/40'
+                ? 'bg-gradient-to-b from-white via-purple-50/60 to-white text-purple-900 shadow-[0_4px_16px_rgba(147,51,234,0.35),0_1px_3px_rgba(0,0,0,0.1),inset_0_1px_0_rgba(255,255,255,1)] border border-purple-300/80 ring-2 ring-purple-400/40'
+                : 'text-slate-600 hover:text-purple-800 hover:bg-white/70 hover:shadow-xs'
             }`}
           >
-            <Scale className="w-3.5 h-3.5 text-purple-600" />
-            <span>FECHAMENTO DE CONCILIAÇÃO</span>
-            <span
-              className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
+            {activeTab === 'fechamento' && (
+              <span className="absolute -top-1 left-1/2 -translate-x-1/2 w-10 h-1 bg-purple-600 rounded-full shadow-[0_0_10px_#9333EA]" />
+            )}
+            <div
+              className={`p-1 rounded-lg transition-transform group-hover:scale-110 duration-200 ${
                 activeTab === 'fechamento'
-                  ? 'bg-purple-100 text-purple-800'
-                  : 'bg-slate-300/60 text-slate-600'
+                  ? 'bg-gradient-to-br from-purple-600 to-indigo-600 text-white shadow-[0_0_12px_rgba(147,51,234,0.5)]'
+                  : 'bg-purple-100/70 text-purple-700'
+              }`}
+            >
+              <Scale className="w-3.5 h-3.5" />
+            </div>
+            <span className="font-black text-xs">FECHAMENTO DE CONCILIAÇÃO</span>
+            <span
+              className={`px-2 py-0.5 rounded-full text-[11px] font-black transition-all ${
+                activeTab === 'fechamento'
+                  ? 'bg-purple-700 text-white shadow-[0_2px_6px_rgba(147,51,234,0.4)] ring-1 ring-purple-300'
+                  : 'bg-slate-200/90 text-slate-700 group-hover:bg-purple-100 group-hover:text-purple-800'
               }`}
             >
               {tabCounts.fechamento ?? 0}
@@ -485,21 +532,35 @@ export function ExcelHeader({
           <button
             onClick={() => onTabChange('auditoria')}
             id="apple-tab-auditoria"
-            className={`px-3.5 py-1.5 rounded-xl font-bold text-xs transition-all duration-200 flex items-center gap-2 cursor-pointer select-none ${
+            className={`relative group px-4 py-2 rounded-xl font-bold text-xs tracking-wide transition-all duration-300 flex items-center gap-2 cursor-pointer select-none outline-none ${
               activeTab === 'auditoria'
-                ? 'bg-white text-indigo-700 shadow-sm border border-black/[0.04]'
-                : 'text-slate-600 hover:text-slate-900 hover:bg-white/40'
+                ? 'bg-gradient-to-b from-white via-indigo-50/50 to-white text-indigo-900 shadow-[0_4px_14px_rgba(99,102,241,0.32),0_1px_3px_rgba(0,0,0,0.1),inset_0_1px_0_rgba(255,255,255,1)] border border-indigo-300/80 ring-2 ring-indigo-400/30'
+                : 'text-slate-600 hover:text-indigo-800 hover:bg-white/70 hover:shadow-xs'
             }`}
           >
-            <ShieldCheck className="w-3.5 h-3.5 text-indigo-600" />
-            <span>AUDITORIA SUPABASE</span>
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+            {activeTab === 'auditoria' && (
+              <span className="absolute -top-1 left-1/2 -translate-x-1/2 w-8 h-1 bg-indigo-600 rounded-full shadow-[0_0_8px_#6366F1]" />
+            )}
+            <div
+              className={`p-1 rounded-lg transition-transform group-hover:scale-110 duration-200 ${
+                activeTab === 'auditoria'
+                  ? 'bg-indigo-600 text-white shadow-[0_0_10px_rgba(99,102,241,0.5)]'
+                  : 'bg-indigo-100/70 text-indigo-700'
+              }`}
+            >
+              <ShieldCheck className="w-3.5 h-3.5" />
+            </div>
+            <span className="font-extrabold text-xs">AUDITORIA SUPABASE</span>
+            <span className="relative flex h-2.5 w-2.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500 shadow-[0_0_6px_#10B981]" />
+            </span>
           </button>
-        </div>
+        </nav>
 
         {/* Apple Realtime Supabase Sync Indicator */}
-        <div className="hidden lg:flex items-center gap-2 px-3 py-1 bg-emerald-50 border border-emerald-200/80 rounded-full text-[11px] font-semibold text-emerald-800 shadow-2xs">
-          <span className="w-2 h-2 rounded-full bg-[#34C759] shadow-[0_0_8px_#34C759]" />
+        <div className="hidden lg:flex items-center gap-2 px-3.5 py-1.5 bg-white/90 border border-emerald-300/80 rounded-full text-[11px] font-bold text-emerald-800 shadow-[0_2px_8px_rgba(16,185,129,0.15)] backdrop-blur-xl">
+          <span className="w-2.5 h-2.5 rounded-full bg-[#34C759] shadow-[0_0_10px_#34C759] animate-pulse" />
           <span>Supabase Live</span>
         </div>
       </div>
