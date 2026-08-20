@@ -17,6 +17,7 @@ import {
   SharedFechamentoSession,
   fetchSharedSession,
   getActiveRoomIdLocally,
+  extractRoomCode,
 } from '@/lib/shared-fechamento-service';
 import { logAuditAction } from '@/lib/audit-service';
 import { getCurrentUser, isUserLoggedIn, logoutUser } from '@/lib/auth-service';
@@ -128,8 +129,15 @@ export default function Home() {
     if (typeof window === 'undefined') return;
     try {
       const searchParams = new URLSearchParams(window.location.search);
-      const roomParam = searchParams.get('sala') || searchParams.get('shared') || searchParams.get('fechamento');
-      const codeToLoad = roomParam || getActiveRoomIdLocally();
+      let roomParam: string | null = null;
+      for (const [key, value] of searchParams.entries()) {
+        if (['sala', 'shared', 'fechamento', 'code', 'room', 'id'].includes(key.toLowerCase())) {
+          roomParam = value;
+          break;
+        }
+      }
+      const rawCandidate = roomParam || getActiveRoomIdLocally();
+      const codeToLoad = extractRoomCode(rawCandidate);
 
       if (codeToLoad) {
         fetchSharedSession(codeToLoad, currentUser).then((res) => {

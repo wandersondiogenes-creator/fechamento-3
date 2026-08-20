@@ -9,6 +9,7 @@ import {
   sendSharedSessionChatMessage,
   closeSharedSession,
   generateRoomCode,
+  extractRoomCode,
   saveActiveRoomIdLocally,
 } from '@/lib/shared-fechamento-service';
 import { FechamentoItem } from '@/lib/fechamento-utils';
@@ -158,27 +159,22 @@ export function SharedFechamentoModal({
 
   // Join room by code
   const handleJoinRoom = async (codeToJoin?: string) => {
-    const targetCode = (codeToJoin || joinCodeInput).trim().toUpperCase();
-    if (!targetCode) {
-      setErrorMsg('Informe o código da sala ou link de acesso.');
+    const rawInput = codeToJoin || joinCodeInput;
+    const cleanCode = extractRoomCode(rawInput);
+    if (!cleanCode) {
+      setErrorMsg('Informe o código da sala ou link de acesso válido (ex: FC-93641).');
       return;
     }
 
     setIsLoading(true);
     setErrorMsg(null);
     try {
-      // Extract code if user pasted a full URL
-      let cleanCode = targetCode;
-      if (targetCode.includes('sala=')) {
-        const match = targetCode.match(/sala=([^&]+)/);
-        if (match) cleanCode = match[1];
-      }
-
       const res = await fetchSharedSession(cleanCode, currentUser);
       if (res.success && res.session) {
         onSessionConnected(res.session);
         saveActiveRoomIdLocally(res.session.id);
         setActiveTab('share');
+        setJoinCodeInput('');
       } else {
         setErrorMsg(res.error || `Sala "${cleanCode}" não encontrada ou expirada.`);
       }

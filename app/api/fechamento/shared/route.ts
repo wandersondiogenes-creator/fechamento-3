@@ -1,8 +1,13 @@
 import { NextResponse, NextRequest } from 'next/server';
 import { getDb } from '@/src/db';
 import { sharedFechamentos } from '@/src/db/schema';
-import { eq, desc } from 'drizzle-orm';
-import { SharedFechamentoSession, SessionParticipant, SessionChatMessage } from '@/lib/shared-fechamento-service';
+import { eq, desc, or } from 'drizzle-orm';
+import {
+  SharedFechamentoSession,
+  SessionParticipant,
+  SessionChatMessage,
+  extractRoomCode,
+} from '@/lib/shared-fechamento-service';
 
 export const dynamic = 'force-dynamic';
 
@@ -22,7 +27,13 @@ export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
     const listAll = searchParams.get('list') === 'true';
-    const id = searchParams.get('id')?.trim().toUpperCase();
+    const rawId =
+      searchParams.get('id') ||
+      searchParams.get('sala') ||
+      searchParams.get('code') ||
+      searchParams.get('shared') ||
+      searchParams.get('fechamento');
+    const id = extractRoomCode(rawId);
 
     // 1. List active shared sessions
     if (listAll) {
@@ -84,11 +95,34 @@ export async function GET(req: NextRequest) {
 
     let session = inMemorySessions.get(id);
 
+    // Fallback: search in memory by case-insensitive or stripped hyphen
+    if (!session) {
+      const cleanKey = id.replace(/[^A-Z0-9]/gi, '');
+      for (const [k, s] of inMemorySessions.entries()) {
+        if (k.toUpperCase() === id.toUpperCase() || k.replace(/[^A-Z0-9]/gi, '') === cleanKey) {
+          session = s;
+          break;
+        }
+      }
+    }
+
     // If not in memory, check database
     if (!session && process.env.DATABASE_URL) {
       try {
         const db = getDb();
-        const rows = await db.select().from(sharedFechamentos).where(eq(sharedFechamentos.id, id)).limit(1);
+        const stripped = id.replace(/[^A-Z0-9]/gi, '');
+        const rows = await db
+          .select()
+          .from(sharedFechamentos)
+          .where(
+            or(
+              eq(sharedFechamentos.id, id),
+              eq(sharedFechamentos.id, id.toLowerCase()),
+              eq(sharedFechamentos.id, stripped)
+            )
+          )
+          .limit(1);
+
         if (rows.length > 0) {
           const row = rows[0];
           session = {
@@ -106,7 +140,7 @@ export async function GET(req: NextRequest) {
             createdAt: row.createdAt.toISOString(),
             updatedAt: row.updatedAt.toISOString(),
           };
-          inMemorySessions.set(id, session);
+          inMemorySessions.set(session.id, session);
         }
       } catch (dbErr) {
         console.warn('DB lookup error:', dbErr);
@@ -114,7 +148,7 @@ export async function GET(req: NextRequest) {
     }
 
     if (!session) {
-      return NextResponse.json({ success: false, error: `Sala de Fechamento "${id}" não encontrada.` }, { status: 404 });
+      return NextResponse.json({ success: false, error: `Sala de Fechamento "${id}" não encontrada ou expirada.` }, { status: 404 });
     }
 
     // Register participant heartbeat if user query params provided
@@ -158,11 +192,36 @@ export async function POST(req: NextRequest) {
     // Action: Chat Message
     if (body.action === 'chat') {
       const { sessionId, user, message } = body;
-      if (!sessionId || !message || !user) {
+      const cleanSessionId = extractRoomCode(sessionId);
+      if (!cleanSessionId || !message || !user) {
         return NextResponse.json({ success: false, error: 'Dados inválidos para mensagem' }, { status: 400 });
       }
 
-      const session = inMemorySessions.get(sessionId.toUpperCase());
+      let session = inMemorySessions.get(cleanSessionId);
+      if (!session && process.env.DATABASE_URL) {
+        const db = getDb();
+        const rows = await db.select().from(sharedFechamentos).where(eq(sharedFechamentos.id, cleanSessionId)).limit(1);
+        if (rows.length > 0) {
+          const row = rows[0];
+          session = {
+            id: row.id,
+            title: row.title,
+            dataMovimento: row.dataMovimento,
+            createdBy: row.createdBy as any,
+            status: row.status as any,
+            items: row.items as any,
+            conciliatedEmpresas: (row.conciliatedEmpresas as any) || {},
+            summary: row.summary as any,
+            activeParticipants: (row.activeParticipants as any) || [],
+            chatMessages: (row.chatMessages as any) || [],
+            version: row.version || 1,
+            createdAt: row.createdAt.toISOString(),
+            updatedAt: row.updatedAt.toISOString(),
+          };
+          inMemorySessions.set(cleanSessionId, session);
+        }
+      }
+
       if (!session) {
         return NextResponse.json({ success: false, error: 'Sessão não encontrada' }, { status: 404 });
       }
@@ -190,7 +249,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'ID da sessão é obrigatório' }, { status: 400 });
     }
 
-    const roomId = incomingSession.id.toUpperCase().trim();
+    const roomId = extractRoomCode(incomingSession.id);
     const existing = inMemorySessions.get(roomId);
     const nowIso = new Date().toISOString();
 
@@ -294,7 +353,8 @@ export async function POST(req: NextRequest) {
 export async function DELETE(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
-    const id = searchParams.get('id')?.trim().toUpperCase();
+    const rawId = searchParams.get('id') || searchParams.get('sala') || searchParams.get('code');
+    const id = extractRoomCode(rawId);
 
     if (!id) {
       return NextResponse.json({ success: false, error: 'ID da sala não informado' }, { status: 400 });
@@ -305,13 +365,13 @@ export async function DELETE(req: NextRequest) {
     if (process.env.DATABASE_URL) {
       try {
         const db = getDb();
-        await db.delete(sharedFechamentos).where(eq(sharedFechamentos.id, id));
+        await db.update(sharedFechamentos).set({ status: 'closed', updatedAt: new Date() }).where(eq(sharedFechamentos.id, id));
       } catch (dbErr) {
-        console.warn('DB delete error:', dbErr);
+        console.warn('DB close error:', dbErr);
       }
     }
 
-    return NextResponse.json({ success: true, message: 'Sala encerrada com sucesso' });
+    return NextResponse.json({ success: true, message: 'Sessão encerrada com sucesso' });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
