@@ -183,6 +183,49 @@ export function FechamentoView({
     return {};
   });
 
+  // List of unique empresas for dropdown
+  const empresaList = useMemo(() => {
+    const setEmp = new Set<string>();
+    fechamentoItems.forEach((i) => {
+      if (i.empresa) setEmp.add(i.empresa);
+    });
+    return Array.from(setEmp).sort();
+  }, [fechamentoItems]);
+
+  // KPI Metrics calculation
+  const summary = useMemo(() => {
+    let totalDealer = 0;
+    let totalSitef = 0;
+    let countDivergencias = 0;
+    let countConciliados = 0;
+    let countPixValidacao = 0;
+
+    fechamentoItems.forEach((item) => {
+      totalDealer += item.valorDealer || 0;
+      totalSitef += item.valorSitef || 0;
+      if (item.isPixValidationNeeded || item.status.includes('VALIDAÇÃO NECESSÁRIA')) {
+        countPixValidacao++;
+      }
+      if (item.temDivergencia) {
+        countDivergencias++;
+      } else {
+        countConciliados++;
+      }
+    });
+
+    const diferencaTotal = Math.round((totalDealer - totalSitef) * 100) / 100;
+
+    return {
+      totalDealer,
+      totalSitef,
+      diferencaTotal,
+      countTotal: fechamentoItems.length,
+      countDivergencias,
+      countConciliados,
+      countPixValidacao,
+    };
+  }, [fechamentoItems]);
+
   // Real-time collaborative polling sync
   const lastKnownVersionRef = useRef<number>(activeSharedSession?.version || 0);
 
@@ -316,49 +359,6 @@ export function FechamentoView({
       currency: 'BRL',
     }).format(val || 0);
   };
-
-  // List of unique empresas for dropdown
-  const empresaList = useMemo(() => {
-    const setEmp = new Set<string>();
-    fechamentoItems.forEach((i) => {
-      if (i.empresa) setEmp.add(i.empresa);
-    });
-    return Array.from(setEmp).sort();
-  }, [fechamentoItems]);
-
-  // KPI Metrics calculation
-  const summary = useMemo(() => {
-    let totalDealer = 0;
-    let totalSitef = 0;
-    let countDivergencias = 0;
-    let countConciliados = 0;
-    let countPixValidacao = 0;
-
-    fechamentoItems.forEach((item) => {
-      totalDealer += item.valorDealer || 0;
-      totalSitef += item.valorSitef || 0;
-      if (item.isPixValidationNeeded || item.status.includes('VALIDAÇÃO NECESSÁRIA')) {
-        countPixValidacao++;
-      }
-      if (item.temDivergencia) {
-        countDivergencias++;
-      } else {
-        countConciliados++;
-      }
-    });
-
-    const diferencaTotal = Math.round((totalDealer - totalSitef) * 100) / 100;
-
-    return {
-      totalDealer,
-      totalSitef,
-      diferencaTotal,
-      countTotal: fechamentoItems.length,
-      countDivergencias,
-      countConciliados,
-      countPixValidacao,
-    };
-  }, [fechamentoItems]);
 
   // Filter items based on searchQuery, selectedEmpresaFilter, and filterMode
   const filteredItems = useMemo(() => {
