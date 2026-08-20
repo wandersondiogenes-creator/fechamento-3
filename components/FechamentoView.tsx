@@ -59,6 +59,11 @@ import {
   Wifi,
   LogOut,
   Sparkles,
+  ShieldAlert,
+  KeyRound,
+  Eye,
+  EyeOff,
+  Unlock,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
@@ -275,12 +280,19 @@ export function FechamentoView({
     ) => {
       if (!activeSharedSession?.id) return;
       try {
+        // Strictly deduplicate items by ID before pushing to the shared room
+        const itemMap = new Map<string, FechamentoItem>();
+        (updatedItems || []).forEach((item) => {
+          if (item && item.id) itemMap.set(item.id, item);
+        });
+        const dedupedItems = Array.from(itemMap.values());
+
         const payload: Partial<SharedFechamentoSession> & { id: string; items: FechamentoItem[] } = {
           id: activeSharedSession.id,
           title: activeSharedSession.title,
           dataMovimento: activeSharedSession.dataMovimento,
           status: 'active',
-          items: updatedItems,
+          items: dedupedItems,
           conciliatedEmpresas: updatedConciliated,
           summary,
         };
@@ -296,12 +308,42 @@ export function FechamentoView({
     [activeSharedSession, currentUser, summary, setSharedSession]
   );
 
+  // Modal State: Desconciliar Empresa Password Confirmation (Default: 123)
+  const [unreconcileModal, setUnreconcileModal] = useState<{
+    isOpen: boolean;
+    empresaName: string;
+    passwordInput: string;
+    error: string | null;
+    showPassword: boolean;
+  }>({
+    isOpen: false,
+    empresaName: '',
+    passwordInput: '',
+    error: null,
+    showPassword: false,
+  });
+
   const toggleEmpresaConciliada = (empName: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
+    const isCurrentlyConciliated = !!conciliatedEmpresas[empName];
+
+    // If currently conciliated, user is attempting to unreconcile: request password "123"
+    if (isCurrentlyConciliated) {
+      setUnreconcileModal({
+        isOpen: true,
+        empresaName: empName,
+        passwordInput: '',
+        error: null,
+        showPassword: false,
+      });
+      return;
+    }
+
+    // Otherwise, mark as conciliated directly
     setConciliatedEmpresas((prev) => {
       const next = {
         ...prev,
-        [empName]: !prev[empName],
+        [empName]: true,
       };
       if (typeof window !== 'undefined') {
         try {
@@ -314,6 +356,56 @@ export function FechamentoView({
         pushUpdateToSharedRoom(fechamentoItems, next);
       }
       return next;
+    });
+  };
+
+  const handleConfirmUnreconcile = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!unreconcileModal.empresaName) return;
+
+    if (unreconcileModal.passwordInput.trim() !== '123') {
+      setUnreconcileModal((prev) => ({
+        ...prev,
+        error: 'Senha incorreta! A senha padrão para desconciliar é 123.',
+      }));
+      return;
+    }
+
+    const empName = unreconcileModal.empresaName;
+    setConciliatedEmpresas((prev) => {
+      const next = {
+        ...prev,
+        [empName]: false,
+      };
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem('wanfinance_conciliated_empresas_v1', JSON.stringify(next));
+        } catch {
+          // Ignore storage quota error
+        }
+      }
+      if (activeSharedSession?.id) {
+        pushUpdateToSharedRoom(fechamentoItems, next);
+      }
+      return next;
+    });
+
+    setUnreconcileModal({
+      isOpen: false,
+      empresaName: '',
+      passwordInput: '',
+      error: null,
+      showPassword: false,
+    });
+  };
+
+  const handleCloseUnreconcileModal = () => {
+    setUnreconcileModal({
+      isOpen: false,
+      empresaName: '',
+      passwordInput: '',
+      error: null,
+      showPassword: false,
     });
   };
 
@@ -1337,8 +1429,8 @@ export function FechamentoView({
                             onClick={(e) => toggleEmpresaConciliada(empName, e)}
                             title={
                               isEmpresaConciliada
-                                ? 'Empresa já confirmada como conciliada no sistema. Clique para desmarcar.'
-                                : 'Clique para marcar esta empresa como 100% conciliada no sistema.'
+                                ? 'Empresa conciliada no sistema. Clique para desconciliar (solicita a senha padrão 123).'
+                                : 'Clique para marcar esta empresa como conciliada no sistema.'
                             }
                             className={`group relative overflow-hidden px-3.5 py-1.5 rounded-xl font-bold text-xs flex items-center gap-2 transition-all duration-300 cursor-pointer ${
                               isEmpresaConciliada
@@ -2121,6 +2213,133 @@ export function FechamentoView({
         }}
         onManualSync={() => performLiveSync(true)}
       />
+
+      {/* Modal: Confirmação com Senha para Desconciliar Empresa (Senha Padrão: 123) */}
+      {unreconcileModal.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-md animate-fade-in">
+          <div
+            className="bg-slate-900 border border-slate-750 text-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden animate-scale-up"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="p-5 bg-gradient-to-r from-slate-900 via-amber-950/40 to-slate-900 border-b border-slate-750/80 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-amber-500/20 text-amber-400 rounded-2xl border border-amber-500/30">
+                  <ShieldAlert className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-base text-white tracking-tight">
+                    Desconciliar Empresa
+                  </h3>
+                  <p className="text-xs text-amber-300/80">
+                    Confirmação de segurança necessária
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleCloseUnreconcileModal}
+                className="p-1.5 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Form */}
+            <form onSubmit={handleConfirmUnreconcile} className="p-6 space-y-4">
+              <div className="bg-slate-800/80 border border-slate-700/80 rounded-2xl p-3.5 space-y-1.5">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                  Empresa Selecionada:
+                </span>
+                <div className="flex items-center gap-2 text-sm font-extrabold text-amber-300">
+                  <Building2 className="w-4 h-4 text-amber-400 shrink-0" />
+                  <span className="truncate">{unreconcileModal.empresaName}</span>
+                </div>
+              </div>
+
+              <p className="text-xs text-slate-300 leading-relaxed">
+                Para desconciliar esta empresa e retornar os lançamentos ao estado pendente, informe a senha padrão de autorização:
+              </p>
+
+              {/* Password Input */}
+              <div className="space-y-1.5">
+                <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-300">
+                  Senha de Autorização
+                </label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+                    <KeyRound className="w-4 h-4" />
+                  </div>
+                  <input
+                    type={unreconcileModal.showPassword ? 'text' : 'password'}
+                    value={unreconcileModal.passwordInput}
+                    onChange={(e) =>
+                      setUnreconcileModal((prev) => ({
+                        ...prev,
+                        passwordInput: e.target.value,
+                        error: null,
+                      }))
+                    }
+                    placeholder="Digite a senha (padrão: 123)"
+                    autoFocus
+                    className={`w-full bg-slate-950 border ${
+                      unreconcileModal.error
+                        ? 'border-rose-500 ring-1 ring-rose-500'
+                        : 'border-slate-700 focus:border-amber-500 focus:ring-1 focus:ring-amber-500'
+                    } rounded-xl pl-10 pr-10 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none transition-all`}
+                  />
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setUnreconcileModal((prev) => ({
+                        ...prev,
+                        showPassword: !prev.showPassword,
+                      }))
+                    }
+                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-200 transition-colors"
+                  >
+                    {unreconcileModal.showPassword ? (
+                      <EyeOff className="w-4 h-4" />
+                    ) : (
+                      <Eye className="w-4 h-4" />
+                    )}
+                  </button>
+                </div>
+
+                {/* Error Message */}
+                {unreconcileModal.error && (
+                  <div className="flex items-center gap-1.5 text-xs text-rose-400 pt-1 animate-fade-in font-medium">
+                    <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                    <span>{unreconcileModal.error}</span>
+                  </div>
+                )}
+                
+                <p className="text-[11px] text-slate-400 pt-0.5">
+                  Dica: A senha padrão configurada é <strong className="text-amber-300 font-mono">123</strong>.
+                </p>
+              </div>
+
+              {/* Actions */}
+              <div className="pt-3 flex items-center justify-end gap-3 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={handleCloseUnreconcileModal}
+                  className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-300 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 rounded-xl text-xs font-bold bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 shadow-lg shadow-amber-500/25 flex items-center gap-2 transition-all active:scale-95 cursor-pointer"
+                >
+                  <Unlock className="w-3.5 h-3.5" />
+                  Confirmar Desconciliação
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

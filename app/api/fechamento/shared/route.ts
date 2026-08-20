@@ -8,6 +8,7 @@ import {
   SessionChatMessage,
   extractRoomCode,
 } from '@/lib/shared-fechamento-service';
+import { FechamentoItem, FechamentoSummary } from '@/lib/fechamento-utils';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,6 +22,48 @@ function cleanParticipantList(participants: SessionParticipant[]): SessionPartic
     const last = new Date(p.lastSeen).getTime();
     return now - last < 1000 * 60 * 60 * 12; // 12 hours retention in list
   });
+}
+
+export function deduplicateItems(items: FechamentoItem[]): FechamentoItem[] {
+  if (!items || !Array.isArray(items)) return [];
+  const map = new Map<string, FechamentoItem>();
+  for (const item of items) {
+    if (item && item.id) {
+      map.set(item.id, item);
+    }
+  }
+  return Array.from(map.values());
+}
+
+export function computeSessionSummary(items: FechamentoItem[]): FechamentoSummary {
+  let totalDealer = 0;
+  let totalSitef = 0;
+  let countDivergencias = 0;
+  let countConciliados = 0;
+  let countPixValidacao = 0;
+
+  for (const item of items) {
+    totalDealer += Number(item.valorDealer) || 0;
+    totalSitef += Number(item.valorSitef) || 0;
+    if (item.isPixValidationNeeded || item.status?.includes('VALIDAÇÃO NECESSÁRIA')) {
+      countPixValidacao++;
+    }
+    if (item.temDivergencia) {
+      countDivergencias++;
+    } else {
+      countConciliados++;
+    }
+  }
+
+  return {
+    totalDealer: Math.round(totalDealer * 100) / 100,
+    totalSitef: Math.round(totalSitef * 100) / 100,
+    diferencaTotal: Math.round((totalDealer - totalSitef) * 100) / 100,
+    countTotal: items.length,
+    countDivergencias,
+    countConciliados,
+    countPixValidacao,
+  };
 }
 
 export async function GET(req: NextRequest) {
@@ -148,7 +191,66 @@ export async function GET(req: NextRequest) {
     }
 
     if (!session) {
-      return NextResponse.json({ success: false, error: `Sala de Fechamento "${id}" não encontrada ou expirada.` }, { status: 404 });
+      // If the code is formatted as a valid room code (FC-XXXXX), auto-bootstrap a collaborative room on-the-fly
+      // so users sharing newly generated codes can immediately connect and synchronize without 404 errors!
+      const isRoomCodePattern = /^FC-?\d{4,8}$/i.test(id);
+      if (isRoomCodePattern) {
+        const nowIso = new Date().toISOString();
+        const dateStr = new Date().toLocaleDateString('pt-BR');
+        session = {
+          id: id,
+          title: `Fechamento de Caixa - ${dateStr}`,
+          dataMovimento: dateStr,
+          createdBy: {
+            id: userId || 'usr_host',
+            name: userName || 'Operador',
+            email: userEmail || 'operador@trataexcel.com.br',
+            empresa: userEmpresa || 'Matriz',
+            role: userRole || 'operador',
+          },
+          status: 'active',
+          items: [],
+          conciliatedEmpresas: {},
+          summary: {
+            totalDealer: 0,
+            totalSitef: 0,
+            diferencaTotal: 0,
+            countTotal: 0,
+            countDivergencias: 0,
+            countConciliados: 0,
+            countPixValidacao: 0,
+          },
+          activeParticipants: [],
+          chatMessages: [],
+          version: 1,
+          createdAt: nowIso,
+          updatedAt: nowIso,
+        };
+        inMemorySessions.set(id, session);
+
+        if (process.env.DATABASE_URL) {
+          try {
+            const db = getDb();
+            await db.insert(sharedFechamentos).values({
+              id: session.id,
+              title: session.title,
+              dataMovimento: session.dataMovimento,
+              createdBy: session.createdBy,
+              status: session.status,
+              items: session.items,
+              conciliatedEmpresas: session.conciliatedEmpresas,
+              summary: session.summary,
+              activeParticipants: session.activeParticipants,
+              chatMessages: session.chatMessages || [],
+              updatedAt: new Date(),
+            }).onConflictDoNothing();
+          } catch (dbErr) {
+            console.warn('DB auto-provision error:', dbErr);
+          }
+        }
+      } else {
+        return NextResponse.json({ success: false, error: `Sala de Fechamento "${id}" não encontrada ou expirada.` }, { status: 404 });
+      }
     }
 
     // Register participant heartbeat if user query params provided
@@ -179,6 +281,17 @@ export async function GET(req: NextRequest) {
       session.activeParticipants = cleanParticipantList(session.activeParticipants);
     }
 
+    if (session) {
+      const sanitizedItems = deduplicateItems(session.items || []);
+      const accurateSummary = computeSessionSummary(sanitizedItems);
+      session = {
+        ...session,
+        items: sanitizedItems,
+        summary: accurateSummary,
+      };
+      inMemorySessions.set(session.id, session);
+    }
+
     return NextResponse.json({ success: true, session });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
@@ -203,15 +316,17 @@ export async function POST(req: NextRequest) {
         const rows = await db.select().from(sharedFechamentos).where(eq(sharedFechamentos.id, cleanSessionId)).limit(1);
         if (rows.length > 0) {
           const row = rows[0];
+          const rawItems = (row.items as any) || [];
+          const deduped = deduplicateItems(rawItems);
           session = {
             id: row.id,
             title: row.title,
             dataMovimento: row.dataMovimento,
             createdBy: row.createdBy as any,
             status: row.status as any,
-            items: row.items as any,
+            items: deduped,
             conciliatedEmpresas: (row.conciliatedEmpresas as any) || {},
-            summary: row.summary as any,
+            summary: computeSessionSummary(deduped),
             activeParticipants: (row.activeParticipants as any) || [],
             chatMessages: (row.chatMessages as any) || [],
             version: row.version || 1,
@@ -274,6 +389,11 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Sanitize and deduplicate items
+    const rawItems = incomingSession.items !== undefined ? incomingSession.items : (existing?.items || []);
+    const sanitizedItems = deduplicateItems(rawItems);
+    const accurateSummary = computeSessionSummary(sanitizedItems);
+
     const fullSession: SharedFechamentoSession = {
       id: roomId,
       title: incomingSession.title || `Fechamento ${incomingSession.dataMovimento || 'Hoje'}`,
@@ -286,17 +406,9 @@ export async function POST(req: NextRequest) {
         role: user?.role || 'operador',
       },
       status: incomingSession.status || 'active',
-      items: incomingSession.items || existing?.items || [],
+      items: sanitizedItems,
       conciliatedEmpresas: incomingSession.conciliatedEmpresas || existing?.conciliatedEmpresas || {},
-      summary: incomingSession.summary || existing?.summary || {
-        totalDealer: 0,
-        totalSitef: 0,
-        diferencaTotal: 0,
-        countTotal: 0,
-        countDivergencias: 0,
-        countConciliados: 0,
-        countPixValidacao: 0,
-      },
+      summary: accurateSummary,
       activeParticipants: cleanParticipantList(updatedParticipants),
       chatMessages: incomingSession.chatMessages || existing?.chatMessages || [],
       version: (existing?.version || 0) + 1,

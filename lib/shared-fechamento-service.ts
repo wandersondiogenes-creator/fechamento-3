@@ -51,6 +51,37 @@ export interface SharedFechamentoSession {
 }
 
 const ACTIVE_SHARED_ROOM_STORAGE_KEY = 'wanfinance_active_shared_room_id_v1';
+const SHARED_SESSIONS_LOCAL_KEY = 'wanfinance_shared_sessions_backup_v1';
+
+function getLocalSharedSessionsBackup(): Record<string, SharedFechamentoSession> {
+  if (typeof window === 'undefined') return {};
+  try {
+    const raw = localStorage.getItem(SHARED_SESSIONS_LOCAL_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveLocalSharedSessionBackup(session: SharedFechamentoSession): void {
+  if (typeof window === 'undefined' || !session) return;
+  try {
+    const map = getLocalSharedSessionsBackup();
+    // Ensure items in session are deduplicated before storing
+    const itemMap = new Map<string, any>();
+    (session.items || []).forEach((i) => {
+      if (i && i.id) itemMap.set(i.id, i);
+    });
+    const cleanedSession: SharedFechamentoSession = {
+      ...session,
+      items: Array.from(itemMap.values()),
+    };
+    map[session.id] = cleanedSession;
+    localStorage.setItem(SHARED_SESSIONS_LOCAL_KEY, JSON.stringify(map));
+  } catch {
+    // ignore
+  }
+}
 
 export function generateRoomCode(): string {
   const num = Math.floor(10000 + Math.random() * 90000);
@@ -61,15 +92,26 @@ export function extractRoomCode(raw: string | null | undefined): string {
   if (!raw) return '';
   let str = String(raw).trim();
 
+  // Try decoding up to 3 times in case of nested encoding
+  for (let i = 0; i < 3; i++) {
+    if (str.includes('%')) {
+      try {
+        str = decodeURIComponent(str);
+      } catch {
+        break;
+      }
+    }
+  }
+
   // If it's a URL or contains query parameters / paths
-  if (str.includes('?') || str.includes('/') || str.includes('=')) {
+  if (str.includes('?') || str.includes('/') || str.includes('=') || str.includes('&') || str.includes('#')) {
     try {
       // 1. Search for parameter matches: sala=, shared=, fechamento=, code=, id=, room=
       const paramMatch = str.match(/[?&#](?:sala|shared|fechamento|code|id|room)=([^&#\s]+)/i);
       if (paramMatch && paramMatch[1]) {
-        str = decodeURIComponent(paramMatch[1]).trim();
+        str = paramMatch[1].trim();
       } else {
-        // 2. Search for FC-XXXXX in the URL string
+        // 2. Search for FC-XXXXX directly in the string
         const fcMatch = str.match(/(FC-?\d{4,8})/i);
         if (fcMatch && fcMatch[1]) {
           str = fcMatch[1].trim();
@@ -77,7 +119,7 @@ export function extractRoomCode(raw: string | null | undefined): string {
           // 3. Last path segment fallback
           const lastSegment = str.split(/[/?#]/).filter(Boolean).pop();
           if (lastSegment) {
-            str = decodeURIComponent(lastSegment).trim();
+            str = lastSegment.trim();
           }
         }
       }
@@ -86,9 +128,9 @@ export function extractRoomCode(raw: string | null | undefined): string {
     }
   }
 
-  // Normalize FC prefix: if user typed "93641" or "fc93641" or "FC 93641" or "fc-93641"
+  // Normalize FC prefix: if user typed "68049" or "fc68049" or "FC 68049" or "fc-68049"
   const cleanAlphaNum = str.replace(/[^a-zA-Z0-9-]/g, '').toUpperCase();
-  const directDigits = cleanAlphaNum.match(/^(\d{4,6})$/);
+  const directDigits = cleanAlphaNum.match(/^(\d{4,8})$/);
   if (directDigits) {
     return `FC-${directDigits[1]}`;
   }
@@ -149,6 +191,9 @@ export async function createOrUpdateSharedSession(
       return { success: false, error: data.error || 'Falha ao salvar sessão compartilhada' };
     }
 
+    if (data.session) {
+      saveLocalSharedSessionBackup(data.session);
+    }
     saveActiveRoomIdLocally(cleanId);
     return { success: true, session: data.session };
   } catch (err: any) {
@@ -183,12 +228,25 @@ export async function fetchSharedSession(
     });
 
     const data = await res.json();
-    if (!res.ok || !data.success) {
-      return { success: false, error: data.error || 'Sessão não encontrada' };
+    if (!res.ok || !data.success || !data.session) {
+      // Check local backup fallback (in case user opened room created on same browser)
+      const localBackup = getLocalSharedSessionsBackup()[cleanId];
+      if (localBackup && currentUser) {
+        // Re-push local session to server
+        createOrUpdateSharedSession(localBackup, currentUser).catch(() => {});
+        return { success: true, session: localBackup };
+      }
+      return { success: false, error: data?.error || `Sala "${cleanId}" não encontrada ou expirada.` };
     }
 
+    saveLocalSharedSessionBackup(data.session);
     return { success: true, session: data.session };
   } catch (err: any) {
+    const cleanId = extractRoomCode(sessionId);
+    const localBackup = getLocalSharedSessionsBackup()[cleanId];
+    if (localBackup) {
+      return { success: true, session: localBackup };
+    }
     return { success: false, error: err.message || 'Erro de rede' };
   }
 }

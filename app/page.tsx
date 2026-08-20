@@ -165,11 +165,41 @@ export default function Home() {
     );
   }, [dealerState.processedData, dealerState.columns, sitefState.processedData, sitefState.columns]);
 
-  // Combined Fechamento items list
+  // Combined Fechamento items list (strictly deduplicated to prevent duplicated values)
   const allFechamentoItems = useMemo(() => {
-    const combined = [...manualFechamentoItems, ...autoFechamentoItems];
-    return combined.filter((item) => !deletedFechamentoIds.has(item.id));
-  }, [autoFechamentoItems, manualFechamentoItems, deletedFechamentoIds]);
+    // 1. If actively connected to a shared session that already contains items, use those authoritative items
+    if (activeSharedSession?.items && activeSharedSession.items.length > 0) {
+      const map = new Map<string, FechamentoItem>();
+      activeSharedSession.items.forEach((item) => {
+        if (item && item.id && !deletedFechamentoIds.has(item.id)) {
+          map.set(item.id, item);
+        }
+      });
+      // Merge any local manual items that aren't yet in the room
+      manualFechamentoItems.forEach((item) => {
+        if (item && item.id && !deletedFechamentoIds.has(item.id) && !map.has(item.id)) {
+          map.set(item.id, item);
+        }
+      });
+      return Array.from(map.values());
+    }
+
+    // 2. Local mode: Deduplicate between auto-computed items from spreadsheets and manual items
+    const map = new Map<string, FechamentoItem>();
+    autoFechamentoItems.forEach((item) => {
+      if (item && item.id && !deletedFechamentoIds.has(item.id)) {
+        map.set(item.id, item);
+      }
+    });
+
+    manualFechamentoItems.forEach((item) => {
+      if (item && item.id && !deletedFechamentoIds.has(item.id)) {
+        map.set(item.id, item);
+      }
+    });
+
+    return Array.from(map.values());
+  }, [activeSharedSession?.items, autoFechamentoItems, manualFechamentoItems, deletedFechamentoIds]);
 
   const spreadsheetState =
     activeTab === 'dealer'
@@ -961,7 +991,13 @@ export default function Home() {
   }, []);
 
   const handleApplySharedItems = useCallback((items: FechamentoItem[]) => {
-    setManualFechamentoItems(items);
+    const map = new Map<string, FechamentoItem>();
+    (items || []).forEach((item) => {
+      if (item && item.id) {
+        map.set(item.id, item);
+      }
+    });
+    setManualFechamentoItems(Array.from(map.values()));
     setDeletedFechamentoIds(new Set());
   }, []);
 
