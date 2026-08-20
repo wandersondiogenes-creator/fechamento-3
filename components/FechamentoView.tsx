@@ -1,10 +1,19 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { FechamentoItem } from '@/lib/fechamento-utils';
 import { FechamentoCaixaModal } from './FechamentoCaixaModal';
 import { HistoricoFechamentoModal } from './HistoricoFechamentoModal';
+import { SharedFechamentoModal } from './SharedFechamentoModal';
 import { FechamentoCaixaRecord } from '@/lib/fechamento-caixa-service';
+import {
+  SharedFechamentoSession,
+  fetchSharedSession,
+  createOrUpdateSharedSession,
+  getActiveRoomIdLocally,
+  saveActiveRoomIdLocally,
+} from '@/lib/shared-fechamento-service';
+import { getCurrentUser } from '@/lib/auth-service';
 import {
   CADASTRO_EMPRESAS,
   CADASTRO_DEPARTAMENTOS,
@@ -42,6 +51,14 @@ import {
   ArrowUpZA,
   SortAsc,
   Filter,
+  Share2,
+  Users,
+  Radio,
+  Globe,
+  Copy,
+  Wifi,
+  LogOut,
+  Sparkles,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
@@ -68,6 +85,9 @@ interface FechamentoViewProps {
   onTabChange?: (tab: 'dealer' | 'sitef' | 'pendente_cdc' | 'fechamento') => void;
   onFechamentoConcluido?: (record: FechamentoCaixaRecord) => void;
   onRestoreFechamentoRecord?: (record: FechamentoCaixaRecord) => void;
+  activeSharedSession?: SharedFechamentoSession | null;
+  onSharedSessionChange?: (session: SharedFechamentoSession | null) => void;
+  onApplySharedItems?: (items: FechamentoItem[], conciliated: Record<string, boolean>) => void;
 }
 
 export function FechamentoView({
@@ -89,6 +109,9 @@ export function FechamentoView({
   onTriggerFileImport,
   onFechamentoConcluido,
   onRestoreFechamentoRecord,
+  activeSharedSession: externalActiveSharedSession,
+  onSharedSessionChange,
+  onApplySharedItems,
 }: FechamentoViewProps) {
   const fechamentoItems = useMemo(
     () => fechamentoItemsProp || itemsProp || [],
@@ -100,6 +123,20 @@ export function FechamentoView({
   const [internalEmpresaSortOrder, setInternalEmpresaSortOrder] = useState<'asc' | 'desc' | 'none'>('asc');
   const [internalFilterMode, setInternalFilterMode] = useState<'all' | 'divergent' | 'concolidated' | 'pix_validation'>('all');
   const [internalViewMode, setInternalViewMode] = useState<'grouped' | 'flat'>('grouped');
+
+  const [internalSharedSession, setInternalSharedSession] = useState<SharedFechamentoSession | null>(null);
+  const activeSharedSession = externalActiveSharedSession !== undefined ? externalActiveSharedSession : internalSharedSession;
+
+  const setSharedSession = useCallback((s: SharedFechamentoSession | null) => {
+    if (onSharedSessionChange) onSharedSessionChange(s);
+    else setInternalSharedSession(s);
+  }, [onSharedSessionChange]);
+
+  const [isSharedModalOpen, setIsSharedModalOpen] = useState(false);
+  const [isSyncingLive, setIsSyncingLive] = useState(false);
+  const [lastSyncText, setLastSyncText] = useState<string>('');
+  const [copiedSessionLink, setCopiedSessionLink] = useState(false);
+  const currentUser = getCurrentUser();
 
   const searchQuery = externalSearchQuery !== undefined ? externalSearchQuery : internalSearchQuery;
   const setSearchQuery = (val: string) => {
@@ -146,6 +183,76 @@ export function FechamentoView({
     return {};
   });
 
+  // Real-time collaborative polling sync
+  const lastKnownVersionRef = useRef<number>(activeSharedSession?.version || 0);
+
+  const performLiveSync = useCallback(async (showIndicator = false) => {
+    if (!activeSharedSession?.id) return;
+    if (showIndicator) setIsSyncingLive(true);
+    try {
+      const res = await fetchSharedSession(activeSharedSession.id, currentUser);
+      if (res.success && res.session) {
+        const serverSession = res.session;
+        setSharedSession(serverSession);
+        setLastSyncText(new Date().toLocaleTimeString('pt-BR'));
+
+        if (serverSession.version > lastKnownVersionRef.current) {
+          lastKnownVersionRef.current = serverSession.version;
+          if (serverSession.conciliatedEmpresas) {
+            setConciliatedEmpresas(serverSession.conciliatedEmpresas);
+          }
+          if (onApplySharedItems && serverSession.items) {
+            onApplySharedItems(serverSession.items, serverSession.conciliatedEmpresas || {});
+          }
+        }
+      }
+    } catch {
+      // ignore
+    } finally {
+      if (showIndicator) {
+        setTimeout(() => setIsSyncingLive(false), 500);
+      }
+    }
+  }, [activeSharedSession?.id, currentUser, onApplySharedItems, setSharedSession]);
+
+  useEffect(() => {
+    if (!activeSharedSession?.id) return;
+    performLiveSync(false);
+    const interval = setInterval(() => {
+      performLiveSync(false);
+    }, 3500);
+    return () => clearInterval(interval);
+  }, [activeSharedSession?.id, performLiveSync]);
+
+  // Push local updates to shared session
+  const pushUpdateToSharedRoom = useCallback(
+    async (
+      updatedItems: FechamentoItem[],
+      updatedConciliated: Record<string, boolean>
+    ) => {
+      if (!activeSharedSession?.id) return;
+      try {
+        const payload: Partial<SharedFechamentoSession> & { id: string; items: FechamentoItem[] } = {
+          id: activeSharedSession.id,
+          title: activeSharedSession.title,
+          dataMovimento: activeSharedSession.dataMovimento,
+          status: 'active',
+          items: updatedItems,
+          conciliatedEmpresas: updatedConciliated,
+          summary,
+        };
+        const res = await createOrUpdateSharedSession(payload, currentUser);
+        if (res.success && res.session) {
+          lastKnownVersionRef.current = res.session.version;
+          setSharedSession(res.session);
+        }
+      } catch (err) {
+        console.warn('Erro ao propagar alterações na sala compartilhada:', err);
+      }
+    },
+    [activeSharedSession, currentUser, summary, setSharedSession]
+  );
+
   const toggleEmpresaConciliada = (empName: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     setConciliatedEmpresas((prev) => {
@@ -159,6 +266,9 @@ export function FechamentoView({
         } catch {
           // Ignore storage quota error
         }
+      }
+      if (activeSharedSession?.id) {
+        pushUpdateToSharedRoom(fechamentoItems, next);
       }
       return next;
     });
@@ -676,6 +786,34 @@ export function FechamentoView({
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Real-time Share Button */}
+          <button
+            onClick={() => setIsSharedModalOpen(true)}
+            className={`px-3.5 py-2 font-bold rounded-xl text-xs border transition-all flex items-center gap-2 cursor-pointer shadow-2xs ${
+              activeSharedSession
+                ? 'bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border-emerald-500/40'
+                : 'bg-slate-800 hover:bg-slate-750 text-slate-200 border-slate-700'
+            }`}
+          >
+            {activeSharedSession ? (
+              <>
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-400"></span>
+                </span>
+                <Users className="w-3.5 h-3.5 text-emerald-400" />
+                <span>
+                  Sala: <strong>{activeSharedSession.id}</strong> ({activeSharedSession.activeParticipants?.length || 1} online)
+                </span>
+              </>
+            ) : (
+              <>
+                <Share2 className="w-4 h-4 text-emerald-400" />
+                <span>Compartilhar Fechamento</span>
+              </>
+            )}
+          </button>
+
           <button
             onClick={() => setIsHistoricoModalOpen(true)}
             className="px-3.5 py-2 bg-slate-800 hover:bg-slate-750 text-slate-200 font-bold rounded-xl text-xs border border-slate-700 transition-all flex items-center gap-2 cursor-pointer shadow-2xs"
@@ -697,6 +835,82 @@ export function FechamentoView({
           </button>
         </div>
       </div>
+
+      {/* Real-time Shared Session Collaboration Banner */}
+      {activeSharedSession && (
+        <div className="bg-gradient-to-r from-slate-900 via-slate-850 to-slate-900 border border-emerald-500/40 p-3.5 rounded-2xl text-white flex flex-wrap items-center justify-between gap-3 shadow-md">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-emerald-500/20 text-emerald-400 rounded-xl border border-emerald-500/30">
+              <Globe className="w-5 h-5 animate-pulse" />
+            </div>
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-extrabold text-xs text-white">
+                  Sessão Compartilhada em Tempo Real:
+                </span>
+                <span className="bg-emerald-500 text-slate-950 font-mono font-black text-xs px-2 py-0.5 rounded-md">
+                  {activeSharedSession.id}
+                </span>
+                <span className="text-[11px] text-emerald-300 font-semibold bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20 flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                  {activeSharedSession.activeParticipants?.length || 1} computadores conectados
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-400 mt-0.5">
+                Participantes:{' '}
+                <strong className="text-slate-200">
+                  {activeSharedSession.activeParticipants?.map((p) => p.name).join(', ') || currentUser.name}
+                </strong>
+                {lastSyncText && ` • Sincronizado às ${lastSyncText}`}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                if (typeof window !== 'undefined') {
+                  navigator.clipboard.writeText(`${window.location.origin}/?sala=${activeSharedSession.id}`);
+                  setCopiedSessionLink(true);
+                  setTimeout(() => setCopiedSessionLink(false), 2000);
+                }
+              }}
+              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-750 text-slate-200 text-xs font-bold rounded-xl border border-slate-700 transition-all flex items-center gap-1.5 cursor-pointer"
+            >
+              {copiedSessionLink ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+              <span>{copiedSessionLink ? 'Link Copiado!' : 'Copiar Link da Sala'}</span>
+            </button>
+
+            <button
+              onClick={() => performLiveSync(true)}
+              disabled={isSyncingLive}
+              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-750 text-slate-200 text-xs font-bold rounded-xl border border-slate-700 transition-all flex items-center gap-1.5 cursor-pointer"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 text-emerald-400 ${isSyncingLive ? 'animate-spin' : ''}`} />
+              <span>Sincronizar</span>
+            </button>
+
+            <button
+              onClick={() => setIsSharedModalOpen(true)}
+              className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-450 text-slate-950 text-xs font-black rounded-xl transition-all flex items-center gap-1.5 cursor-pointer"
+            >
+              <Users className="w-3.5 h-3.5" />
+              <span>Ver Conectados / Chat</span>
+            </button>
+
+            <button
+              onClick={() => {
+                setSharedSession(null);
+                saveActiveRoomIdLocally(null);
+              }}
+              className="p-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 rounded-xl border border-rose-500/30 transition-all cursor-pointer"
+              title="Desconectar da Sala"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* KPI Dashboard Panel */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
@@ -1882,6 +2096,30 @@ export function FechamentoView({
           });
           onRestoreFechamentoRecord?.(record);
         }}
+      />
+
+      {/* Modal: Compartilhamento em Tempo Real de Fechamento */}
+      <SharedFechamentoModal
+        isOpen={isSharedModalOpen}
+        onClose={() => setIsSharedModalOpen(false)}
+        fechamentoItems={fechamentoItems}
+        conciliatedEmpresas={conciliatedEmpresas}
+        summary={summary}
+        activeSession={activeSharedSession}
+        onSessionConnected={(session) => {
+          setSharedSession(session);
+          if (session.conciliatedEmpresas) {
+            setConciliatedEmpresas(session.conciliatedEmpresas);
+          }
+          if (onApplySharedItems && session.items) {
+            onApplySharedItems(session.items, session.conciliatedEmpresas || {});
+          }
+        }}
+        onSessionDisconnected={() => {
+          setSharedSession(null);
+          saveActiveRoomIdLocally(null);
+        }}
+        onManualSync={() => performLiveSync(true)}
       />
     </div>
   );

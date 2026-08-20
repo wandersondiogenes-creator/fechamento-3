@@ -20,6 +20,32 @@ export interface FechamentoCaixaRecord {
 
 const STORAGE_KEY = 'fechamento_caixa_historico_v1';
 
+export async function fetchCloudFechamentoRecords(): Promise<FechamentoCaixaRecord[]> {
+  try {
+    const res = await fetch('/api/fechamento/records', { cache: 'no-store' });
+    const data = await res.json();
+    if (res.ok && data.success && Array.isArray(data.records)) {
+      if (typeof window !== 'undefined') {
+        const local = getHistoricoFechamento();
+        const map = new Map<string, FechamentoCaixaRecord>();
+        data.records.forEach((r: FechamentoCaixaRecord) => map.set(r.id, r));
+        local.forEach((r: FechamentoCaixaRecord) => {
+          if (!map.has(r.id)) map.set(r.id, r);
+        });
+        const merged = Array.from(map.values()).sort(
+          (a, b) => new Date(b.dataFechamento).getTime() - new Date(a.dataFechamento).getTime()
+        );
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
+        return merged;
+      }
+      return data.records;
+    }
+  } catch (err) {
+    console.warn('Erro ao carregar histórico em nuvem:', err);
+  }
+  return getHistoricoFechamento();
+}
+
 export function getHistoricoFechamento(): FechamentoCaixaRecord[] {
   if (typeof window === 'undefined') return [];
   try {
@@ -47,6 +73,14 @@ export function saveFechamentoCaixa(record: FechamentoCaixaRecord): FechamentoCa
       updated = [record, ...current];
     }
     localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+
+    // Cloud sync async
+    fetch('/api/fechamento/records', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(record),
+    }).catch((err) => console.warn('Erro ao sincronizar fechamento na nuvem:', err));
+
     return updated;
   } catch (err) {
     console.error('Erro ao salvar fechamento:', err);
@@ -60,6 +94,12 @@ export function deleteFechamentoCaixa(id: string): FechamentoCaixaRecord[] {
     const current = getHistoricoFechamento();
     const updated = current.filter((r) => r.id !== id);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+
+    // Cloud delete async
+    fetch(`/api/fechamento/records?id=${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    }).catch((err) => console.warn('Erro ao deletar da nuvem:', err));
+
     return updated;
   } catch (err) {
     console.error('Erro ao excluir fechamento:', err);

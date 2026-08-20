@@ -13,6 +13,11 @@ import {
 } from '@/lib/excel-utils';
 import { FechamentoItem, generateAutoFechamento } from '@/lib/fechamento-utils';
 import { FechamentoCaixaRecord } from '@/lib/fechamento-caixa-service';
+import {
+  SharedFechamentoSession,
+  fetchSharedSession,
+  getActiveRoomIdLocally,
+} from '@/lib/shared-fechamento-service';
 import { logAuditAction } from '@/lib/audit-service';
 import { getCurrentUser, isUserLoggedIn, logoutUser } from '@/lib/auth-service';
 import { UserProfile } from '@/types/audit';
@@ -116,6 +121,31 @@ export default function Home() {
   // Manual & deleted Fechamento state
   const [manualFechamentoItems, setManualFechamentoItems] = useState<FechamentoItem[]>([]);
   const [deletedFechamentoIds, setDeletedFechamentoIds] = useState<Set<string>>(new Set());
+  const [activeSharedSession, setActiveSharedSession] = useState<SharedFechamentoSession | null>(null);
+
+  // Automatic check for shared session room code from URL query (?sala=... or ?shared=...)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const searchParams = new URLSearchParams(window.location.search);
+      const roomParam = searchParams.get('sala') || searchParams.get('shared') || searchParams.get('fechamento');
+      const codeToLoad = roomParam || getActiveRoomIdLocally();
+
+      if (codeToLoad) {
+        fetchSharedSession(codeToLoad, currentUser).then((res) => {
+          if (res.success && res.session) {
+            setActiveSharedSession(res.session);
+            if (res.session.items && res.session.items.length > 0) {
+              setManualFechamentoItems(res.session.items);
+            }
+            setActiveTab('fechamento');
+          }
+        }).catch((err) => console.warn('Erro ao conectar sala da URL:', err));
+      }
+    } catch {
+      // Ignore URL parsing error in sandbox
+    }
+  }, [currentUser]);
 
   // Automatic Fechamento computation based on current DEALER and SITEF data
   const autoFechamentoItems = useMemo(() => {
@@ -922,6 +952,11 @@ export default function Home() {
     setManualFechamentoItems([]);
   }, []);
 
+  const handleApplySharedItems = useCallback((items: FechamentoItem[]) => {
+    setManualFechamentoItems(items);
+    setDeletedFechamentoIds(new Set());
+  }, []);
+
   const handleFechamentoConcluido = useCallback((record?: FechamentoCaixaRecord) => {
     // Clear all imported spreadsheets and manual items to leave screen clean for next cash closure
     setDealerState(buildEmptySpreadsheetState('DEALER.xlsx'));
@@ -1112,6 +1147,9 @@ export default function Home() {
                 onRecalculateFechamento={handleRecalculateFechamento}
                 onFechamentoConcluido={handleFechamentoConcluido}
                 onRestoreFechamentoRecord={handleRestoreFechamentoRecord}
+                activeSharedSession={activeSharedSession}
+                onSharedSessionChange={setActiveSharedSession}
+                onApplySharedItems={handleApplySharedItems}
               />
             ) : (
               <>

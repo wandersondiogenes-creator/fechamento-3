@@ -4,6 +4,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import {
   FechamentoCaixaRecord,
   getHistoricoFechamento,
+  fetchCloudFechamentoRecords,
   deleteFechamentoCaixa,
   exportFechamentoCaixaExcel,
   exportFechamentoCaixaPDF,
@@ -50,9 +51,13 @@ export function HistoricoFechamentoModal({ isOpen, onClose, onRestoreRecord }: H
   const currentUser = getCurrentUser();
   const canReopen = hasPermission('reabrir_fechamento', currentUser);
 
-  const loadHistory = () => {
-    const list = getHistoricoFechamento();
-    setRecords(list);
+  const loadHistory = async () => {
+    const localList = getHistoricoFechamento();
+    if (localList.length > 0) setRecords(localList);
+    const cloudList = await fetchCloudFechamentoRecords();
+    if (cloudList && cloudList.length > 0) {
+      setRecords(cloudList);
+    }
   };
 
   useEffect(() => {
