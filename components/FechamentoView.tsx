@@ -133,6 +133,37 @@ export function FechamentoView({
 
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
+  // State to track empresas marked as reconciled in the system by the user
+  const [conciliatedEmpresas, setConciliatedEmpresas] = useState<Record<string, boolean>>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('wanfinance_conciliated_empresas_v1');
+        return saved ? JSON.parse(saved) : {};
+      } catch {
+        return {};
+      }
+    }
+    return {};
+  });
+
+  const toggleEmpresaConciliada = (empName: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setConciliatedEmpresas((prev) => {
+      const next = {
+        ...prev,
+        [empName]: !prev[empName],
+      };
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem('wanfinance_conciliated_empresas_v1', JSON.stringify(next));
+        } catch {
+          // Ignore storage quota error
+        }
+      }
+      return next;
+    });
+  };
+
   // Collapse / Expand states
   const [collapsedEmpresas, setCollapsedEmpresas] = useState<Record<string, boolean>>({});
   const [collapsedDepartamentos, setCollapsedDepartamentos] = useState<Record<string, boolean>>({});
@@ -1041,75 +1072,136 @@ export function FechamentoView({
               return (
                 <div key={empName} className="bg-slate-50/40">
                   {/* Level 1: Empresa Accordion Header */}
-                  <div
-                    onClick={() => toggleEmpresaCollapse(empName)}
-                    className="px-4 py-3.5 bg-slate-100 hover:bg-slate-200/80 text-slate-900 flex flex-wrap items-center justify-between gap-3 cursor-pointer transition-colors border-b-2 border-slate-200 select-none shadow-2xs"
-                  >
-                    <div className="flex items-center gap-2.5">
-                      <button className="p-1 bg-white text-amber-600 rounded-md border border-slate-300 shadow-2xs">
-                        {isEmpCollapsed ? (
-                          <ChevronRight className="w-4 h-4" />
-                        ) : (
-                          <ChevronDown className="w-4 h-4" />
-                        )}
-                      </button>
-                      <Building2 className="w-5 h-5 text-amber-600" />
-                      <div className="flex items-center gap-2.5">
-                        <span className="font-extrabold text-base text-slate-900">{empName}</span>
-                        <span className="text-[11px] bg-amber-100 text-amber-900 border border-amber-300 px-2.5 py-0.5 rounded-full font-bold">
-                          {empData.countTotal} lançamento(s)
-                        </span>
-                      </div>
-                    </div>
+                  {(() => {
+                    const isEmpresaConciliada = !!conciliatedEmpresas[empName];
 
-                    {/* Totals for Empresa */}
-                    <div className="flex items-center gap-3 text-xs">
-                      <div className="bg-white border border-emerald-300 px-3 py-1 rounded-lg shadow-2xs">
-                        <span className="text-[10px] uppercase text-emerald-800 font-bold block">
-                          Total Dealer:
-                        </span>
-                        <span className="font-extrabold text-emerald-950">
-                          {formatBRL(empData.totalDealer)}
-                        </span>
-                      </div>
+                    return (
+                      <div
+                        onClick={() => toggleEmpresaCollapse(empName)}
+                        className={`px-4 py-3.5 flex flex-wrap items-center justify-between gap-3 cursor-pointer transition-all duration-300 border-b-2 select-none ${
+                          isEmpresaConciliada
+                            ? 'bg-gradient-to-r from-emerald-500/15 via-teal-500/10 to-emerald-500/5 hover:from-emerald-500/20 hover:to-teal-500/15 border-emerald-400/80 shadow-[0_4px_20px_rgba(16,185,129,0.12)] ring-1 ring-emerald-500/30'
+                            : 'bg-slate-100 hover:bg-slate-200/80 text-slate-900 border-slate-200 shadow-2xs'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <button className={`p-1 rounded-md border shadow-2xs transition-colors ${
+                            isEmpresaConciliada
+                              ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
+                              : 'bg-white text-amber-600 border-slate-300'
+                          }`}>
+                            {isEmpCollapsed ? (
+                              <ChevronRight className="w-4 h-4" />
+                            ) : (
+                              <ChevronDown className="w-4 h-4" />
+                            )}
+                          </button>
+                          <Building2 className={`w-5 h-5 transition-colors ${isEmpresaConciliada ? 'text-emerald-600' : 'text-amber-600'}`} />
+                          <div className="flex items-center gap-2.5">
+                            <span className={`font-extrabold text-base transition-colors ${isEmpresaConciliada ? 'text-emerald-950' : 'text-slate-900'}`}>{empName}</span>
+                            <span className={`text-[11px] border px-2.5 py-0.5 rounded-full font-bold transition-colors ${
+                              isEmpresaConciliada
+                                ? 'bg-emerald-100/90 text-emerald-900 border-emerald-300'
+                                : 'bg-amber-100 text-amber-900 border-amber-300'
+                            }`}>
+                              {empData.countTotal} lançamento(s)
+                            </span>
+                            {isEmpresaConciliada && (
+                              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-600 text-white shadow-[0_2px_10px_rgba(16,185,129,0.35)] animate-pulse">
+                                <span className="w-1.5 h-1.5 rounded-full bg-white shadow-xs" />
+                                Conciliado no Sistema
+                              </span>
+                            )}
+                          </div>
+                        </div>
 
-                      <div className="bg-white border border-blue-300 px-3 py-1 rounded-lg shadow-2xs">
-                        <span className="text-[10px] uppercase text-blue-800 font-bold block">
-                          Total Sitef:
-                        </span>
-                        <span className="font-extrabold text-blue-950">
-                          {formatBRL(empData.totalSitef)}
-                        </span>
-                      </div>
+                        {/* Totals for Empresa & Apple iPhone 17 Conciliate Control */}
+                        <div className="flex items-center flex-wrap gap-2.5 text-xs">
+                          {/* Apple iPhone 17 Pro Dynamic Glass Button: Conciliar Empresa no Sistema */}
+                          <button
+                            type="button"
+                            onClick={(e) => toggleEmpresaConciliada(empName, e)}
+                            title={
+                              isEmpresaConciliada
+                                ? 'Empresa já confirmada como conciliada no sistema. Clique para desmarcar.'
+                                : 'Clique para marcar esta empresa como 100% conciliada no sistema.'
+                            }
+                            className={`group relative overflow-hidden px-3.5 py-1.5 rounded-xl font-bold text-xs flex items-center gap-2 transition-all duration-300 cursor-pointer ${
+                              isEmpresaConciliada
+                                ? 'bg-gradient-to-b from-emerald-500 to-teal-600 text-white shadow-[0_0_15px_rgba(16,185,129,0.45),inset_0_1px_1px_rgba(255,255,255,0.4)] border border-emerald-300 hover:brightness-110 active:scale-95'
+                                : 'bg-white/80 hover:bg-emerald-50 text-slate-700 hover:text-emerald-800 border border-slate-300/80 hover:border-emerald-400 shadow-xs hover:shadow-[0_0_12px_rgba(16,185,129,0.25)] active:scale-95'
+                            }`}
+                          >
+                            {/* Apple Light Specular Sweep Reflection */}
+                            <div className="absolute inset-0 -translate-x-full group-hover:translate-x-full transition-transform duration-1000 bg-gradient-to-r from-transparent via-white/25 to-transparent pointer-events-none" />
 
-                      <div className="bg-white border border-slate-300 px-3 py-1 rounded-lg shadow-2xs">
-                        <span className="text-[10px] uppercase text-slate-600 font-bold block">
-                          Diferença:
-                        </span>
-                        <span
-                          className={`font-black ${
-                            empData.diferencaTotal === 0
-                              ? 'text-emerald-700'
-                              : 'text-amber-800 font-extrabold'
-                          }`}
-                        >
-                          {formatBRL(empData.diferencaTotal)}
-                        </span>
-                      </div>
+                            <div className={`w-4 h-4 rounded-full flex items-center justify-center transition-all ${
+                              isEmpresaConciliada
+                                ? 'bg-white text-emerald-700 shadow-2xs scale-110'
+                                : 'border-2 border-slate-400 group-hover:border-emerald-600'
+                            }`}>
+                              {isEmpresaConciliada && <Check className="w-3 h-3 stroke-[3]" />}
+                            </div>
 
-                      {empData.countDivergencias > 0 ? (
-                        <span className="bg-amber-500 text-white font-black px-2.5 py-1.5 rounded-lg text-[11px] flex items-center gap-1 shadow-2xs">
-                          <AlertTriangle className="w-3.5 h-3.5" />
-                          {empData.countDivergencias} Divergência(s)
-                        </span>
-                      ) : (
-                        <span className="bg-emerald-600 text-white font-bold px-2.5 py-1.5 rounded-lg text-[11px] flex items-center gap-1 shadow-2xs">
-                          <Check className="w-3.5 h-3.5" />
-                          100% Conciliado
-                        </span>
-                      )}
-                    </div>
-                  </div>
+                            <span className="font-extrabold tracking-tight whitespace-nowrap">
+                              {isEmpresaConciliada ? 'Conciliado no Sistema' : 'Conciliar no Sistema'}
+                            </span>
+                          </button>
+
+                          <div className={`border px-3 py-1 rounded-lg shadow-2xs transition-colors ${
+                            isEmpresaConciliada ? 'bg-emerald-50/80 border-emerald-300' : 'bg-white border-emerald-300'
+                          }`}>
+                            <span className="text-[10px] uppercase text-emerald-800 font-bold block">
+                              Total Dealer:
+                            </span>
+                            <span className="font-extrabold text-emerald-950">
+                              {formatBRL(empData.totalDealer)}
+                            </span>
+                          </div>
+
+                          <div className={`border px-3 py-1 rounded-lg shadow-2xs transition-colors ${
+                            isEmpresaConciliada ? 'bg-blue-50/80 border-blue-300' : 'bg-white border-blue-300'
+                          }`}>
+                            <span className="text-[10px] uppercase text-blue-800 font-bold block">
+                              Total Sitef:
+                            </span>
+                            <span className="font-extrabold text-blue-950">
+                              {formatBRL(empData.totalSitef)}
+                            </span>
+                          </div>
+
+                          <div className={`border px-3 py-1 rounded-lg shadow-2xs transition-colors ${
+                            isEmpresaConciliada ? 'bg-white border-emerald-300' : 'bg-white border-slate-300'
+                          }`}>
+                            <span className="text-[10px] uppercase text-slate-600 font-bold block">
+                              Diferença:
+                            </span>
+                            <span
+                              className={`font-black ${
+                                empData.diferencaTotal === 0
+                                  ? 'text-emerald-700'
+                                  : 'text-amber-800 font-extrabold'
+                              }`}
+                            >
+                              {formatBRL(empData.diferencaTotal)}
+                            </span>
+                          </div>
+
+                          {empData.countDivergencias > 0 ? (
+                            <span className="bg-amber-500 text-white font-black px-2.5 py-1.5 rounded-lg text-[11px] flex items-center gap-1 shadow-2xs">
+                              <AlertTriangle className="w-3.5 h-3.5" />
+                              {empData.countDivergencias} Divergência(s)
+                            </span>
+                          ) : (
+                            <span className="bg-emerald-600 text-white font-bold px-2.5 py-1.5 rounded-lg text-[11px] flex items-center gap-1 shadow-2xs">
+                              <Check className="w-3.5 h-3.5" />
+                              100% Conciliado
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })()}
 
                   {/* Level 2: Departamentos inside Empresa (Visible if not collapsed) */}
                   {!isEmpCollapsed && (
@@ -1217,19 +1309,22 @@ export function FechamentoView({
                                       const isBandDiv = item.divergenciaBandeira;
                                       const isPixValNeeded =
                                         item.isPixValidationNeeded || item.status.includes('VALIDAÇÃO NECESSÁRIA');
+                                      const isEmpConciliated = !!conciliatedEmpresas[item.empresa];
 
                                       return (
                                         <tr
                                           key={item.id}
-                                          className={`transition-colors text-xs ${
-                                            isPixValNeeded
+                                          className={`transition-all duration-200 text-xs ${
+                                            isEmpConciliated
+                                              ? 'bg-gradient-to-r from-emerald-50/90 via-teal-50/60 to-emerald-50/40 hover:from-emerald-100/90 hover:to-teal-100/60 border-l-4 border-l-emerald-500 shadow-[inset_0_1px_0_rgba(16,185,129,0.1)]'
+                                              : isPixValNeeded
                                               ? 'bg-indigo-50/90 hover:bg-indigo-100/90 border-l-4 border-l-indigo-600'
                                               : isBandDiv
                                               ? 'bg-purple-50/90 hover:bg-purple-100/90 border-l-4 border-l-purple-600'
                                               : item.temDivergencia
                                               ? 'bg-amber-50/90 hover:bg-amber-100/90 border-l-4 border-l-amber-500'
                                               : 'hover:bg-slate-50 border-l-4 border-l-transparent'
-                                          } ${isSelected ? 'bg-amber-100/70' : ''}`}
+                                          } ${isSelected ? 'bg-amber-100/70 ring-1 ring-amber-400' : ''}`}
                                         >
                                           <td className="p-2.5 text-center">
                                             <input
@@ -1239,15 +1334,15 @@ export function FechamentoView({
                                               className="rounded border-slate-300 text-amber-600 focus:ring-amber-500"
                                             />
                                           </td>
-                                          <td className="p-2.5 font-medium text-slate-700 whitespace-nowrap">
+                                          <td className={`p-2.5 font-medium whitespace-nowrap ${isEmpConciliated ? 'text-emerald-950 font-bold' : 'text-slate-700'}`}>
                                             {item.data || '—'}
                                           </td>
-                                          <td className="p-2.5 font-mono font-bold text-slate-900 whitespace-nowrap">
+                                          <td className={`p-2.5 font-mono font-bold whitespace-nowrap ${isEmpConciliated ? 'text-emerald-900' : 'text-slate-900'}`}>
                                             {item.nsu}
                                           </td>
                                           <td className="p-2.5 whitespace-nowrap">
                                             <div className="flex flex-col gap-0.5">
-                                              <span className="font-bold text-slate-800">
+                                              <span className={`font-bold ${isEmpConciliated ? 'text-emerald-950' : 'text-slate-800'}`}>
                                                 {item.tipoPagamento}
                                               </span>
                                               <div className="flex items-center gap-1 text-[10px]">
@@ -1282,7 +1377,12 @@ export function FechamentoView({
                                           </td>
                                           {/* Status */}
                                           <td className="p-2.5 text-center whitespace-nowrap">
-                                            {isPixValNeeded ? (
+                                            {isEmpConciliated ? (
+                                              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] font-black bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-[0_2px_8px_rgba(16,185,129,0.3)] border border-emerald-400 uppercase tracking-tight">
+                                                <CheckCircle2 className="w-3 h-3 text-emerald-200" />
+                                                CONCILIADO NO SISTEMA
+                                              </span>
+                                            ) : isPixValNeeded ? (
                                               <span
                                                 className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-black bg-indigo-600 text-white shadow-2xs uppercase cursor-help"
                                                 title={item.detalhes || 'PIX – Validação necessária (ambiguidade de lançamentos)'}
@@ -1389,19 +1489,22 @@ export function FechamentoView({
                   const isBandDiv = item.divergenciaBandeira;
                   const isPixValNeeded =
                     item.isPixValidationNeeded || item.status.includes('VALIDAÇÃO NECESSÁRIA');
+                  const isEmpConciliated = !!conciliatedEmpresas[item.empresa];
 
                   return (
                     <tr
                       key={item.id}
-                      className={`transition-colors text-xs ${
-                        isPixValNeeded
+                      className={`transition-all duration-200 text-xs ${
+                        isEmpConciliated
+                          ? 'bg-gradient-to-r from-emerald-50/90 via-teal-50/60 to-emerald-50/40 hover:from-emerald-100/90 hover:to-teal-100/60 border-l-4 border-l-emerald-500 shadow-[inset_0_1px_0_rgba(16,185,129,0.1)]'
+                          : isPixValNeeded
                           ? 'bg-indigo-50/90 hover:bg-indigo-100/90 border-l-4 border-l-indigo-600'
                           : isBandDiv
                           ? 'bg-purple-50/90 hover:bg-purple-100/90 border-l-4 border-l-purple-600'
                           : item.temDivergencia
                           ? 'bg-amber-50/90 hover:bg-amber-100/90 border-l-4 border-l-amber-500'
                           : 'hover:bg-slate-50 border-l-4 border-l-transparent'
-                      } ${isSelected ? 'bg-amber-100/70' : ''}`}
+                      } ${isSelected ? 'bg-amber-100/70 ring-1 ring-amber-400' : ''}`}
                     >
                       <td className="p-3 text-center">
                         <input
@@ -1411,17 +1514,22 @@ export function FechamentoView({
                           className="rounded border-slate-300 text-amber-600 focus:ring-amber-500"
                         />
                       </td>
-                      <td className="p-3 font-bold text-slate-900">{item.empresa}</td>
+                      <td className="p-3 font-bold text-slate-900 flex items-center gap-2">
+                        <span>{item.empresa}</span>
+                        {isEmpConciliated && (
+                          <span className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.8)]" title="Empresa Conciliada no Sistema" />
+                        )}
+                      </td>
                       <td className="p-3 text-slate-700">
                         {item.departamento || item.contaGerencial}
                       </td>
                       <td className="p-3 text-slate-700 whitespace-nowrap">{item.data || '—'}</td>
-                      <td className="p-3 font-mono font-bold text-slate-900 whitespace-nowrap">
+                      <td className={`p-3 font-mono font-bold whitespace-nowrap ${isEmpConciliated ? 'text-emerald-950' : 'text-slate-900'}`}>
                         {item.nsu}
                       </td>
                       <td className="p-3 whitespace-nowrap">
                         <div className="flex flex-col gap-0.5">
-                          <span className="font-bold text-slate-800">{item.tipoPagamento}</span>
+                          <span className={`font-bold ${isEmpConciliated ? 'text-emerald-950' : 'text-slate-800'}`}>{item.tipoPagamento}</span>
                           <div className="flex items-center gap-1 text-[10px]">
                             <span className="px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-800 border border-emerald-300 font-semibold">
                               Dealer: {item.bandeiraDealer || '—'}
@@ -1450,7 +1558,12 @@ export function FechamentoView({
                         </span>
                       </td>
                       <td className="p-3 text-center whitespace-nowrap">
-                        {isPixValNeeded ? (
+                        {isEmpConciliated ? (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] font-black bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-[0_2px_8px_rgba(16,185,129,0.3)] border border-emerald-400 uppercase tracking-tight">
+                            <CheckCircle2 className="w-3 h-3 text-emerald-200" />
+                            CONCILIADO NO SISTEMA
+                          </span>
+                        ) : isPixValNeeded ? (
                           <span
                             className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-black bg-indigo-600 text-white shadow-2xs uppercase cursor-help"
                             title={item.detalhes || 'PIX – Validação necessária (ambiguidade de lançamentos)'}
