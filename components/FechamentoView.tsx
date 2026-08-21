@@ -1423,46 +1423,65 @@ export function FechamentoView({
                     return (
                       <div
                         onClick={() => toggleEmpresaCollapse(empName)}
-                        className={`px-4 py-3.5 flex flex-wrap items-center justify-between gap-3 cursor-pointer transition-all duration-300 border-b-2 select-none ${
+                        className={`px-4 py-2.5 flex items-center justify-between gap-3 cursor-pointer transition-all duration-200 border-b select-none ${
                           isEmpresaConciliada
-                            ? 'bg-gradient-to-r from-emerald-500/15 via-teal-500/10 to-emerald-500/5 hover:from-emerald-500/20 hover:to-teal-500/15 border-emerald-400/80 shadow-[0_4px_20px_rgba(16,185,129,0.12)] ring-1 ring-emerald-500/30'
-                            : 'bg-slate-100 hover:bg-slate-200/80 text-slate-900 border-slate-200 shadow-2xs'
+                            ? 'bg-emerald-50/70 hover:bg-emerald-100/60 border-emerald-300 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)]'
+                            : 'bg-slate-100/90 hover:bg-slate-200/80 text-slate-900 border-slate-200/90 shadow-2xs'
                         }`}
                       >
-                        <div className="flex items-center gap-2.5">
-                          <button className={`p-1 rounded-md border shadow-2xs transition-colors ${
-                            isEmpresaConciliada
-                              ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
-                              : 'bg-white text-amber-600 border-slate-300'
-                          }`}>
+                        {/* Left: Identifier, Icon & Empresa Name (Compact, Refined Apple Typography) */}
+                        <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                          <button
+                            type="button"
+                            className={`w-7 h-7 rounded-lg border flex items-center justify-center flex-shrink-0 shadow-2xs transition-colors ${
+                              isEmpresaConciliada
+                                ? 'bg-emerald-100/80 text-emerald-800 border-emerald-300'
+                                : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'
+                            }`}
+                          >
                             {isEmpCollapsed ? (
                               <ChevronRight className="w-4 h-4" />
                             ) : (
                               <ChevronDown className="w-4 h-4" />
                             )}
                           </button>
-                          <Building2 className={`w-5 h-5 transition-colors ${isEmpresaConciliada ? 'text-emerald-600' : 'text-amber-600'}`} />
-                          <div className="flex items-center gap-2.5">
-                            <span className={`font-extrabold text-base transition-colors ${isEmpresaConciliada ? 'text-emerald-950' : 'text-slate-900'}`}>{empName}</span>
-                            <span className={`text-[11px] border px-2.5 py-0.5 rounded-full font-bold transition-colors ${
+
+                          <Building2
+                            className={`w-4 h-4 flex-shrink-0 transition-colors ${
+                              isEmpresaConciliada ? 'text-emerald-600' : 'text-slate-500'
+                            }`}
+                          />
+
+                          <span
+                            className={`font-bold text-xs md:text-sm tracking-tight truncate transition-colors ${
+                              isEmpresaConciliada ? 'text-emerald-950 font-black' : 'text-slate-800'
+                            }`}
+                            title={empName}
+                          >
+                            {empName}
+                          </span>
+
+                          <span
+                            className={`text-[10px] border px-2 py-0.5 rounded-full font-semibold whitespace-nowrap flex-shrink-0 transition-colors ${
                               isEmpresaConciliada
                                 ? 'bg-emerald-100/90 text-emerald-900 border-emerald-300'
-                                : 'bg-amber-100 text-amber-900 border-amber-300'
-                            }`}>
-                              {empData.countTotal} lançamento(s)
+                                : 'bg-slate-200/80 text-slate-700 border-slate-300'
+                            }`}
+                          >
+                            {empData.countTotal} lanc.
+                          </span>
+
+                          {isEmpresaConciliada && (
+                            <span className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-600 text-white shadow-2xs whitespace-nowrap flex-shrink-0">
+                              <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+                              Conciliado
                             </span>
-                            {isEmpresaConciliada && (
-                              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-600 text-white shadow-[0_2px_10px_rgba(16,185,129,0.35)] animate-pulse">
-                                <span className="w-1.5 h-1.5 rounded-full bg-white shadow-xs" />
-                                Conciliado no Sistema
-                              </span>
-                            )}
-                          </div>
+                          )}
                         </div>
 
-                        {/* Totals for Empresa & Apple iPhone 17 Conciliate Control */}
-                        <div className="flex items-center flex-wrap gap-2.5 text-xs">
-                          {/* Apple iPhone 17 Pro Dynamic Glass Button: Conciliar Empresa no Sistema */}
+                        {/* Right: Grid of perfectly aligned Apple Controls & Metric Columns */}
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          {/* Apple Dynamic Glass Button: Conciliar Empresa no Sistema */}
                           <button
                             type="button"
                             onClick={(e) => toggleEmpresaConciliada(empName, e)}
@@ -1471,58 +1490,71 @@ export function FechamentoView({
                                 ? 'Empresa conciliada no sistema. Clique para desconciliar (solicita a senha padrão 123).'
                                 : 'Clique para marcar esta empresa como conciliada no sistema.'
                             }
-                            className={`group relative overflow-hidden px-3.5 py-1.5 rounded-xl font-bold text-xs flex items-center gap-2 transition-all duration-300 cursor-pointer ${
+                            className={`w-44 h-8 px-3 rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 transition-all duration-200 cursor-pointer whitespace-nowrap ${
                               isEmpresaConciliada
-                                ? 'bg-gradient-to-b from-emerald-500 to-teal-600 text-white shadow-[0_0_15px_rgba(16,185,129,0.45),inset_0_1px_1px_rgba(255,255,255,0.4)] border border-emerald-300 hover:brightness-110 active:scale-95'
-                                : 'bg-white/80 hover:bg-emerald-50 text-slate-700 hover:text-emerald-800 border border-slate-300/80 hover:border-emerald-400 shadow-xs hover:shadow-[0_0_12px_rgba(16,185,129,0.25)] active:scale-95'
+                                ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs border border-emerald-500 active:scale-95'
+                                : 'bg-white hover:bg-slate-50 text-slate-700 hover:text-slate-900 border border-slate-300 shadow-2xs active:scale-95'
                             }`}
                           >
-                            {/* Apple Light Specular Sweep Reflection */}
-                            <div className="absolute inset-0 -translate-x-full group-hover:translate-x-full transition-transform duration-1000 bg-gradient-to-r from-transparent via-white/25 to-transparent pointer-events-none" />
-
-                            <div className={`w-4 h-4 rounded-full flex items-center justify-center transition-all ${
-                              isEmpresaConciliada
-                                ? 'bg-white text-emerald-700 shadow-2xs scale-110'
-                                : 'border-2 border-slate-400 group-hover:border-emerald-600'
-                            }`}>
+                            <div
+                              className={`w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0 transition-all ${
+                                isEmpresaConciliada
+                                  ? 'bg-white text-emerald-700 shadow-2xs'
+                                  : 'border-2 border-slate-400'
+                              }`}
+                            >
                               {isEmpresaConciliada && <Check className="w-3 h-3 stroke-[3]" />}
                             </div>
-
-                            <span className="font-extrabold tracking-tight whitespace-nowrap">
+                            <span className="truncate">
                               {isEmpresaConciliada ? 'Conciliado no Sistema' : 'Conciliar no Sistema'}
                             </span>
                           </button>
 
-                          <div className={`border px-3 py-1 rounded-lg shadow-2xs transition-colors ${
-                            isEmpresaConciliada ? 'bg-emerald-50/80 border-emerald-300' : 'bg-white border-emerald-300'
-                          }`}>
-                            <span className="text-[10px] uppercase text-emerald-800 font-bold block">
-                              Total Dealer:
+                          {/* Total Dealer Column */}
+                          <div
+                            className={`w-28 text-center px-2 py-1 rounded-lg border shadow-2xs transition-colors flex-shrink-0 ${
+                              isEmpresaConciliada
+                                ? 'bg-white/90 border-emerald-300'
+                                : 'bg-white border-emerald-200'
+                            }`}
+                          >
+                            <span className="text-[9px] uppercase text-emerald-800 font-bold block leading-none mb-0.5">
+                              Total Dealer
                             </span>
-                            <span className="font-extrabold text-emerald-950">
+                            <span className="font-bold text-xs font-mono text-emerald-950 block leading-tight truncate">
                               {formatBRL(empData.totalDealer)}
                             </span>
                           </div>
 
-                          <div className={`border px-3 py-1 rounded-lg shadow-2xs transition-colors ${
-                            isEmpresaConciliada ? 'bg-blue-50/80 border-blue-300' : 'bg-white border-blue-300'
-                          }`}>
-                            <span className="text-[10px] uppercase text-blue-800 font-bold block">
-                              Total Sitef:
+                          {/* Total Sitef Column */}
+                          <div
+                            className={`w-28 text-center px-2 py-1 rounded-lg border shadow-2xs transition-colors flex-shrink-0 ${
+                              isEmpresaConciliada
+                                ? 'bg-white/90 border-blue-300'
+                                : 'bg-white border-blue-200'
+                            }`}
+                          >
+                            <span className="text-[9px] uppercase text-blue-800 font-bold block leading-none mb-0.5">
+                              Total Sitef
                             </span>
-                            <span className="font-extrabold text-blue-950">
+                            <span className="font-bold text-xs font-mono text-blue-950 block leading-tight truncate">
                               {formatBRL(empData.totalSitef)}
                             </span>
                           </div>
 
-                          <div className={`border px-3 py-1 rounded-lg shadow-2xs transition-colors ${
-                            isEmpresaConciliada ? 'bg-white border-emerald-300' : 'bg-white border-slate-300'
-                          }`}>
-                            <span className="text-[10px] uppercase text-slate-600 font-bold block">
-                              Diferença:
+                          {/* Diferença Column */}
+                          <div
+                            className={`w-24 text-center px-2 py-1 rounded-lg border shadow-2xs transition-colors flex-shrink-0 ${
+                              isEmpresaConciliada
+                                ? 'bg-white/90 border-slate-300'
+                                : 'bg-white border-slate-200'
+                            }`}
+                          >
+                            <span className="text-[9px] uppercase text-slate-500 font-bold block leading-none mb-0.5">
+                              Diferença
                             </span>
                             <span
-                              className={`font-black ${
+                              className={`font-bold text-xs font-mono block leading-tight truncate ${
                                 empData.diferencaTotal === 0
                                   ? 'text-emerald-700'
                                   : 'text-amber-800 font-extrabold'
@@ -1532,17 +1564,20 @@ export function FechamentoView({
                             </span>
                           </div>
 
-                          {empData.countDivergencias > 0 ? (
-                            <span className="bg-amber-500 text-white font-black px-2.5 py-1.5 rounded-lg text-[11px] flex items-center gap-1 shadow-2xs">
-                              <AlertTriangle className="w-3.5 h-3.5" />
-                              {empData.countDivergencias} Divergência(s)
-                            </span>
-                          ) : (
-                            <span className="bg-emerald-600 text-white font-bold px-2.5 py-1.5 rounded-lg text-[11px] flex items-center gap-1 shadow-2xs">
-                              <Check className="w-3.5 h-3.5" />
-                              100% Conciliado
-                            </span>
-                          )}
+                          {/* Status Badge Column */}
+                          <div className="w-32 flex justify-center flex-shrink-0">
+                            {empData.countDivergencias > 0 ? (
+                              <span className="w-full h-8 bg-amber-500 text-white font-bold px-2 rounded-lg text-[11px] flex items-center justify-center gap-1 shadow-2xs whitespace-nowrap">
+                                <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+                                <span className="truncate">{empData.countDivergencias} Div.</span>
+                              </span>
+                            ) : (
+                              <span className="w-full h-8 bg-emerald-600 text-white font-bold px-2 rounded-lg text-[11px] flex items-center justify-center gap-1 shadow-2xs whitespace-nowrap">
+                                <Check className="w-3.5 h-3.5 flex-shrink-0" />
+                                <span className="truncate">100% Conciliado</span>
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </div>
                     );
@@ -1560,45 +1595,44 @@ export function FechamentoView({
                             {/* Departamento Header */}
                             <div
                               onClick={() => toggleDepartamentoCollapse(depKey)}
-                              className="px-5 py-2.5 bg-slate-200/70 hover:bg-slate-200 text-slate-800 flex flex-wrap items-center justify-between gap-3 cursor-pointer text-xs font-bold select-none border-b border-slate-300/80"
+                              className="px-4 py-2 bg-slate-50 hover:bg-slate-100/90 text-slate-800 flex items-center justify-between gap-3 cursor-pointer text-xs select-none border-b border-slate-200/90 transition-colors"
                             >
-                              <div className="flex items-center gap-2">
-                                <button className="p-0.5 text-slate-600">
+                              <div className="flex items-center gap-2 min-w-0 flex-1">
+                                <button
+                                  type="button"
+                                  className="w-5 h-5 rounded flex items-center justify-center text-slate-500 hover:text-slate-700 flex-shrink-0"
+                                >
                                   {isDepCollapsed ? (
                                     <ChevronRight className="w-3.5 h-3.5" />
                                   ) : (
                                     <ChevronDown className="w-3.5 h-3.5" />
                                   )}
                                 </button>
-                                <FolderTree className="w-4 h-4 text-amber-600" />
-                                <span className="font-bold text-slate-900 text-xs">{depName}</span>
-                                <span className="text-[10px] bg-white text-slate-700 border border-slate-300 px-2 py-0.2 rounded-full font-bold shadow-2xs">
+                                <FolderTree className="w-3.5 h-3.5 text-amber-600 flex-shrink-0" />
+                                <span className="font-semibold text-slate-800 text-xs truncate">
+                                  {depName}
+                                </span>
+                                <span className="text-[10px] bg-white text-slate-600 border border-slate-200 px-2 py-0.5 rounded-full font-medium shadow-2xs whitespace-nowrap flex-shrink-0">
                                   {depData.items.length} item(ns)
                                 </span>
                               </div>
 
                               {/* Department Totals */}
-                              <div className="flex items-center gap-3 text-[11px]">
-                                <span>
-                                  Dealer:{' '}
-                                  <strong className="text-emerald-800 font-extrabold">
-                                    {formatBRL(depData.totalDealer)}
-                                  </strong>
+                              <div className="flex items-center gap-2 text-[11px] flex-shrink-0">
+                                <span className="px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-950 border border-emerald-200 font-mono text-[11px]">
+                                  Dealer: <strong>{formatBRL(depData.totalDealer)}</strong>
                                 </span>
-                                <span>
-                                  Sitef:{' '}
-                                  <strong className="text-blue-800 font-extrabold">
-                                    {formatBRL(depData.totalSitef)}
-                                  </strong>
+                                <span className="px-2 py-0.5 rounded-md bg-blue-50 text-blue-950 border border-blue-200 font-mono text-[11px]">
+                                  Sitef: <strong>{formatBRL(depData.totalSitef)}</strong>
                                 </span>
                                 <span
-                                  className={
+                                  className={`px-2 py-0.5 rounded-md border font-mono text-[11px] ${
                                     depData.diferencaTotal !== 0
-                                      ? 'text-amber-800 font-extrabold'
-                                      : 'text-emerald-700 font-bold'
-                                  }
+                                      ? 'bg-amber-50 text-amber-900 border-amber-300 font-bold'
+                                      : 'bg-white text-slate-700 border-slate-200'
+                                  }`}
                                 >
-                                  Diferença: {formatBRL(depData.diferencaTotal)}
+                                  Dif: {formatBRL(depData.diferencaTotal)}
                                 </span>
                               </div>
                             </div>
