@@ -177,6 +177,9 @@ export function FechamentoView({
 
   // State to track empresas marked as reconciled in the system by the user
   const [conciliatedEmpresas, setConciliatedEmpresas] = useState<Record<string, boolean>>(() => {
+    if (activeSharedSession?.conciliatedEmpresas && Object.keys(activeSharedSession.conciliatedEmpresas).length > 0) {
+      return activeSharedSession.conciliatedEmpresas;
+    }
     if (typeof window !== 'undefined') {
       try {
         const saved = localStorage.getItem('wanfinance_conciliated_empresas_v1');
@@ -187,6 +190,27 @@ export function FechamentoView({
     }
     return {};
   });
+
+  const conciliatedEmpresasRef = useRef<Record<string, boolean>>(conciliatedEmpresas);
+  useEffect(() => {
+    conciliatedEmpresasRef.current = conciliatedEmpresas;
+  }, [conciliatedEmpresas]);
+
+  // Keep local conciliatedEmpresas in sync when external activeSharedSession changes
+  useEffect(() => {
+    if (activeSharedSession?.conciliatedEmpresas) {
+      setConciliatedEmpresas((prev) => {
+        const merged = { ...prev, ...activeSharedSession.conciliatedEmpresas };
+        conciliatedEmpresasRef.current = merged;
+        if (typeof window !== 'undefined') {
+          try {
+            localStorage.setItem('wanfinance_conciliated_empresas_v1', JSON.stringify(merged));
+          } catch {}
+        }
+        return merged;
+      });
+    }
+  }, [activeSharedSession?.id, activeSharedSession?.version]);
 
   // List of unique empresas for dropdown
   const empresaList = useMemo(() => {
@@ -247,7 +271,16 @@ export function FechamentoView({
         if (serverSession.version > lastKnownVersionRef.current) {
           lastKnownVersionRef.current = serverSession.version;
           if (serverSession.conciliatedEmpresas) {
-            setConciliatedEmpresas(serverSession.conciliatedEmpresas);
+            setConciliatedEmpresas((prev) => {
+              const merged = { ...prev, ...serverSession.conciliatedEmpresas };
+              conciliatedEmpresasRef.current = merged;
+              if (typeof window !== 'undefined') {
+                try {
+                  localStorage.setItem('wanfinance_conciliated_empresas_v1', JSON.stringify(merged));
+                } catch {}
+              }
+              return merged;
+            });
           }
           if (onApplySharedItems && serverSession.items) {
             onApplySharedItems(serverSession.items, serverSession.conciliatedEmpresas || {});
@@ -300,6 +333,10 @@ export function FechamentoView({
         if (res.success && res.session) {
           lastKnownVersionRef.current = res.session.version;
           setSharedSession(res.session);
+          if (res.session.conciliatedEmpresas) {
+            setConciliatedEmpresas(res.session.conciliatedEmpresas);
+            conciliatedEmpresasRef.current = res.session.conciliatedEmpresas;
+          }
         }
       } catch (err) {
         console.warn('Erro ao propagar alterações na sala compartilhada:', err);
@@ -323,7 +360,7 @@ export function FechamentoView({
     showPassword: false,
   });
 
-  const toggleEmpresaConciliada = (empName: string, e?: React.MouseEvent) => {
+  const toggleEmpresaConciliada = async (empName: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     const isCurrentlyConciliated = !!conciliatedEmpresas[empName];
 
@@ -340,26 +377,27 @@ export function FechamentoView({
     }
 
     // Otherwise, mark as conciliated directly
-    setConciliatedEmpresas((prev) => {
-      const next = {
-        ...prev,
-        [empName]: true,
-      };
-      if (typeof window !== 'undefined') {
-        try {
-          localStorage.setItem('wanfinance_conciliated_empresas_v1', JSON.stringify(next));
-        } catch {
-          // Ignore storage quota error
-        }
+    const next = {
+      ...conciliatedEmpresasRef.current,
+      [empName]: true,
+    };
+    setConciliatedEmpresas(next);
+    conciliatedEmpresasRef.current = next;
+
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('wanfinance_conciliated_empresas_v1', JSON.stringify(next));
+      } catch {
+        // Ignore storage quota error
       }
-      if (activeSharedSession?.id) {
-        pushUpdateToSharedRoom(fechamentoItems, next);
-      }
-      return next;
-    });
+    }
+
+    if (activeSharedSession?.id) {
+      await pushUpdateToSharedRoom(fechamentoItems, next);
+    }
   };
 
-  const handleConfirmUnreconcile = (e?: React.FormEvent) => {
+  const handleConfirmUnreconcile = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!unreconcileModal.empresaName) return;
 
@@ -372,23 +410,20 @@ export function FechamentoView({
     }
 
     const empName = unreconcileModal.empresaName;
-    setConciliatedEmpresas((prev) => {
-      const next = {
-        ...prev,
-        [empName]: false,
-      };
-      if (typeof window !== 'undefined') {
-        try {
-          localStorage.setItem('wanfinance_conciliated_empresas_v1', JSON.stringify(next));
-        } catch {
-          // Ignore storage quota error
-        }
+    const next = {
+      ...conciliatedEmpresasRef.current,
+      [empName]: false,
+    };
+    setConciliatedEmpresas(next);
+    conciliatedEmpresasRef.current = next;
+
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('wanfinance_conciliated_empresas_v1', JSON.stringify(next));
+      } catch {
+        // Ignore storage quota error
       }
-      if (activeSharedSession?.id) {
-        pushUpdateToSharedRoom(fechamentoItems, next);
-      }
-      return next;
-    });
+    }
 
     setUnreconcileModal({
       isOpen: false,
@@ -397,6 +432,10 @@ export function FechamentoView({
       error: null,
       showPassword: false,
     });
+
+    if (activeSharedSession?.id) {
+      await pushUpdateToSharedRoom(fechamentoItems, next);
+    }
   };
 
   const handleCloseUnreconcileModal = () => {
@@ -1567,10 +1606,10 @@ export function FechamentoView({
                             {/* Table of Items (Visible if department not collapsed) */}
                             {!isDepCollapsed && (
                               <div className="overflow-x-auto">
-                                <table className="w-full text-left text-xs border-collapse">
+                                <table className="w-full text-center text-xs border-collapse">
                                   <thead>
-                                    <tr className="bg-slate-200/80 text-slate-800 font-extrabold uppercase text-[10px] tracking-wider border-b border-slate-300">
-                                      <th className="p-2.5 w-10 text-center">
+                                    <tr className="bg-slate-200/90 text-slate-800 font-extrabold uppercase text-[10px] tracking-wider border-b border-slate-300">
+                                      <th className="p-2.5 w-12 text-center">
                                         <input
                                           type="checkbox"
                                           checked={
@@ -1595,18 +1634,18 @@ export function FechamentoView({
                                           className="rounded border-slate-300 text-amber-600 focus:ring-amber-500"
                                         />
                                       </th>
-                                      <th className="p-2.5">Data</th>
-                                      <th className="p-2.5">NSU (Cartão)</th>
-                                      <th className="p-2.5">Tipo / Bandeira</th>
-                                      <th className="p-2.5 text-right bg-emerald-50/50 text-emerald-900 border-x border-emerald-200">
+                                      <th className="p-2.5 w-24 text-center">Data</th>
+                                      <th className="p-2.5 w-28 text-center">NSU</th>
+                                      <th className="p-2.5 min-w-[220px] text-center">Tipo / Bandeira</th>
+                                      <th className="p-2.5 w-36 text-center bg-emerald-100/70 text-emerald-950 border-x border-emerald-300">
                                         Coluna Dealer (R$)
                                       </th>
-                                      <th className="p-2.5 text-right bg-blue-50/50 text-blue-900 border-r border-blue-200">
+                                      <th className="p-2.5 w-36 text-center bg-blue-100/70 text-blue-950 border-r border-blue-300">
                                         Coluna Sitef (R$)
                                       </th>
-                                      <th className="p-2.5 text-right">Diferença (R$)</th>
-                                      <th className="p-2.5 text-center">Status / Conciliação</th>
-                                      <th className="p-2.5 w-12 text-center">Ações</th>
+                                      <th className="p-2.5 w-32 text-center">Diferença (R$)</th>
+                                      <th className="p-2.5 min-w-[190px] text-center">Status / Conciliação</th>
+                                      <th className="p-2.5 w-14 text-center">Ações</th>
                                     </tr>
                                   </thead>
                                   <tbody className="divide-y divide-slate-200 bg-white">
@@ -1632,7 +1671,8 @@ export function FechamentoView({
                                               : 'hover:bg-slate-50 border-l-4 border-l-transparent'
                                           } ${isSelected ? 'bg-amber-100/70 ring-1 ring-amber-400' : ''}`}
                                         >
-                                          <td className="p-2.5 text-center">
+                                          {/* Checkbox */}
+                                          <td className="p-2.5 text-center align-middle">
                                             <input
                                               type="checkbox"
                                               checked={isSelected}
@@ -1640,105 +1680,118 @@ export function FechamentoView({
                                               className="rounded border-slate-300 text-amber-600 focus:ring-amber-500"
                                             />
                                           </td>
-                                          <td className={`p-2.5 font-medium whitespace-nowrap ${isEmpConciliated ? 'text-emerald-950 font-bold' : 'text-slate-700'}`}>
+                                          {/* Data */}
+                                          <td className={`p-2.5 font-medium whitespace-nowrap text-center align-middle ${isEmpConciliated ? 'text-emerald-950 font-bold' : 'text-slate-700'}`}>
                                             {item.data || '—'}
                                           </td>
-                                          <td className={`p-2.5 font-mono font-bold whitespace-nowrap ${isEmpConciliated ? 'text-emerald-900' : 'text-slate-900'}`}>
+                                          {/* NSU */}
+                                          <td className={`p-2.5 font-mono font-bold whitespace-nowrap text-center align-middle ${isEmpConciliated ? 'text-emerald-900' : 'text-slate-900'}`}>
                                             {item.nsu}
                                           </td>
-                                          <td className="p-2.5 whitespace-nowrap">
-                                            <div className="flex flex-col gap-0.5">
-                                              <span className={`font-bold ${isEmpConciliated ? 'text-emerald-950' : 'text-slate-800'}`}>
+                                          {/* Tipo / Bandeiras (uma linha abaixo da outra) */}
+                                          <td className="p-2.5 text-center align-middle">
+                                            <div className="flex flex-col items-center justify-center gap-1">
+                                              <span className={`font-bold text-xs ${isEmpConciliated ? 'text-emerald-950' : 'text-slate-800'}`}>
                                                 {item.tipoPagamento}
                                               </span>
-                                              <div className="flex items-center gap-1 text-[10px]">
-                                                <span className="px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-800 border border-emerald-300 font-semibold">
+                                              <div className="flex flex-wrap items-center justify-center gap-1.5 text-[10px]">
+                                                <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-300 font-semibold shadow-2xs">
                                                   Dealer: {item.bandeiraDealer || '—'}
                                                 </span>
-                                                <span className="px-1.5 py-0.2 rounded bg-blue-100 text-blue-800 border border-blue-300 font-semibold">
+                                                <span className="px-2 py-0.5 rounded bg-blue-100 text-blue-800 border border-blue-300 font-semibold shadow-2xs">
                                                   Sitef: {item.bandeiraSitef || '—'}
                                                 </span>
                                               </div>
                                             </div>
                                           </td>
                                           {/* Coluna Dealer */}
-                                          <td className="p-2.5 text-right font-black text-emerald-950 bg-emerald-50/30 border-x border-emerald-200/60 whitespace-nowrap">
-                                            {formatBRL(item.valorDealer)}
+                                          <td className="p-2.5 text-center align-middle font-mono font-black text-emerald-950 bg-emerald-50/40 border-x border-emerald-200/70 whitespace-nowrap">
+                                            <div className="flex items-center justify-center">
+                                              <span>{formatBRL(item.valorDealer)}</span>
+                                            </div>
                                           </td>
                                           {/* Coluna Sitef */}
-                                          <td className="p-2.5 text-right font-black text-blue-950 bg-blue-50/30 border-r border-blue-200/60 whitespace-nowrap">
-                                            {formatBRL(item.valorSitef)}
+                                          <td className="p-2.5 text-center align-middle font-mono font-black text-blue-950 bg-blue-50/40 border-r border-blue-200/70 whitespace-nowrap">
+                                            <div className="flex items-center justify-center">
+                                              <span>{formatBRL(item.valorSitef)}</span>
+                                            </div>
                                           </td>
                                           {/* Diferença */}
-                                          <td className="p-2.5 text-right whitespace-nowrap">
-                                            <span
-                                              className={`px-2 py-0.5 rounded font-extrabold ${
-                                                item.temDivergencia
-                                                  ? 'bg-amber-200 text-amber-950 border border-amber-300 shadow-2xs'
-                                                  : 'text-emerald-700 font-semibold'
-                                              }`}
-                                            >
-                                              {formatBRL(item.diferenca)}
-                                            </span>
+                                          <td className="p-2.5 text-center align-middle whitespace-nowrap">
+                                            <div className="flex items-center justify-center">
+                                              <span
+                                                className={`px-2.5 py-1 rounded-md font-extrabold text-xs inline-block text-center ${
+                                                  item.temDivergencia
+                                                    ? 'bg-amber-200 text-amber-950 border border-amber-300 shadow-2xs'
+                                                    : 'text-emerald-700 font-bold bg-emerald-50 border border-emerald-200'
+                                                }`}
+                                              >
+                                                {formatBRL(item.diferenca)}
+                                              </span>
+                                            </div>
                                           </td>
                                           {/* Status */}
-                                          <td className="p-2.5 text-center whitespace-nowrap">
-                                            {isEmpConciliated ? (
-                                              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] font-black bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-[0_2px_8px_rgba(16,185,129,0.3)] border border-emerald-400 uppercase tracking-tight">
-                                                <CheckCircle2 className="w-3 h-3 text-emerald-200" />
-                                                CONCILIADO NO SISTEMA
-                                              </span>
-                                            ) : isPixValNeeded ? (
-                                              <span
-                                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-black bg-indigo-600 text-white shadow-2xs uppercase cursor-help"
-                                                title={item.detalhes || 'PIX – Validação necessária (ambiguidade de lançamentos)'}
-                                              >
-                                                <AlertTriangle className="w-3 h-3 text-indigo-200" />
-                                                PIX – VALIDAÇÃO NECESSÁRIA
-                                              </span>
-                                            ) : isBandDiv ? (
-                                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-black bg-purple-600 text-white shadow-2xs uppercase">
-                                                <AlertTriangle className="w-3 h-3 text-amber-300" />
-                                                DIVERGÊNCIA DE BANDEIRA
-                                              </span>
-                                            ) : item.temDivergencia ? (
-                                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-black bg-amber-500 text-white shadow-2xs uppercase">
-                                                <AlertTriangle className="w-3 h-3" />
-                                                {item.status}
-                                              </span>
-                                            ) : item.isPix ? (
-                                              <div className="flex flex-col items-center gap-0.5">
-                                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-bold bg-teal-100 text-teal-800 border border-teal-300">
-                                                  <CheckCircle2 className="w-3 h-3 text-teal-600" />
-                                                  CONCILIADO (PIX)
+                                          <td className="p-2.5 text-center align-middle whitespace-nowrap">
+                                            <div className="flex items-center justify-center">
+                                              {isEmpConciliated ? (
+                                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] font-black bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-[0_2px_8px_rgba(16,185,129,0.3)] border border-emerald-400 uppercase tracking-tight">
+                                                  <CheckCircle2 className="w-3 h-3 text-emerald-200" />
+                                                  CONCILIADO NO SISTEMA
                                                 </span>
-                                                {item.criterioConciliacao && (
-                                                  <span
-                                                    className="text-[9px] text-teal-900 font-semibold max-w-[180px] truncate"
-                                                    title={item.detalhes || item.criterioConciliacao}
-                                                  >
-                                                    {item.criterioConciliacao}
+                                              ) : isPixValNeeded ? (
+                                                <span
+                                                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-black bg-indigo-600 text-white shadow-2xs uppercase cursor-help"
+                                                  title={item.detalhes || 'PIX – Validação necessária (ambiguidade de lançamentos)'}
+                                                >
+                                                  <AlertTriangle className="w-3 h-3 text-indigo-200" />
+                                                  PIX – VALIDAÇÃO NECESSÁRIA
+                                                </span>
+                                              ) : isBandDiv ? (
+                                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-black bg-purple-600 text-white shadow-2xs uppercase">
+                                                  <AlertTriangle className="w-3 h-3 text-amber-300" />
+                                                  DIVERGÊNCIA DE BANDEIRA
+                                                </span>
+                                              ) : item.temDivergencia ? (
+                                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-black bg-amber-500 text-white shadow-2xs uppercase">
+                                                  <AlertTriangle className="w-3 h-3" />
+                                                  {item.status}
+                                                </span>
+                                              ) : item.isPix ? (
+                                                <div className="flex flex-col items-center justify-center gap-0.5">
+                                                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-bold bg-teal-100 text-teal-800 border border-teal-300">
+                                                    <CheckCircle2 className="w-3 h-3 text-teal-600" />
+                                                    CONCILIADO (PIX)
                                                   </span>
-                                                )}
-                                              </div>
-                                            ) : (
-                                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
-                                                <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                                                CONCILIADO
-                                              </span>
-                                            )}
+                                                  {item.criterioConciliacao && (
+                                                    <span
+                                                      className="text-[9px] text-teal-900 font-semibold max-w-[180px] truncate"
+                                                      title={item.detalhes || item.criterioConciliacao}
+                                                    >
+                                                      {item.criterioConciliacao}
+                                                    </span>
+                                                  )}
+                                                </div>
+                                              ) : (
+                                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                                                  <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                                  CONCILIADO
+                                                </span>
+                                              )}
+                                            </div>
                                           </td>
                                           {/* Action */}
-                                          <td className="p-2.5 text-center">
-                                            <button
-                                              onClick={() =>
-                                                setDeleteConfirm({ isOpen: true, ids: [item.id] })
-                                              }
-                                              className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors cursor-pointer"
-                                              title="Excluir lançamento"
-                                            >
-                                              <Trash2 className="w-4 h-4" />
-                                            </button>
+                                          <td className="p-2.5 text-center align-middle">
+                                            <div className="flex items-center justify-center">
+                                              <button
+                                                onClick={() =>
+                                                  setDeleteConfirm({ isOpen: true, ids: [item.id] })
+                                                }
+                                                className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors cursor-pointer"
+                                                title="Excluir lançamento"
+                                              >
+                                                <Trash2 className="w-4 h-4" />
+                                              </button>
+                                            </div>
                                           </td>
                                         </tr>
                                       );
@@ -1759,10 +1812,10 @@ export function FechamentoView({
         ) : (
           /* Flat Table View */
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs border-collapse">
+            <table className="w-full text-center text-xs border-collapse">
               <thead>
                 <tr className="bg-slate-900 text-white font-extrabold uppercase text-[10px] tracking-wider">
-                  <th className="p-3 w-10 text-center">
+                  <th className="p-3 w-12 text-center">
                     <input
                       type="checkbox"
                       checked={
@@ -1773,20 +1826,20 @@ export function FechamentoView({
                       className="rounded border-slate-300 text-amber-600 focus:ring-amber-500"
                     />
                   </th>
-                  <th className="p-3">Empresa</th>
-                  <th className="p-3">Departamento / Conta</th>
-                  <th className="p-3">Data</th>
-                  <th className="p-3">NSU</th>
-                  <th className="p-3">Tipo / Bandeira</th>
-                  <th className="p-3 text-right bg-emerald-950 text-emerald-200">
+                  <th className="p-3 min-w-[160px] text-center">Empresa</th>
+                  <th className="p-3 min-w-[160px] text-center">Departamento / Conta</th>
+                  <th className="p-3 w-24 text-center">Data</th>
+                  <th className="p-3 w-28 text-center">NSU</th>
+                  <th className="p-3 min-w-[220px] text-center">Tipo / Bandeira</th>
+                  <th className="p-3 w-36 text-center bg-emerald-950 text-emerald-200">
                     Coluna Dealer (R$)
                   </th>
-                  <th className="p-3 text-right bg-blue-950 text-blue-200">
+                  <th className="p-3 w-36 text-center bg-blue-950 text-blue-200">
                     Coluna Sitef (R$)
                   </th>
-                  <th className="p-3 text-right">Diferença (R$)</th>
-                  <th className="p-3 text-center">Status Conciliação</th>
-                  <th className="p-3 w-12 text-center">Ações</th>
+                  <th className="p-3 w-32 text-center">Diferença (R$)</th>
+                  <th className="p-3 min-w-[190px] text-center">Status Conciliação</th>
+                  <th className="p-3 w-14 text-center">Ações</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200 bg-white">
@@ -1812,7 +1865,7 @@ export function FechamentoView({
                           : 'hover:bg-slate-50 border-l-4 border-l-transparent'
                       } ${isSelected ? 'bg-amber-100/70 ring-1 ring-amber-400' : ''}`}
                     >
-                      <td className="p-3 text-center">
+                      <td className="p-3 text-center align-middle">
                         <input
                           type="checkbox"
                           checked={isSelected}
@@ -1820,103 +1873,135 @@ export function FechamentoView({
                           className="rounded border-slate-300 text-amber-600 focus:ring-amber-500"
                         />
                       </td>
-                      <td className="p-3 font-bold text-slate-900 flex items-center gap-2">
-                        <span>{item.empresa}</span>
-                        {isEmpConciliated && (
-                          <span className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.8)]" title="Empresa Conciliada no Sistema" />
-                        )}
+                      {/* Empresa (uma linha abaixo da outra se conciliada) */}
+                      <td className="p-3 text-center align-middle">
+                        <div className="flex flex-col items-center justify-center gap-1">
+                          <span className="font-bold text-slate-900">{item.empresa}</span>
+                          {isEmpConciliated && (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300">
+                              CONCILIADA NO SISTEMA
+                            </span>
+                          )}
+                        </div>
                       </td>
-                      <td className="p-3 text-slate-700">
-                        {item.departamento || item.contaGerencial}
+                      {/* Departamento / Conta (uma linha abaixo da outra) */}
+                      <td className="p-3 text-center align-middle">
+                        <div className="flex flex-col items-center justify-center gap-0.5">
+                          <span className="font-semibold text-slate-800">{item.departamento || '—'}</span>
+                          {item.contaGerencial && (
+                            <span className="text-[10px] text-slate-500 font-mono">
+                              {item.contaGerencial}
+                            </span>
+                          )}
+                        </div>
                       </td>
-                      <td className="p-3 text-slate-700 whitespace-nowrap">{item.data || '—'}</td>
-                      <td className={`p-3 font-mono font-bold whitespace-nowrap ${isEmpConciliated ? 'text-emerald-950' : 'text-slate-900'}`}>
+                      {/* Data */}
+                      <td className="p-3 text-center align-middle text-slate-700 whitespace-nowrap">{item.data || '—'}</td>
+                      {/* NSU */}
+                      <td className={`p-3 text-center align-middle font-mono font-bold whitespace-nowrap ${isEmpConciliated ? 'text-emerald-950' : 'text-slate-900'}`}>
                         {item.nsu}
                       </td>
-                      <td className="p-3 whitespace-nowrap">
-                        <div className="flex flex-col gap-0.5">
-                          <span className={`font-bold ${isEmpConciliated ? 'text-emerald-950' : 'text-slate-800'}`}>{item.tipoPagamento}</span>
-                          <div className="flex items-center gap-1 text-[10px]">
-                            <span className="px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-800 border border-emerald-300 font-semibold">
+                      {/* Tipo / Bandeira (uma linha abaixo da outra) */}
+                      <td className="p-3 text-center align-middle whitespace-nowrap">
+                        <div className="flex flex-col items-center justify-center gap-1">
+                          <span className={`font-bold text-xs ${isEmpConciliated ? 'text-emerald-950' : 'text-slate-800'}`}>
+                            {item.tipoPagamento}
+                          </span>
+                          <div className="flex flex-wrap items-center justify-center gap-1.5 text-[10px]">
+                            <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-300 font-semibold shadow-2xs">
                               Dealer: {item.bandeiraDealer || '—'}
                             </span>
-                            <span className="px-1.5 py-0.2 rounded bg-blue-100 text-blue-800 border border-blue-300 font-semibold">
+                            <span className="px-2 py-0.5 rounded bg-blue-100 text-blue-800 border border-blue-300 font-semibold shadow-2xs">
                               Sitef: {item.bandeiraSitef || '—'}
                             </span>
                           </div>
                         </div>
                       </td>
-                      <td className="p-3 text-right font-black text-emerald-950 bg-emerald-50/30 whitespace-nowrap">
-                        {formatBRL(item.valorDealer)}
+                      {/* Coluna Dealer */}
+                      <td className="p-3 text-center align-middle font-mono font-black text-emerald-950 bg-emerald-50/40 whitespace-nowrap">
+                        <div className="flex items-center justify-center">
+                          <span>{formatBRL(item.valorDealer)}</span>
+                        </div>
                       </td>
-                      <td className="p-3 text-right font-black text-blue-950 bg-blue-50/30 whitespace-nowrap">
-                        {formatBRL(item.valorSitef)}
+                      {/* Coluna Sitef */}
+                      <td className="p-3 text-center align-middle font-mono font-black text-blue-950 bg-blue-50/40 whitespace-nowrap">
+                        <div className="flex items-center justify-center">
+                          <span>{formatBRL(item.valorSitef)}</span>
+                        </div>
                       </td>
-                      <td className="p-3 text-right whitespace-nowrap">
-                        <span
-                          className={`px-2.5 py-1 rounded font-extrabold ${
-                            item.temDivergencia
-                              ? 'bg-amber-200 text-amber-950 border border-amber-300 shadow-2xs'
-                              : 'text-emerald-700 font-semibold'
-                          }`}
-                        >
-                          {formatBRL(item.diferenca)}
-                        </span>
-                      </td>
-                      <td className="p-3 text-center whitespace-nowrap">
-                        {isEmpConciliated ? (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] font-black bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-[0_2px_8px_rgba(16,185,129,0.3)] border border-emerald-400 uppercase tracking-tight">
-                            <CheckCircle2 className="w-3 h-3 text-emerald-200" />
-                            CONCILIADO NO SISTEMA
-                          </span>
-                        ) : isPixValNeeded ? (
+                      {/* Diferença */}
+                      <td className="p-3 text-center align-middle whitespace-nowrap">
+                        <div className="flex items-center justify-center">
                           <span
-                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-black bg-indigo-600 text-white shadow-2xs uppercase cursor-help"
-                            title={item.detalhes || 'PIX – Validação necessária (ambiguidade de lançamentos)'}
+                            className={`px-2.5 py-1 rounded-md font-extrabold text-xs inline-block text-center ${
+                              item.temDivergencia
+                                ? 'bg-amber-200 text-amber-950 border border-amber-300 shadow-2xs'
+                                : 'text-emerald-700 font-bold bg-emerald-50 border border-emerald-200'
+                            }`}
                           >
-                            <AlertTriangle className="w-3 h-3 text-indigo-200" />
-                            PIX – VALIDAÇÃO NECESSÁRIA
+                            {formatBRL(item.diferenca)}
                           </span>
-                        ) : isBandDiv ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-black bg-purple-600 text-white shadow-2xs uppercase">
-                            <AlertTriangle className="w-3 h-3 text-amber-300" />
-                            DIVERGÊNCIA DE BANDEIRA
-                          </span>
-                        ) : item.temDivergencia ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-black bg-amber-500 text-white shadow-2xs uppercase">
-                            <AlertTriangle className="w-3 h-3" />
-                            {item.status}
-                          </span>
-                        ) : item.isPix ? (
-                          <div className="flex flex-col items-center gap-0.5">
-                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-bold bg-teal-100 text-teal-800 border border-teal-300">
-                              <CheckCircle2 className="w-3 h-3 text-teal-600" />
-                              {item.status || 'CONCILIADO (PIX)'}
-                            </span>
-                            {(item.criterioConciliacao || item.detalhes) && (
-                              <span
-                                className="text-[9px] text-teal-900 font-semibold max-w-[180px] truncate"
-                                title={item.detalhes || item.criterioConciliacao}
-                              >
-                                {item.criterioConciliacao || item.detalhes}
-                              </span>
-                            )}
-                          </div>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
-                            <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                            CONCILIADO
-                          </span>
-                        )}
+                        </div>
                       </td>
-                      <td className="p-3 text-center">
-                        <button
-                          onClick={() => setDeleteConfirm({ isOpen: true, ids: [item.id] })}
-                          className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors cursor-pointer"
-                          title="Excluir lançamento"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                      {/* Status */}
+                      <td className="p-3 text-center align-middle whitespace-nowrap">
+                        <div className="flex items-center justify-center">
+                          {isEmpConciliated ? (
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] font-black bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-[0_2px_8px_rgba(16,185,129,0.3)] border border-emerald-400 uppercase tracking-tight">
+                              <CheckCircle2 className="w-3 h-3 text-emerald-200" />
+                              CONCILIADO NO SISTEMA
+                            </span>
+                          ) : isPixValNeeded ? (
+                            <span
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-black bg-indigo-600 text-white shadow-2xs uppercase cursor-help"
+                              title={item.detalhes || 'PIX – Validação necessária (ambiguidade de lançamentos)'}
+                            >
+                              <AlertTriangle className="w-3 h-3 text-indigo-200" />
+                              PIX – VALIDAÇÃO NECESSÁRIA
+                            </span>
+                          ) : isBandDiv ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-black bg-purple-600 text-white shadow-2xs uppercase">
+                              <AlertTriangle className="w-3 h-3 text-amber-300" />
+                              DIVERGÊNCIA DE BANDEIRA
+                            </span>
+                          ) : item.temDivergencia ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-black bg-amber-500 text-white shadow-2xs uppercase">
+                              <AlertTriangle className="w-3 h-3" />
+                              {item.status}
+                            </span>
+                          ) : item.isPix ? (
+                            <div className="flex flex-col items-center justify-center gap-0.5">
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-bold bg-teal-100 text-teal-800 border border-teal-300">
+                                <CheckCircle2 className="w-3 h-3 text-teal-600" />
+                                {item.status || 'CONCILIADO (PIX)'}
+                              </span>
+                              {(item.criterioConciliacao || item.detalhes) && (
+                                <span
+                                  className="text-[9px] text-teal-900 font-semibold max-w-[180px] truncate"
+                                  title={item.detalhes || item.criterioConciliacao}
+                                >
+                                  {item.criterioConciliacao || item.detalhes}
+                                </span>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                              <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                              CONCILIADO
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="p-3 text-center align-middle">
+                        <div className="flex items-center justify-center">
+                          <button
+                            onClick={() => setDeleteConfirm({ isOpen: true, ids: [item.id] })}
+                            className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors cursor-pointer"
+                            title="Excluir lançamento"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );

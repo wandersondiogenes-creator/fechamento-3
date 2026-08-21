@@ -394,10 +394,15 @@ export async function POST(req: NextRequest) {
     const sanitizedItems = deduplicateItems(rawItems);
     const accurateSummary = computeSessionSummary(sanitizedItems);
 
+    const mergedConciliatedEmpresas =
+      incomingSession.conciliatedEmpresas !== undefined
+        ? incomingSession.conciliatedEmpresas
+        : (existing?.conciliatedEmpresas || {});
+
     const fullSession: SharedFechamentoSession = {
       id: roomId,
-      title: incomingSession.title || `Fechamento ${incomingSession.dataMovimento || 'Hoje'}`,
-      dataMovimento: incomingSession.dataMovimento || new Date().toLocaleDateString('pt-BR'),
+      title: incomingSession.title || existing?.title || `Fechamento ${incomingSession.dataMovimento || 'Hoje'}`,
+      dataMovimento: incomingSession.dataMovimento || existing?.dataMovimento || new Date().toLocaleDateString('pt-BR'),
       createdBy: existing?.createdBy || {
         id: user?.id || 'usr_host',
         name: user?.name || 'Operador',
@@ -405,9 +410,9 @@ export async function POST(req: NextRequest) {
         empresa: user?.empresa || 'Matriz',
         role: user?.role || 'operador',
       },
-      status: incomingSession.status || 'active',
+      status: incomingSession.status || existing?.status || 'active',
       items: sanitizedItems,
-      conciliatedEmpresas: incomingSession.conciliatedEmpresas || existing?.conciliatedEmpresas || {},
+      conciliatedEmpresas: mergedConciliatedEmpresas,
       summary: accurateSummary,
       activeParticipants: cleanParticipantList(updatedParticipants),
       chatMessages: incomingSession.chatMessages || existing?.chatMessages || [],

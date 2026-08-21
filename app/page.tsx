@@ -990,7 +990,7 @@ export default function Home() {
     setManualFechamentoItems([]);
   }, []);
 
-  const handleApplySharedItems = useCallback((items: FechamentoItem[]) => {
+  const handleApplySharedItems = useCallback((items: FechamentoItem[], conciliated?: Record<string, boolean>) => {
     const map = new Map<string, FechamentoItem>();
     (items || []).forEach((item) => {
       if (item && item.id) {
@@ -999,6 +999,13 @@ export default function Home() {
     });
     setManualFechamentoItems(Array.from(map.values()));
     setDeletedFechamentoIds(new Set());
+    if (conciliated && typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('wanfinance_conciliated_empresas_v1', JSON.stringify(conciliated));
+      } catch {
+        // ignore
+      }
+    }
   }, []);
 
   const handleFechamentoConcluido = useCallback((record?: FechamentoCaixaRecord) => {
