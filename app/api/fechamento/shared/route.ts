@@ -12,12 +12,12 @@ import { FechamentoItem, FechamentoSummary } from '@/lib/fechamento-utils';
 
 export const dynamic = 'force-dynamic';
 
-// Resilient in-memory storage for high-speed multi-user synchronization
+// In-memory storage for low-latency multi-user synchronization
 const inMemorySessions = new Map<string, SharedFechamentoSession>();
 
 function cleanParticipantList(participants: SessionParticipant[]): SessionParticipant[] {
   const now = Date.now();
-  // Keep users seen in last 45 seconds as active, or recent
+  // Keep users seen in last 3 minutes as active
   return (participants || []).filter((p) => {
     const last = new Date(p.lastSeen).getTime();
     return now - last < 1000 * 60 * 60 * 12; // 12 hours retention in list
@@ -78,6 +78,12 @@ export async function GET(req: NextRequest) {
       searchParams.get('fechamento');
     const id = extractRoomCode(rawId);
 
+    const userId = searchParams.get('userId');
+    const userName = searchParams.get('userName');
+    const userEmail = searchParams.get('userEmail');
+    const userEmpresa = searchParams.get('userEmpresa');
+    const userRole = searchParams.get('userRole');
+
     // 1. List active shared sessions
     if (listAll) {
       const allSessions: SharedFechamentoSession[] = [];
@@ -112,8 +118,13 @@ export async function GET(req: NextRequest) {
                 items: row.items as any,
                 conciliatedEmpresas: (row.conciliatedEmpresas as any) || {},
                 summary: row.summary as any,
+                dealerState: (row.dealerState as any) || undefined,
+                sitefState: (row.sitefState as any) || undefined,
+                pendenteCdcState: (row.pendenteCdcState as any) || undefined,
                 activeParticipants: (row.activeParticipants as any) || [],
+                kickedUserIds: (row.kickedUserIds as any) || [],
                 chatMessages: (row.chatMessages as any) || [],
+                lastAction: (row.lastAction as any) || undefined,
                 version: row.version || 1,
                 createdAt: row.createdAt.toISOString(),
                 updatedAt: row.updatedAt.toISOString(),
@@ -177,8 +188,13 @@ export async function GET(req: NextRequest) {
             items: row.items as any,
             conciliatedEmpresas: (row.conciliatedEmpresas as any) || {},
             summary: row.summary as any,
+            dealerState: (row.dealerState as any) || undefined,
+            sitefState: (row.sitefState as any) || undefined,
+            pendenteCdcState: (row.pendenteCdcState as any) || undefined,
             activeParticipants: (row.activeParticipants as any) || [],
+            kickedUserIds: (row.kickedUserIds as any) || [],
             chatMessages: (row.chatMessages as any) || [],
+            lastAction: (row.lastAction as any) || undefined,
             version: row.version || 1,
             createdAt: row.createdAt.toISOString(),
             updatedAt: row.updatedAt.toISOString(),
@@ -190,9 +206,24 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    // Check if session was closed or deleted
+    if (session && session.status === 'closed') {
+      return NextResponse.json(
+        { success: false, closed: true, error: 'A sala compartilhada foi encerrada pelo anfitrião.' },
+        { status: 200 }
+      );
+    }
+
+    // Check if requesting user was kicked by the host
+    if (session && userId && session.kickedUserIds && session.kickedUserIds.includes(userId)) {
+      return NextResponse.json(
+        { success: false, kicked: true, error: 'Você foi desconectado da sala pelo anfitrião.' },
+        { status: 200 }
+      );
+    }
+
     if (!session) {
-      // If the code is formatted as a valid room code (FC-XXXXX), auto-bootstrap a collaborative room on-the-fly
-      // so users sharing newly generated codes can immediately connect and synchronize without 404 errors!
+      // Auto-bootstrap a collaborative room on-the-fly for valid room code patterns
       const isRoomCodePattern = /^FC-?\d{4,8}$/i.test(id);
       if (isRoomCodePattern) {
         const nowIso = new Date().toISOString();
@@ -221,6 +252,7 @@ export async function GET(req: NextRequest) {
             countPixValidacao: 0,
           },
           activeParticipants: [],
+          kickedUserIds: [],
           chatMessages: [],
           version: 1,
           createdAt: nowIso,
@@ -231,36 +263,37 @@ export async function GET(req: NextRequest) {
         if (process.env.DATABASE_URL) {
           try {
             const db = getDb();
-            await db.insert(sharedFechamentos).values({
-              id: session.id,
-              title: session.title,
-              dataMovimento: session.dataMovimento,
-              createdBy: session.createdBy,
-              status: session.status,
-              items: session.items,
-              conciliatedEmpresas: session.conciliatedEmpresas,
-              summary: session.summary,
-              activeParticipants: session.activeParticipants,
-              chatMessages: session.chatMessages || [],
-              updatedAt: new Date(),
-            }).onConflictDoNothing();
+            await db
+              .insert(sharedFechamentos)
+              .values({
+                id: session.id,
+                title: session.title,
+                dataMovimento: session.dataMovimento,
+                createdBy: session.createdBy,
+                status: session.status,
+                items: session.items,
+                conciliatedEmpresas: session.conciliatedEmpresas,
+                summary: session.summary,
+                activeParticipants: session.activeParticipants,
+                kickedUserIds: session.kickedUserIds || [],
+                chatMessages: session.chatMessages || [],
+                updatedAt: new Date(),
+              })
+              .onConflictDoNothing();
           } catch (dbErr) {
             console.warn('DB auto-provision error:', dbErr);
           }
         }
       } else {
-        return NextResponse.json({ success: false, error: `Sala de Fechamento "${id}" não encontrada ou expirada.` }, { status: 404 });
+        return NextResponse.json(
+          { success: false, error: `Sala de Fechamento "${id}" não encontrada ou expirada.` },
+          { status: 404 }
+        );
       }
     }
 
-    // Register participant heartbeat if user query params provided
-    const userId = searchParams.get('userId');
-    const userName = searchParams.get('userName');
-    const userEmail = searchParams.get('userEmail');
-    const userEmpresa = searchParams.get('userEmpresa');
-    const userRole = searchParams.get('userRole');
-
-    if (userId && userName) {
+    // Register participant heartbeat if user query params provided and not kicked
+    if (userId && userName && (!session.kickedUserIds || !session.kickedUserIds.includes(userId))) {
       const nowIso = new Date().toISOString();
       const existingPartIdx = session.activeParticipants.findIndex((p) => p.id === userId || p.email === userEmail);
       if (existingPartIdx >= 0) {
@@ -302,7 +335,142 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
 
-    // Action: Chat Message
+    // Action 1: Leave Room (Participant Disconnect)
+    if (body.action === 'leave') {
+      const { sessionId, user } = body;
+      const cleanSessionId = extractRoomCode(sessionId);
+      if (!cleanSessionId || !user?.id) {
+        return NextResponse.json({ success: true });
+      }
+
+      const session = inMemorySessions.get(cleanSessionId);
+      if (session) {
+        session.activeParticipants = session.activeParticipants.filter(
+          (p) => p.id !== user.id && p.email !== user.email
+        );
+        session.version = (session.version || 1) + 1;
+        session.updatedAt = new Date().toISOString();
+        inMemorySessions.set(cleanSessionId, session);
+
+        if (process.env.DATABASE_URL) {
+          try {
+            const db = getDb();
+            await db
+              .update(sharedFechamentos)
+              .set({ activeParticipants: session.activeParticipants, updatedAt: new Date() })
+              .where(eq(sharedFechamentos.id, cleanSessionId));
+          } catch {}
+        }
+      }
+      return NextResponse.json({ success: true });
+    }
+
+    // Action 2: Kick User (Host Admin kicking participant)
+    if (body.action === 'kick') {
+      const { sessionId, adminUser, targetUserId } = body;
+      const cleanSessionId = extractRoomCode(sessionId);
+      if (!cleanSessionId || !targetUserId) {
+        return NextResponse.json({ success: false, error: 'Parâmetros inválidos para remoção de participante' }, { status: 400 });
+      }
+
+      let session = inMemorySessions.get(cleanSessionId);
+      if (!session && process.env.DATABASE_URL) {
+        const db = getDb();
+        const rows = await db.select().from(sharedFechamentos).where(eq(sharedFechamentos.id, cleanSessionId)).limit(1);
+        if (rows.length > 0) {
+          const row = rows[0];
+          session = {
+            id: row.id,
+            title: row.title,
+            dataMovimento: row.dataMovimento,
+            createdBy: row.createdBy as any,
+            status: row.status as any,
+            items: (row.items as any) || [],
+            conciliatedEmpresas: (row.conciliatedEmpresas as any) || {},
+            summary: (row.summary as any) || computeSessionSummary([]),
+            dealerState: (row.dealerState as any) || undefined,
+            sitefState: (row.sitefState as any) || undefined,
+            pendenteCdcState: (row.pendenteCdcState as any) || undefined,
+            activeParticipants: (row.activeParticipants as any) || [],
+            kickedUserIds: (row.kickedUserIds as any) || [],
+            chatMessages: (row.chatMessages as any) || [],
+            lastAction: (row.lastAction as any) || undefined,
+            version: row.version || 1,
+            createdAt: row.createdAt.toISOString(),
+            updatedAt: row.updatedAt.toISOString(),
+          };
+          inMemorySessions.set(cleanSessionId, session);
+        }
+      }
+
+      if (!session) {
+        return NextResponse.json({ success: false, error: 'Sessão não encontrada' }, { status: 404 });
+      }
+
+      // Add target to kicked list and remove from active participants
+      const currentKicked = new Set(session.kickedUserIds || []);
+      currentKicked.add(targetUserId);
+      session.kickedUserIds = Array.from(currentKicked);
+      session.activeParticipants = session.activeParticipants.filter((p) => p.id !== targetUserId);
+      session.version = (session.version || 1) + 1;
+      session.updatedAt = new Date().toISOString();
+      session.lastAction = {
+        userId: adminUser?.id || 'admin',
+        userName: adminUser?.name || 'Anfitrião',
+        description: 'Usuário removido da sala pelo anfitrião',
+        timestamp: new Date().toISOString(),
+      };
+
+      inMemorySessions.set(cleanSessionId, session);
+
+      if (process.env.DATABASE_URL) {
+        try {
+          const db = getDb();
+          await db
+            .update(sharedFechamentos)
+            .set({
+              kickedUserIds: session.kickedUserIds,
+              activeParticipants: session.activeParticipants,
+              lastAction: session.lastAction,
+              updatedAt: new Date(),
+            })
+            .where(eq(sharedFechamentos.id, cleanSessionId));
+        } catch (dbErr) {
+          console.warn('DB kick update error:', dbErr);
+        }
+      }
+
+      return NextResponse.json({ success: true, session });
+    }
+
+    // Action 3: Delete Room
+    if (body.action === 'delete_room') {
+      const { sessionId } = body;
+      const cleanSessionId = extractRoomCode(sessionId);
+      if (cleanSessionId) {
+        const session = inMemorySessions.get(cleanSessionId);
+        if (session) {
+          session.status = 'closed';
+          session.activeParticipants = [];
+          session.version = (session.version || 1) + 1;
+          session.updatedAt = new Date().toISOString();
+        }
+        inMemorySessions.delete(cleanSessionId);
+
+        if (process.env.DATABASE_URL) {
+          try {
+            const db = getDb();
+            await db
+              .update(sharedFechamentos)
+              .set({ status: 'closed', updatedAt: new Date() })
+              .where(eq(sharedFechamentos.id, cleanSessionId));
+          } catch {}
+        }
+      }
+      return NextResponse.json({ success: true });
+    }
+
+    // Action 4: Chat Message
     if (body.action === 'chat') {
       const { sessionId, user, message } = body;
       const cleanSessionId = extractRoomCode(sessionId);
@@ -327,8 +495,13 @@ export async function POST(req: NextRequest) {
             items: deduped,
             conciliatedEmpresas: (row.conciliatedEmpresas as any) || {},
             summary: computeSessionSummary(deduped),
+            dealerState: (row.dealerState as any) || undefined,
+            sitefState: (row.sitefState as any) || undefined,
+            pendenteCdcState: (row.pendenteCdcState as any) || undefined,
             activeParticipants: (row.activeParticipants as any) || [],
+            kickedUserIds: (row.kickedUserIds as any) || [],
             chatMessages: (row.chatMessages as any) || [],
+            lastAction: (row.lastAction as any) || undefined,
             version: row.version || 1,
             createdAt: row.createdAt.toISOString(),
             updatedAt: row.updatedAt.toISOString(),
@@ -358,8 +531,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true, session });
     }
 
-    // Create or Update Session
-    const { session: incomingSession, user } = body;
+    // Action 5: Create or Update Session (Full collaborative sync)
+    const { session: incomingSession, user, actionDescription, actionTab } = body;
     if (!incomingSession || !incomingSession.id) {
       return NextResponse.json({ success: false, error: 'ID da sessão é obrigatório' }, { status: 400 });
     }
@@ -370,7 +543,7 @@ export async function POST(req: NextRequest) {
 
     const updatedParticipants: SessionParticipant[] = existing ? [...existing.activeParticipants] : [];
 
-    if (user) {
+    if (user && (!existing?.kickedUserIds || !existing.kickedUserIds.includes(user.id))) {
       const userIdx = updatedParticipants.findIndex((p) => p.id === user.id || p.email === user.email);
       if (userIdx >= 0) {
         updatedParticipants[userIdx].lastSeen = nowIso;
@@ -399,6 +572,11 @@ export async function POST(req: NextRequest) {
         ? incomingSession.conciliatedEmpresas
         : (existing?.conciliatedEmpresas || {});
 
+    // Maintain spreadsheet datasets
+    const dealerState = incomingSession.dealerState !== undefined ? incomingSession.dealerState : existing?.dealerState;
+    const sitefState = incomingSession.sitefState !== undefined ? incomingSession.sitefState : existing?.sitefState;
+    const pendenteCdcState = incomingSession.pendenteCdcState !== undefined ? incomingSession.pendenteCdcState : existing?.pendenteCdcState;
+
     const fullSession: SharedFechamentoSession = {
       id: roomId,
       title: incomingSession.title || existing?.title || `Fechamento ${incomingSession.dataMovimento || 'Hoje'}`,
@@ -414,8 +592,21 @@ export async function POST(req: NextRequest) {
       items: sanitizedItems,
       conciliatedEmpresas: mergedConciliatedEmpresas,
       summary: accurateSummary,
+      dealerState: dealerState || undefined,
+      sitefState: sitefState || undefined,
+      pendenteCdcState: pendenteCdcState || undefined,
       activeParticipants: cleanParticipantList(updatedParticipants),
+      kickedUserIds: existing?.kickedUserIds || [],
       chatMessages: incomingSession.chatMessages || existing?.chatMessages || [],
+      lastAction: actionDescription
+        ? {
+            userId: user?.id || 'sys',
+            userName: user?.name || 'Operador',
+            description: actionDescription,
+            tab: actionTab,
+            timestamp: nowIso,
+          }
+        : existing?.lastAction,
       version: (existing?.version || 0) + 1,
       createdAt: existing?.createdAt || nowIso,
       updatedAt: nowIso,
@@ -438,8 +629,13 @@ export async function POST(req: NextRequest) {
             items: fullSession.items,
             conciliatedEmpresas: fullSession.conciliatedEmpresas,
             summary: fullSession.summary,
+            dealerState: fullSession.dealerState,
+            sitefState: fullSession.sitefState,
+            pendenteCdcState: fullSession.pendenteCdcState,
             activeParticipants: fullSession.activeParticipants,
+            kickedUserIds: fullSession.kickedUserIds || [],
             chatMessages: fullSession.chatMessages || [],
+            lastAction: fullSession.lastAction,
             updatedAt: new Date(),
           })
           .onConflictDoUpdate({
@@ -451,8 +647,13 @@ export async function POST(req: NextRequest) {
               items: fullSession.items,
               conciliatedEmpresas: fullSession.conciliatedEmpresas,
               summary: fullSession.summary,
+              dealerState: fullSession.dealerState,
+              sitefState: fullSession.sitefState,
+              pendenteCdcState: fullSession.pendenteCdcState,
               activeParticipants: fullSession.activeParticipants,
+              kickedUserIds: fullSession.kickedUserIds || [],
               chatMessages: fullSession.chatMessages || [],
+              lastAction: fullSession.lastAction,
               updatedAt: new Date(),
             },
           });
@@ -477,12 +678,22 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'ID da sala não informado' }, { status: 400 });
     }
 
+    const session = inMemorySessions.get(id);
+    if (session) {
+      session.status = 'closed';
+      session.activeParticipants = [];
+      session.version = (session.version || 1) + 1;
+      session.updatedAt = new Date().toISOString();
+    }
     inMemorySessions.delete(id);
 
     if (process.env.DATABASE_URL) {
       try {
         const db = getDb();
-        await db.update(sharedFechamentos).set({ status: 'closed', updatedAt: new Date() }).where(eq(sharedFechamentos.id, id));
+        await db
+          .update(sharedFechamentos)
+          .set({ status: 'closed', updatedAt: new Date() })
+          .where(eq(sharedFechamentos.id, id));
       } catch (dbErr) {
         console.warn('DB close error:', dbErr);
       }
