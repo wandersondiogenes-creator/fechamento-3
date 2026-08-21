@@ -1019,9 +1019,37 @@ export default function Home() {
   }, []);
 
   const handleRecalculateFechamento = useCallback(() => {
+    // 1. Reset manual additions, historical restored items, and deletions
     setDeletedFechamentoIds(new Set());
     setManualFechamentoItems([]);
-  }, []);
+
+    // 2. Disconnect from any background shared room
+    setActiveSharedSession(null);
+    saveActiveRoomIdLocally('');
+
+    // 3. Clear conciliated status cache
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.removeItem('wanfinance_conciliated_empresas_v1');
+      } catch {}
+    }
+
+    // 4. Force re-processing of dealer and sitef if raw data is present to guarantee fresh columns & types
+    if (dealerState.rawData && dealerState.rawData.length > 0) {
+      const dealerProcessed = processSpreadsheetData(dealerState.rawData, dealerState.columns);
+      setDealerState((prev) => ({ ...prev, processedData: dealerProcessed }));
+    }
+    if (sitefState.rawData && sitefState.rawData.length > 0) {
+      const sitefProcessed = processSpreadsheetData(sitefState.rawData, sitefState.columns);
+      setSitefState((prev) => ({ ...prev, processedData: sitefProcessed }));
+    }
+
+    // 5. Show prominent confirmation banner
+    setAutoOrganizeBanner({
+      show: true,
+      message: 'Dados do Fechamento recalculados e sincronizados com sucesso a partir das planilhas Dealer e SiTef atuais!',
+    });
+  }, [dealerState.rawData, dealerState.columns, sitefState.rawData, sitefState.columns]);
 
   const handleApplySharedItems = useCallback((items: FechamentoItem[], conciliated?: Record<string, boolean>) => {
     const map = new Map<string, FechamentoItem>();

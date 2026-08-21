@@ -174,6 +174,19 @@ export function FechamentoView({
   };
 
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [isRefreshingAuto, setIsRefreshingAuto] = useState(false);
+  const [justRefreshed, setJustRefreshed] = useState(false);
+
+  const handleTriggerRefreshAuto = useCallback(() => {
+    if (!onRecalculateAuto) return;
+    setIsRefreshingAuto(true);
+    onRecalculateAuto();
+    setTimeout(() => {
+      setIsRefreshingAuto(false);
+      setJustRefreshed(true);
+      setTimeout(() => setJustRefreshed(false), 4000);
+    }, 400);
+  }, [onRecalculateAuto]);
 
   // State to track empresas marked as reconciled in the system by the user
   const [conciliatedEmpresas, setConciliatedEmpresas] = useState<Record<string, boolean>>(() => {
@@ -931,6 +944,19 @@ export function FechamentoView({
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Atualizar / Sincronizar com Dealer e SiTef Button */}
+          {onRecalculateAuto && (
+            <button
+              onClick={handleTriggerRefreshAuto}
+              disabled={isRefreshingAuto}
+              className="px-3.5 py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl text-xs transition-all flex items-center gap-2 cursor-pointer shadow-2xs disabled:opacity-60"
+              title="Recalcular todos os dados do Fechamento usando as planilhas Dealer e SiTef atuais"
+            >
+              <RefreshCw className={`w-4 h-4 ${isRefreshingAuto ? 'animate-spin' : ''}`} />
+              <span>{isRefreshingAuto ? 'Atualizando...' : 'Atualizar Dados (Dealer/SiTef)'}</span>
+            </button>
+          )}
+
           {/* Real-time Share Button */}
           <button
             onClick={() => setIsSharedModalOpen(true)}
@@ -1342,15 +1368,24 @@ export function FechamentoView({
               </button>
             </div>
 
-            {/* Recalculate Auto Button */}
+            {/* Feedback Badge after Refresh */}
+            {justRefreshed && (
+              <span className="px-2.5 py-1 bg-emerald-100 text-emerald-800 font-bold rounded-lg text-xs border border-emerald-300 flex items-center gap-1 animate-pulse">
+                <Check className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Dados Sincronizados!</span>
+              </span>
+            )}
+
+            {/* Recalculate / Update Data Button */}
             {onRecalculateAuto && (
               <button
-                onClick={onRecalculateAuto}
-                className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg text-xs border border-slate-300 transition-all flex items-center gap-1.5 cursor-pointer"
-                title="Refazer comparação entre Dealer e SiTef"
+                onClick={handleTriggerRefreshAuto}
+                disabled={isRefreshingAuto}
+                className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold rounded-lg text-xs border border-blue-300 transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-60"
+                title="Recalcular todos os valores do Fechamento a partir do Dealer e SiTef atuais"
               >
-                <RefreshCw className="w-3.5 h-3.5 text-slate-600" />
-                <span>Comparar Novamente</span>
+                <RefreshCw className={`w-3.5 h-3.5 text-blue-600 ${isRefreshingAuto ? 'animate-spin' : ''}`} />
+                <span>{isRefreshingAuto ? 'Atualizando...' : 'Atualizar Dados'}</span>
               </button>
             )}
 
@@ -1413,14 +1448,26 @@ export function FechamentoView({
             <p className="text-slate-500 text-xs max-w-md mx-auto">
               Importe planilhas nas abas <strong>DEALER</strong> e <strong>Sitef</strong> ou clique no botão <strong>&quot;+ Adicionar Lançamento&quot;</strong> para incluir registros manuais no fechamento.
             </p>
-            {onTriggerFileImport && (
-              <button
-                onClick={onTriggerFileImport}
-                className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg text-xs transition-all inline-flex items-center gap-2 mt-2"
-              >
-                Importar Planilha Excel
-              </button>
-            )}
+            <div className="flex flex-wrap items-center justify-center gap-2 mt-2">
+              {onRecalculateAuto && (
+                <button
+                  onClick={handleTriggerRefreshAuto}
+                  disabled={isRefreshingAuto}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg text-xs transition-all inline-flex items-center gap-2 disabled:opacity-60 cursor-pointer shadow-2xs"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isRefreshingAuto ? 'animate-spin' : ''}`} />
+                  <span>{isRefreshingAuto ? 'Sincronizando...' : 'Atualizar Dados do Dealer e SiTef'}</span>
+                </button>
+              )}
+              {onTriggerFileImport && (
+                <button
+                  onClick={onTriggerFileImport}
+                  className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg text-xs transition-all inline-flex items-center gap-2 cursor-pointer"
+                >
+                  Importar Planilha Excel
+                </button>
+              )}
+            </div>
           </div>
         ) : viewMode === 'grouped' ? (
           /* Grouped Accordion View: Empresa -> Departamento */
