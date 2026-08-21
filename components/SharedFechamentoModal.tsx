@@ -3,18 +3,14 @@
 import React, { useState, useEffect } from 'react';
 import {
   SharedFechamentoSession,
-  SharedSpreadsheetPayload,
   createOrUpdateSharedSession,
   fetchSharedSession,
   listActiveSharedSessions,
   sendSharedSessionChatMessage,
-  deleteSharedSession,
-  leaveSharedSession,
-  kickParticipantFromSession,
+  closeSharedSession,
   generateRoomCode,
   extractRoomCode,
   saveActiveRoomIdLocally,
-  clearActiveRoomLocally,
 } from '@/lib/shared-fechamento-service';
 import { FechamentoItem } from '@/lib/fechamento-utils';
 import { UserProfile } from '@/types/audit';
@@ -39,14 +35,10 @@ import {
   Sparkles,
   ExternalLink,
   LogOut,
-  Trash2,
-  UserX,
   Wifi,
   WifiOff,
   Clock,
   UserCheck,
-  AlertTriangle,
-  CheckCircle2,
 } from 'lucide-react';
 
 interface SharedFechamentoModalProps {
@@ -63,12 +55,9 @@ interface SharedFechamentoModalProps {
     countConciliados: number;
     countPixValidacao: number;
   };
-  dealerState?: SharedSpreadsheetPayload;
-  sitefState?: SharedSpreadsheetPayload;
-  pendenteCdcState?: SharedSpreadsheetPayload;
   activeSession: SharedFechamentoSession | null;
   onSessionConnected: (session: SharedFechamentoSession) => void;
-  onSessionDisconnected: (isGuestLeaving?: boolean) => void;
+  onSessionDisconnected: () => void;
   onManualSync: () => void;
 }
 
@@ -78,9 +67,6 @@ export function SharedFechamentoModal({
   fechamentoItems,
   conciliatedEmpresas,
   summary,
-  dealerState,
-  sitefState,
-  pendenteCdcState,
   activeSession,
   onSessionConnected,
   onSessionDisconnected,
@@ -92,19 +78,11 @@ export function SharedFechamentoModal({
   const [joinCodeInput, setJoinCodeInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [activeRoomsList, setActiveRoomsList] = useState<SharedFechamentoSession[]>([]);
   const [chatInput, setChatInput] = useState('');
   const [isSendingChat, setIsSendingChat] = useState(false);
-  const [isDeletingRoom, setIsDeletingRoom] = useState(false);
-  const [kickingUserId, setKickingUserId] = useState<string | null>(null);
 
   const currentUser: UserProfile = getCurrentUser();
-
-  const isHost =
-    activeSession?.createdBy?.id === currentUser.id ||
-    activeSession?.createdBy?.email === currentUser.email ||
-    currentUser.role === 'admin';
 
   // Load active rooms when tab is 'join' or modal opens
   const loadRooms = async () => {
@@ -120,7 +98,6 @@ export function SharedFechamentoModal({
     if (isOpen) {
       loadRooms();
       setErrorMsg(null);
-      setSuccessMsg(null);
       if (activeSession) {
         setActiveTab('share');
       }
@@ -155,7 +132,7 @@ export function SharedFechamentoModal({
       const defaultDate =
         fechamentoItems[0]?.data || new Date().toLocaleDateString('pt-BR');
 
-      const newSession: Partial<SharedFechamentoSession> & { id: string } = {
+      const newSession: Partial<SharedFechamentoSession> & { id: string; items: FechamentoItem[] } = {
         id: code,
         title: `Fechamento de Caixa - ${defaultDate}`,
         dataMovimento: defaultDate,
@@ -163,49 +140,13 @@ export function SharedFechamentoModal({
         items: fechamentoItems,
         conciliatedEmpresas,
         summary,
-        dealerState: dealerState
-          ? {
-              fileName: dealerState.fileName,
-              headers: dealerState.headers,
-              columns: dealerState.columns,
-              rawData: dealerState.rawData,
-              processedData: dealerState.processedData,
-              hasHeaderRow: dealerState.hasHeaderRow,
-            }
-          : undefined,
-        sitefState: sitefState
-          ? {
-              fileName: sitefState.fileName,
-              headers: sitefState.headers,
-              columns: sitefState.columns,
-              rawData: sitefState.rawData,
-              processedData: sitefState.processedData,
-              hasHeaderRow: sitefState.hasHeaderRow,
-            }
-          : undefined,
-        pendenteCdcState: pendenteCdcState
-          ? {
-              fileName: pendenteCdcState.fileName,
-              headers: pendenteCdcState.headers,
-              columns: pendenteCdcState.columns,
-              rawData: pendenteCdcState.rawData,
-              processedData: pendenteCdcState.processedData,
-              hasHeaderRow: pendenteCdcState.hasHeaderRow,
-            }
-          : undefined,
         version: 1,
       };
 
-      const res = await createOrUpdateSharedSession(
-        newSession,
-        currentUser,
-        'Criação da sala de fechamento compartilhada',
-        'fechamento'
-      );
+      const res = await createOrUpdateSharedSession(newSession, currentUser);
       if (res.success && res.session) {
         onSessionConnected(res.session);
         loadRooms();
-        setSuccessMsg(`Sala "${res.session.id}" criada com sucesso! Dealer, SiTef e Fechamento agora estão compartilhados em nuvem.`);
       } else {
         setErrorMsg(res.error || 'Não foi possível criar a sala compartilhada');
       }
@@ -221,7 +162,7 @@ export function SharedFechamentoModal({
     const rawInput = codeToJoin || joinCodeInput;
     const cleanCode = extractRoomCode(rawInput);
     if (!cleanCode) {
-      setErrorMsg('Informe o código da sala ou link de acesso válido (ex: FC-84920).');
+      setErrorMsg('Informe o código da sala ou link de acesso válido (ex: FC-93641).');
       return;
     }
 
@@ -234,7 +175,6 @@ export function SharedFechamentoModal({
         saveActiveRoomIdLocally(res.session.id);
         setActiveTab('share');
         setJoinCodeInput('');
-        setSuccessMsg(`Conectado com sucesso à sala ${res.session.id}! Dados de Dealer, SiTef e Fechamento carregados.`);
       } else {
         setErrorMsg(res.error || `Sala "${cleanCode}" não encontrada ou expirada.`);
       }
@@ -245,75 +185,12 @@ export function SharedFechamentoModal({
     }
   };
 
-  // Leave room (Participant Disconnect)
-  const handleDisconnect = async () => {
-    if (!activeSession) return;
-    const userIsGuest = !isHost;
-    
-    setIsLoading(true);
-    try {
-      await leaveSharedSession(activeSession.id, currentUser);
-    } catch {
-      // ignore
-    } finally {
-      clearActiveRoomLocally();
-      onSessionDisconnected(userIsGuest);
-      setActiveTab('join');
-      loadRooms();
-      setIsLoading(false);
-      onClose();
-    }
-  };
-
-  // Delete Room (Host Admin)
-  const handleDeleteRoom = async () => {
-    if (!activeSession) return;
-    if (!confirm(`Tem certeza que deseja EXCLUIR permanentemente a sala "${activeSession.id}"?\n\n• Todos os participantes conectados terão a sala encerrada e os dados compartilhados sairão da tela deles.\n• Os dados permanecerão intactos na sua tela.`)) {
-      return;
-    }
-
-    setIsDeletingRoom(true);
-    setErrorMsg(null);
-    try {
-      const res = await deleteSharedSession(activeSession.id, currentUser);
-      if (res.success) {
-        clearActiveRoomLocally();
-        // Host keeps data locally (isGuestLeaving = false)
-        onSessionDisconnected(false);
-        setActiveTab('join');
-        loadRooms();
-        setSuccessMsg(`Sala ${activeSession.id} excluída com sucesso. Seus dados locais continuam na tela.`);
-      } else {
-        setErrorMsg(res.error || 'Erro ao excluir a sala');
-      }
-    } catch (err: any) {
-      setErrorMsg(err.message || 'Erro ao excluir sala');
-    } finally {
-      setIsDeletingRoom(false);
-    }
-  };
-
-  // Kick participant (Host Admin)
-  const handleKickParticipant = async (targetUser: { id: string; name: string }) => {
-    if (!activeSession) return;
-    if (!confirm(`Remover "${targetUser.name}" da sala compartilhada?\nOs dados serão retirados da tela deste usuário.`)) {
-      return;
-    }
-
-    setKickingUserId(targetUser.id);
-    try {
-      const res = await kickParticipantFromSession(activeSession.id, currentUser, targetUser.id);
-      if (res.success && res.session) {
-        onSessionConnected(res.session);
-        setSuccessMsg(`Usuário "${targetUser.name}" foi removido da sala.`);
-      } else {
-        setErrorMsg(res.error || 'Falha ao remover usuário.');
-      }
-    } catch (err: any) {
-      setErrorMsg(err.message || 'Erro ao remover usuário');
-    } finally {
-      setKickingUserId(null);
-    }
+  // Disconnect from room
+  const handleDisconnect = () => {
+    onSessionDisconnected();
+    saveActiveRoomIdLocally(null);
+    setActiveTab('join');
+    loadRooms();
   };
 
   // Send collaborative message/note
@@ -359,7 +236,7 @@ export function SharedFechamentoModal({
                 {activeSession ? (
                   <span className="flex items-center gap-1.5 bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-black px-2.5 py-0.5 rounded-full">
                     <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-                    SALA ATIVA ({activeSession.id})
+                    CONECTADO ({activeSession.id})
                   </span>
                 ) : (
                   <span className="bg-slate-800 text-slate-400 border border-slate-700 text-[10px] font-bold px-2 py-0.5 rounded-full">
@@ -368,7 +245,7 @@ export function SharedFechamentoModal({
                 )}
               </div>
               <p className="text-xs text-slate-400 mt-0.5">
-                Compartilhe e edite lançamentos do Dealer, SiTef e Fechamento colaborativamente em tempo real.
+                Visualize e concilie o fechamento simultaneamente em computadores diferentes.
               </p>
             </div>
           </div>
@@ -425,26 +302,10 @@ export function SharedFechamentoModal({
           )}
         </div>
 
-        {/* Success Alert */}
-        {successMsg && (
-          <div className="mx-5 mt-4 p-3 bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 rounded-xl text-xs flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-              <span>{successMsg}</span>
-            </div>
-            <button onClick={() => setSuccessMsg(null)} className="text-emerald-400 hover:text-white">
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-        )}
-
         {/* Error Alert */}
         {errorMsg && (
           <div className="mx-5 mt-4 p-3 bg-rose-500/15 border border-rose-500/30 text-rose-300 rounded-xl text-xs flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
-              <span>{errorMsg}</span>
-            </div>
+            <span>{errorMsg}</span>
             <button onClick={() => setErrorMsg(null)} className="text-rose-400 hover:text-white">
               <X className="w-4 h-4" />
             </button>
@@ -504,22 +365,12 @@ export function SharedFechamentoModal({
                     </button>
                   </div>
 
-                  {/* Scope Badges */}
-                  <div className="flex flex-wrap items-center gap-2 pt-1 text-[11px]">
-                    <span className="text-slate-400 font-medium">Dados Sincronizados Online:</span>
-                    <span className="bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 px-2 py-0.5 rounded-md font-bold">
-                      Aba Dealer ({activeSession.dealerState?.rawData?.length || 0} lançamentos)
-                    </span>
-                    <span className="bg-blue-500/10 text-blue-300 border border-blue-500/20 px-2 py-0.5 rounded-md font-bold">
-                      Aba SiTef ({activeSession.sitefState?.rawData?.length || 0} lançamentos)
-                    </span>
-                    <span className="bg-amber-500/10 text-amber-300 border border-amber-500/20 px-2 py-0.5 rounded-md font-bold">
-                      Fechamento ({activeSession.items?.length || 0} itens)
-                    </span>
-                  </div>
-
                   {/* Summary Indicators */}
                   <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-750/70 text-center">
+                    <div className="bg-slate-900/50 p-2 rounded-xl">
+                      <span className="text-[10px] text-slate-400">Lançamentos</span>
+                      <p className="text-xs font-bold text-white">{activeSession.items.length}</p>
+                    </div>
                     <div className="bg-slate-900/50 p-2 rounded-xl">
                       <span className="text-[10px] text-slate-400">Total Dealer</span>
                       <p className="text-xs font-bold text-emerald-400">{formatBRL(activeSession.summary.totalDealer)}</p>
@@ -528,16 +379,10 @@ export function SharedFechamentoModal({
                       <span className="text-[10px] text-slate-400">Total SiTef</span>
                       <p className="text-xs font-bold text-blue-400">{formatBRL(activeSession.summary.totalSitef)}</p>
                     </div>
-                    <div className="bg-slate-900/50 p-2 rounded-xl">
-                      <span className="text-[10px] text-slate-400">Diferença Total</span>
-                      <p className={`text-xs font-bold ${activeSession.summary.diferencaTotal !== 0 ? 'text-amber-400' : 'text-emerald-400'}`}>
-                        {formatBRL(activeSession.summary.diferencaTotal)}
-                      </p>
-                    </div>
                   </div>
                 </div>
 
-                {/* Connected Participants List with Admin Controls */}
+                {/* Connected Participants List */}
                 <div className="bg-slate-800/50 border border-slate-750 p-4 rounded-2xl space-y-3">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
@@ -547,18 +392,13 @@ export function SharedFechamentoModal({
                       </span>
                     </div>
                     <span className="text-[10px] text-emerald-400 font-bold bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
-                      Edição Colaborativa Online
+                      Sincronização Ativa
                     </span>
                   </div>
 
                   <div className="space-y-2">
                     {activeSession.activeParticipants?.map((part) => {
                       const isMe = part.id === currentUser.id || part.email === currentUser.email;
-                      const isParticipantHost =
-                        part.id === activeSession.createdBy?.id ||
-                        part.email === activeSession.createdBy?.email ||
-                        part.isHost;
-
                       return (
                         <div
                           key={part.id}
@@ -576,9 +416,9 @@ export function SharedFechamentoModal({
                                     VOCÊ
                                   </span>
                                 )}
-                                {isParticipantHost && (
+                                {part.isHost && (
                                   <span className="bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[9px] font-bold px-1.5 py-0.2 rounded-sm">
-                                    ADMIN / ANFITRIÃO
+                                    ANFITRIÃO
                                   </span>
                                 )}
                               </div>
@@ -586,28 +426,9 @@ export function SharedFechamentoModal({
                             </div>
                           </div>
 
-                          <div className="flex items-center gap-2">
-                            <div className="flex items-center gap-1.5">
-                              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                              <span className="text-[10px] text-emerald-300 font-bold">Online</span>
-                            </div>
-
-                            {/* Admin Kick Participant Button */}
-                            {isHost && !isParticipantHost && !isMe && (
-                              <button
-                                onClick={() => handleKickParticipant(part)}
-                                disabled={kickingUserId === part.id}
-                                className="px-2 py-1 bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 rounded-lg text-[10px] font-bold flex items-center gap-1 transition-all cursor-pointer"
-                                title="Remover usuário da sala"
-                              >
-                                {kickingUserId === part.id ? (
-                                  <RefreshCw className="w-3 h-3 animate-spin" />
-                                ) : (
-                                  <UserX className="w-3 h-3 text-rose-400" />
-                                )}
-                                <span>Remover</span>
-                              </button>
-                            )}
+                          <div className="flex items-center gap-1.5">
+                            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                            <span className="text-[10px] text-emerald-300 font-bold">Online</span>
                           </div>
                         </div>
                       );
@@ -615,8 +436,8 @@ export function SharedFechamentoModal({
                   </div>
                 </div>
 
-                {/* Bottom Actions: Sync, Leave, and Admin Delete */}
-                <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-800">
+                {/* Bottom Actions */}
+                <div className="flex items-center justify-between pt-2">
                   <button
                     onClick={onManualSync}
                     className="px-3.5 py-2 bg-slate-800 hover:bg-slate-750 text-slate-200 font-bold rounded-xl text-xs border border-slate-700 transition-all flex items-center gap-1.5 cursor-pointer"
@@ -625,30 +446,13 @@ export function SharedFechamentoModal({
                     <span>Sincronizar Agora</span>
                   </button>
 
-                  <div className="flex items-center gap-2">
-                    {/* Admin Delete Room Button */}
-                    {isHost && (
-                      <button
-                        onClick={handleDeleteRoom}
-                        disabled={isDeletingRoom}
-                        className="px-3.5 py-2 bg-rose-600 hover:bg-rose-700 text-white font-black rounded-xl text-xs transition-all flex items-center gap-1.5 cursor-pointer shadow-xs"
-                        title="Excluir a sala em nuvem para todos os convidados"
-                      >
-                        {isDeletingRoom ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
-                        <span>Excluir Sala</span>
-                      </button>
-                    )}
-
-                    {/* Disconnect / Leave Room Button */}
-                    <button
-                      onClick={handleDisconnect}
-                      disabled={isLoading}
-                      className="px-3.5 py-2 bg-slate-800 hover:bg-rose-500/20 text-rose-300 hover:text-rose-200 font-bold rounded-xl text-xs border border-slate-700 hover:border-rose-500/40 transition-all flex items-center gap-1.5 cursor-pointer"
-                    >
-                      <LogOut className="w-3.5 h-3.5" />
-                      <span>Sair da Sala</span>
-                    </button>
-                  </div>
+                  <button
+                    onClick={handleDisconnect}
+                    className="px-3.5 py-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 font-bold rounded-xl text-xs border border-rose-500/30 transition-all flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <LogOut className="w-3.5 h-3.5" />
+                    <span>Desconectar da Sala</span>
+                  </button>
                 </div>
               </div>
             ) : (
@@ -660,21 +464,13 @@ export function SharedFechamentoModal({
                 <div className="max-w-md mx-auto">
                   <h4 className="font-extrabold text-base text-white">Iniciar Nova Sala de Fechamento</h4>
                   <p className="text-xs text-slate-400 mt-1">
-                    Crie um link e código exclusivo para que outros operadores editem e conciliem simultaneamente os lançamentos do Dealer, SiTef e Fechamento em tempo real.
+                    Crie um link e código exclusivo para que outros operadores ou gestores acompanhem esta conciliação ao mesmo tempo em outros computadores.
                   </p>
                 </div>
 
                 <div className="bg-slate-800/50 border border-slate-750 p-4 rounded-2xl max-w-md mx-auto text-left space-y-2">
                   <div className="flex items-center justify-between text-xs">
-                    <span className="text-slate-400">Lançamentos Dealer:</span>
-                    <span className="font-bold text-white">{dealerState?.rawData?.length || 0}</span>
-                  </div>
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-slate-400">Lançamentos SiTef:</span>
-                    <span className="font-bold text-white">{sitefState?.rawData?.length || 0}</span>
-                  </div>
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-slate-400">Itens no Fechamento:</span>
+                    <span className="text-slate-400">Total de Lançamentos:</span>
                     <span className="font-bold text-white">{fechamentoItems.length}</span>
                   </div>
                   <div className="flex items-center justify-between text-xs">
@@ -683,11 +479,17 @@ export function SharedFechamentoModal({
                       {summary.countDivergencias}
                     </span>
                   </div>
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-slate-400">Empresas Conciliadas:</span>
+                    <span className="font-bold text-emerald-400">
+                      {Object.values(conciliatedEmpresas).filter(Boolean).length}
+                    </span>
+                  </div>
                 </div>
 
                 <button
                   onClick={handleCreateRoom}
-                  disabled={isLoading}
+                  disabled={isLoading || fechamentoItems.length === 0}
                   className="px-6 py-3 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-450 hover:to-teal-450 disabled:opacity-50 text-slate-950 font-black rounded-2xl text-sm transition-all shadow-lg flex items-center gap-2 mx-auto cursor-pointer"
                 >
                   {isLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
@@ -747,7 +549,7 @@ export function SharedFechamentoModal({
                   <WifiOff className="w-6 h-6 text-slate-500 mx-auto" />
                   <p className="text-xs font-bold text-slate-400">Nenhuma outra sala ativa no momento.</p>
                   <p className="text-[11px] text-slate-500 max-w-sm mx-auto">
-                    Peça ao outro usuário para criar uma sala ou envie o código gerado para que ele conecte.
+                    Peça ao outro usuário para clicar em &quot;Compartilhar Fechamento&quot; para que a sala apareça aqui automaticamente.
                   </p>
                 </div>
               ) : (
@@ -771,7 +573,7 @@ export function SharedFechamentoModal({
                             <div className="flex items-center gap-2">
                               <span className="font-bold text-xs text-white">{room.title}</span>
                               <span className="bg-slate-700 text-slate-300 text-[10px] font-bold px-2 py-0.2 rounded-full">
-                                {room.items?.length || 0} lançamentos
+                                {room.items.length} lançamentos
                               </span>
                             </div>
                             <p className="text-[11px] text-slate-400 mt-0.5">
