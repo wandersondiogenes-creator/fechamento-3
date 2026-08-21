@@ -1017,6 +1017,34 @@ export default function Home() {
     setDeletedFechamentoIds(new Set());
   }, []);
 
+  const handleClearAllData = useCallback(() => {
+    setDealerState(buildEmptySpreadsheetState('DEALER.xlsx'));
+    setSitefState(buildEmptySpreadsheetState('SITEF.xlsx'));
+    setPendenteCdcState(buildEmptySpreadsheetState('PENDENTE_DE_CDC.xlsx'));
+    setManualFechamentoItems([]);
+    setDeletedFechamentoIds(new Set());
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.removeItem('wanfinance_conciliated_empresas_v1');
+        localStorage.removeItem('wanfinance_fechamento_state_v1');
+      } catch {
+        // ignore
+      }
+    }
+  }, []);
+
+  const handleClearDealerFile = useCallback(() => {
+    setDealerState(buildEmptySpreadsheetState('DEALER.xlsx'));
+  }, []);
+
+  const handleClearSitefFile = useCallback(() => {
+    setSitefState(buildEmptySpreadsheetState('SITEF.xlsx'));
+  }, []);
+
+  const handleClearPendenteCdcFile = useCallback(() => {
+    setPendenteCdcState(buildEmptySpreadsheetState('PENDENTE_DE_CDC.xlsx'));
+  }, []);
+
   const handleRestoreFechamentoRecord = useCallback((record: FechamentoCaixaRecord) => {
     // Clear current raw spreadsheet state so restored items display cleanly
     setDealerState(buildEmptySpreadsheetState('DEALER.xlsx'));
@@ -1095,6 +1123,10 @@ export default function Home() {
           onLogout={handleLogout}
           onOpenDiagnostics={() => setIsDiagnosticsModalOpen(true)}
           autosaveStatus={autosaveStatus}
+          onClearAllData={handleClearAllData}
+          onClearDealerFile={handleClearDealerFile}
+          onClearSitefFile={handleClearSitefFile}
+          onClearPendenteCdcFile={handleClearPendenteCdcFile}
           onExport={(format, includeHidden) =>
             exportProcessedData(spreadsheetState, format, includeHidden)
           }

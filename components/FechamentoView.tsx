@@ -1571,7 +1571,7 @@ export function FechamentoView({
                                   )}
                                 </button>
                                 <FolderTree className="w-4 h-4 text-amber-600" />
-                                <span className="font-bold text-slate-900 text-xs">Departamento: {depName}</span>
+                                <span className="font-bold text-slate-900 text-xs">{depName}</span>
                                 <span className="text-[10px] bg-white text-slate-700 border border-slate-300 px-2 py-0.2 rounded-full font-bold shadow-2xs">
                                   {depData.items.length} item(ns)
                                 </span>

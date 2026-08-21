@@ -25,6 +25,10 @@ import {
   LogOut,
   Mail,
   UserCheck,
+  Trash2,
+  RotateCcw,
+  AlertTriangle,
+  X,
 } from 'lucide-react';
 
 interface ExcelHeaderProps {
@@ -40,6 +44,10 @@ interface ExcelHeaderProps {
   onOpenUserModal?: () => void;
   onExport: (format: 'xlsx' | 'csv' | 'json', includeHidden: boolean) => void;
   onReset: () => void;
+  onClearAllData?: () => void;
+  onClearDealerFile?: () => void;
+  onClearSitefFile?: () => void;
+  onClearPendenteCdcFile?: () => void;
   onLogout?: () => void;
   currentUser?: UserProfile;
   onOpenDiagnostics?: () => void;
@@ -63,6 +71,10 @@ export function ExcelHeader({
   onOpenUserModal,
   onExport,
   onReset,
+  onClearAllData,
+  onClearDealerFile,
+  onClearSitefFile,
+  onClearPendenteCdcFile,
   onLogout,
   currentUser: initialUser,
   onOpenDiagnostics,
@@ -70,9 +82,16 @@ export function ExcelHeader({
 }: ExcelHeaderProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [showExportMenu, setShowExportMenu] = useState(false);
+  const [showClearMenu, setShowClearMenu] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [includeHiddenExport, setIncludeHiddenExport] = useState(false);
   const [currentUser, setCurrentUser] = useState<UserProfile>(() => initialUser || getCurrentUser());
+  const [confirmModal, setConfirmModal] = useState<{
+    type: 'all' | 'dealer' | 'sitef' | 'pendente_cdc';
+    title: string;
+    description: string;
+    badge: string;
+  } | null>(null);
 
   useEffect(() => {
     if (initialUser) {
@@ -92,6 +111,24 @@ export function ExcelHeader({
     if (e.target.files && e.target.files[0]) {
       onImportFile(e.target.files[0]);
     }
+  };
+
+  const executeClearAction = () => {
+    if (!confirmModal) return;
+    if (confirmModal.type === 'all') {
+      if (onClearAllData) onClearAllData();
+      else onReset();
+    } else if (confirmModal.type === 'dealer') {
+      if (onClearDealerFile) onClearDealerFile();
+      else if (activeTab === 'dealer') onReset();
+    } else if (confirmModal.type === 'sitef') {
+      if (onClearSitefFile) onClearSitefFile();
+      else if (activeTab === 'sitef') onReset();
+    } else if (confirmModal.type === 'pendente_cdc') {
+      if (onClearPendenteCdcFile) onClearPendenteCdcFile();
+      else if (activeTab === 'pendente_cdc') onReset();
+    }
+    setConfirmModal(null);
   };
 
   return (
@@ -224,6 +261,150 @@ export function ExcelHeader({
                       <span>Incluir colunas ocultas</span>
                     </label>
                   </div>
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Clear / Reset Data Dropdown Menu */}
+          <div className="relative">
+            <button
+              onClick={() => setShowClearMenu(!showClearMenu)}
+              id="apple-btn-clear-menu"
+              className="px-3.5 py-1.5 bg-rose-50/90 hover:bg-rose-100/90 active:scale-97 text-rose-700 font-semibold rounded-xl border border-rose-200/80 shadow-2xs transition-all flex items-center gap-1.5 cursor-pointer text-xs"
+              title="Opções de limpeza e exclusão de arquivos importados"
+            >
+              <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+              <span>Limpar Dados</span>
+              <ChevronDown className="w-3 h-3 opacity-80" />
+            </button>
+
+            {showClearMenu && (
+              <>
+                <div
+                  className="fixed inset-0 z-20"
+                  onClick={() => setShowClearMenu(false)}
+                />
+                <div className="absolute right-0 mt-2 w-72 bg-white/95 border border-slate-200 rounded-2xl shadow-xl z-30 p-2 text-slate-800 space-y-1 backdrop-blur-2xl animate-in fade-in-50 zoom-in-95 duration-150">
+                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2.5 py-1">
+                    Gerenciamento & Limpeza
+                  </div>
+
+                  {/* Option 1: Limpar Todos os Dados (Reiniciar do Início) */}
+                  <button
+                    onClick={() => {
+                      setShowClearMenu(false);
+                      setConfirmModal({
+                        type: 'all',
+                        title: 'Limpar Todos os Dados e Reiniciar?',
+                        description:
+                          'Esta ação apagará todas as planilhas carregadas (Dealer, Sitef, Pendente CDC) e todos os lançamentos do fechamento para você recomeçar a importação do zero.',
+                        badge: 'Reinício Geral',
+                      });
+                    }}
+                    className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl hover:bg-rose-50 text-rose-700 font-semibold transition-colors text-left group"
+                  >
+                    <div className="p-2 bg-rose-100/80 text-rose-600 rounded-lg border border-rose-200 group-hover:bg-rose-200/70 transition-colors">
+                      <RotateCcw className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div className="text-xs font-bold text-rose-800">Limpar Tudo do Início</div>
+                      <div className="text-[10px] text-rose-600 font-normal">
+                        Apagar Dealer, Sitef e Fechamento
+                      </div>
+                    </div>
+                  </button>
+
+                  <div className="border-t border-slate-100 my-1" />
+
+                  {/* Option 2: Excluir Arquivo Dealer */}
+                  <button
+                    onClick={() => {
+                      setShowClearMenu(false);
+                      setConfirmModal({
+                        type: 'dealer',
+                        title: 'Excluir Arquivo da Dealer?',
+                        description: `Deseja remover a planilha importada da Dealer e seus ${tabCounts.dealer} registros?`,
+                        badge: 'Dealer',
+                      });
+                    }}
+                    className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-slate-100 text-slate-700 transition-colors text-left"
+                  >
+                    <div className="p-1.5 bg-emerald-50 text-emerald-600 rounded-lg border border-emerald-100">
+                      <FileSpreadsheet className="w-4 h-4" />
+                    </div>
+                    <div className="flex-1">
+                      <div className="text-xs font-semibold flex items-center justify-between">
+                        <span>Excluir Arquivo Dealer</span>
+                        <span className="text-[10px] bg-slate-100 px-1.5 py-0.2 rounded font-mono text-slate-600">
+                          {tabCounts.dealer} lin
+                        </span>
+                      </div>
+                      <div className="text-[10px] text-slate-500 font-normal">
+                        Zerar dados importados da Dealer
+                      </div>
+                    </div>
+                  </button>
+
+                  {/* Option 3: Excluir Arquivo Sitef */}
+                  <button
+                    onClick={() => {
+                      setShowClearMenu(false);
+                      setConfirmModal({
+                        type: 'sitef',
+                        title: 'Excluir Arquivo do Sitef?',
+                        description: `Deseja remover o extrato TEF importado do Sitef e seus ${tabCounts.sitef} registros?`,
+                        badge: 'Sitef',
+                      });
+                    }}
+                    className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-slate-100 text-slate-700 transition-colors text-left"
+                  >
+                    <div className="p-1.5 bg-blue-50 text-blue-600 rounded-lg border border-blue-100">
+                      <CreditCard className="w-4 h-4" />
+                    </div>
+                    <div className="flex-1">
+                      <div className="text-xs font-semibold flex items-center justify-between">
+                        <span>Excluir Arquivo Sitef</span>
+                        <span className="text-[10px] bg-slate-100 px-1.5 py-0.2 rounded font-mono text-slate-600">
+                          {tabCounts.sitef} lin
+                        </span>
+                      </div>
+                      <div className="text-[10px] text-slate-500 font-normal">
+                        Zerar dados importados do Sitef
+                      </div>
+                    </div>
+                  </button>
+
+                  {/* Option 4: Excluir Pendente CDC (se houver) */}
+                  {tabCounts.pendente_cdc > 0 && (
+                    <button
+                      onClick={() => {
+                        setShowClearMenu(false);
+                        setConfirmModal({
+                          type: 'pendente_cdc',
+                          title: 'Excluir Arquivo Pendente de CDC?',
+                          description: `Deseja remover os ${tabCounts.pendente_cdc} registros da planilha de CDC?`,
+                          badge: 'Pendente CDC',
+                        });
+                      }}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-slate-100 text-slate-700 transition-colors text-left"
+                    >
+                      <div className="p-1.5 bg-amber-50 text-amber-600 rounded-lg border border-amber-100">
+                        <Clock className="w-4 h-4" />
+                      </div>
+                      <div className="flex-1">
+                        <div className="text-xs font-semibold flex items-center justify-between">
+                          <span>Excluir Pendente CDC</span>
+                          <span className="text-[10px] bg-slate-100 px-1.5 py-0.2 rounded font-mono text-slate-600">
+                            {tabCounts.pendente_cdc} lin
+                          </span>
+                        </div>
+                        <div className="text-[10px] text-slate-500 font-normal">
+                          Zerar lançamentos de CDC
+                        </div>
+                      </div>
+                    </button>
+                  )}
                 </div>
               </>
             )}
@@ -564,6 +745,65 @@ export function ExcelHeader({
           <span>Supabase Live</span>
         </div>
       </div>
+
+      {/* Confirmation Modal for Clearing / Deleting Data */}
+      {confirmModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm animate-in fade-in duration-200">
+          <div
+            className="w-full max-w-md bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden text-slate-800 animate-in zoom-in-95 duration-200"
+            role="dialog"
+            aria-modal="true"
+          >
+            <div className="p-6">
+              <div className="flex items-start justify-between gap-3 mb-4">
+                <div className="w-12 h-12 rounded-2xl bg-rose-100 border border-rose-200 text-rose-600 flex items-center justify-center shadow-xs">
+                  {confirmModal.type === 'all' ? (
+                    <RotateCcw className="w-6 h-6" />
+                  ) : (
+                    <Trash2 className="w-6 h-6" />
+                  )}
+                </div>
+                <button
+                  onClick={() => setConfirmModal(null)}
+                  className="p-1.5 text-slate-400 hover:text-slate-600 rounded-full hover:bg-slate-100 transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-rose-100 text-rose-700 mb-2">
+                {confirmModal.badge}
+              </div>
+
+              <h3 className="text-base font-bold text-slate-900 mb-2 leading-snug">
+                {confirmModal.title}
+              </h3>
+
+              <p className="text-xs text-slate-600 leading-relaxed mb-6">
+                {confirmModal.description}
+              </p>
+
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setConfirmModal(null)}
+                  className="flex-1 py-2.5 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl text-xs transition-colors cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={executeClearAction}
+                  className="flex-1 py-2.5 px-4 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl text-xs shadow-xs shadow-rose-600/30 transition-colors cursor-pointer flex items-center justify-center gap-2"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  <span>Confirmar e Limpar</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </header>
   );
 }
