@@ -210,7 +210,7 @@ export function FechamentoView({
         return merged;
       });
     }
-  }, [activeSharedSession?.id, activeSharedSession?.version]);
+  }, [activeSharedSession?.id, activeSharedSession?.version, activeSharedSession?.conciliatedEmpresas]);
 
   // List of unique empresas for dropdown
   const empresaList = useMemo(() => {
