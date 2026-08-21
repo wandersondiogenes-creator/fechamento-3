@@ -165,7 +165,7 @@ export default function Home() {
     );
   }, [dealerState.processedData, dealerState.columns, sitefState.processedData, sitefState.columns]);
 
-  // Combined Fechamento items list (strictly deduplicated to prevent duplicated values)
+  // Combined Fechamento items list (strictly synchronized with DEALER and SITEF spreadsheets)
   const allFechamentoItems = useMemo(() => {
     // 1. If actively connected to a shared session that already contains items, use those authoritative items
     if (activeSharedSession?.items && activeSharedSession.items.length > 0) {
@@ -184,6 +184,14 @@ export default function Home() {
       return Array.from(map.values());
     }
 
+    const hasDealerData = (dealerState.rawData && dealerState.rawData.length > 0) || (dealerState.processedData && dealerState.processedData.length > 0);
+    const hasSitefData = (sitefState.rawData && sitefState.rawData.length > 0) || (sitefState.processedData && sitefState.processedData.length > 0);
+
+    // If both dealer and sitef are empty (and no shared session active), fechamento is 100% clean and empty
+    if (!hasDealerData && !hasSitefData) {
+      return [];
+    }
+
     // 2. Local mode: Deduplicate between auto-computed items from spreadsheets and manual items
     const map = new Map<string, FechamentoItem>();
     autoFechamentoItems.forEach((item) => {
@@ -199,7 +207,16 @@ export default function Home() {
     });
 
     return Array.from(map.values());
-  }, [activeSharedSession?.items, autoFechamentoItems, manualFechamentoItems, deletedFechamentoIds]);
+  }, [
+    activeSharedSession?.items,
+    autoFechamentoItems,
+    manualFechamentoItems,
+    deletedFechamentoIds,
+    dealerState.rawData,
+    dealerState.processedData,
+    sitefState.rawData,
+    sitefState.processedData,
+  ]);
 
   const spreadsheetState =
     activeTab === 'dealer'
@@ -571,6 +588,10 @@ export default function Home() {
       const { headers, rawData, fileName } = await parseFileToSpreadsheet(file);
 
       const report = cleanAndOrganizeRawData(headers, rawData);
+
+      // Reset manual overrides so Fechamento calculates fresh from the newly imported data
+      setManualFechamentoItems([]);
+      setDeletedFechamentoIds(new Set());
 
       if (activeTab === 'sitef') {
         const normalizedRaw = normalizeSitefRawData(report.cleanedRawData, report.cleanedHeaders);
@@ -1023,10 +1044,17 @@ export default function Home() {
     setPendenteCdcState(buildEmptySpreadsheetState('PENDENTE_DE_CDC.xlsx'));
     setManualFechamentoItems([]);
     setDeletedFechamentoIds(new Set());
+    setActiveSharedSession(null);
+    saveActiveRoomIdLocally('');
+    clearLocalSession();
+    setRecoveredBanner(null);
     if (typeof window !== 'undefined') {
       try {
         localStorage.removeItem('wanfinance_conciliated_empresas_v1');
         localStorage.removeItem('wanfinance_fechamento_state_v1');
+        localStorage.removeItem('wanfinance_shared_sessions_v1');
+        localStorage.removeItem('wanfinance_active_shared_room_v1');
+        localStorage.removeItem('wanfinance_autosave_session_v2');
       } catch {
         // ignore
       }
@@ -1035,10 +1063,24 @@ export default function Home() {
 
   const handleClearDealerFile = useCallback(() => {
     setDealerState(buildEmptySpreadsheetState('DEALER.xlsx'));
+    setManualFechamentoItems([]);
+    setDeletedFechamentoIds(new Set());
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.removeItem('wanfinance_conciliated_empresas_v1');
+      } catch {}
+    }
   }, []);
 
   const handleClearSitefFile = useCallback(() => {
     setSitefState(buildEmptySpreadsheetState('SITEF.xlsx'));
+    setManualFechamentoItems([]);
+    setDeletedFechamentoIds(new Set());
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.removeItem('wanfinance_conciliated_empresas_v1');
+      } catch {}
+    }
   }, []);
 
   const handleClearPendenteCdcFile = useCallback(() => {
@@ -1130,17 +1172,19 @@ export default function Home() {
           onExport={(format, includeHidden) =>
             exportProcessedData(spreadsheetState, format, includeHidden)
           }
-          onReset={() =>
-            setSpreadsheetState(
-              buildEmptySpreadsheetState(
-                activeTab === 'sitef'
-                  ? 'SITEF.xlsx'
-                  : activeTab === 'pendente_cdc'
-                  ? 'PENDENTE_DE_CDC.xlsx'
-                  : 'DEALER.xlsx'
-              )
-            )
-          }
+          onReset={() => {
+            if (activeTab === 'dealer') {
+              handleClearDealerFile();
+            } else if (activeTab === 'sitef') {
+              handleClearSitefFile();
+            } else if (activeTab === 'pendente_cdc') {
+              handleClearPendenteCdcFile();
+            } else if (activeTab === 'fechamento') {
+              handleClearAllData();
+            } else {
+              setSpreadsheetState(buildEmptySpreadsheetState('DEALER.xlsx'));
+            }
+          }}
         />
 
         {/* Autosave Recovery Notification Banner */}
@@ -1227,7 +1271,8 @@ export default function Home() {
                 }}
                 onAddFechamentoItem={handleAddFechamentoItem}
                 onDeleteFechamentoItems={handleDeleteFechamentoItems}
-                onRecalculateFechamento={handleRecalculateFechamento}
+                onRecalculateAuto={handleRecalculateFechamento}
+                onTriggerFileImport={triggerFileImport}
                 onFechamentoConcluido={handleFechamentoConcluido}
                 onRestoreFechamentoRecord={handleRestoreFechamentoRecord}
                 activeSharedSession={activeSharedSession}

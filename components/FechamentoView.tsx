@@ -196,6 +196,20 @@ export function FechamentoView({
     conciliatedEmpresasRef.current = conciliatedEmpresas;
   }, [conciliatedEmpresas]);
 
+  // When fechamentoItems is cleared / empty, reset conciliated status and selections
+  useEffect(() => {
+    if (fechamentoItems.length === 0) {
+      setConciliatedEmpresas({});
+      conciliatedEmpresasRef.current = {};
+      setSelectedIds([]);
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.removeItem('wanfinance_conciliated_empresas_v1');
+        } catch {}
+      }
+    }
+  }, [fechamentoItems.length]);
+
   // Keep local conciliatedEmpresas in sync when external activeSharedSession changes
   useEffect(() => {
     if (activeSharedSession?.conciliatedEmpresas) {
