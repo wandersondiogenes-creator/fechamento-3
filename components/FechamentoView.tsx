@@ -372,41 +372,14 @@ export function FechamentoView({
     [activeSharedSession, currentUser, summary, setSharedSession]
   );
 
-  // Modal State: Desconciliar Empresa Password Confirmation (Default: 123)
-  const [unreconcileModal, setUnreconcileModal] = useState<{
-    isOpen: boolean;
-    empresaName: string;
-    passwordInput: string;
-    error: string | null;
-    showPassword: boolean;
-  }>({
-    isOpen: false,
-    empresaName: '',
-    passwordInput: '',
-    error: null,
-    showPassword: false,
-  });
-
+  // Direct toggle conciliação da empresa no sistema (sem exigir senha)
   const toggleEmpresaConciliada = async (empName: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
-    const isCurrentlyConciliated = !!conciliatedEmpresas[empName];
+    const isCurrentlyConciliated = !conciliatedEmpresas[empName];
 
-    // If currently conciliated, user is attempting to unreconcile: request password "123"
-    if (isCurrentlyConciliated) {
-      setUnreconcileModal({
-        isOpen: true,
-        empresaName: empName,
-        passwordInput: '',
-        error: null,
-        showPassword: false,
-      });
-      return;
-    }
-
-    // Otherwise, mark as conciliated directly
     const next = {
       ...conciliatedEmpresasRef.current,
-      [empName]: true,
+      [empName]: !isCurrentlyConciliated,
     };
     setConciliatedEmpresas(next);
     conciliatedEmpresasRef.current = next;
@@ -424,56 +397,112 @@ export function FechamentoView({
     }
   };
 
-  const handleConfirmUnreconcile = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    if (!unreconcileModal.empresaName) return;
-
-    if (unreconcileModal.passwordInput.trim() !== '123') {
-      setUnreconcileModal((prev) => ({
-        ...prev,
-        error: 'Senha incorreta! A senha padrão para desconciliar é 123.',
-      }));
-      return;
-    }
-
-    const empName = unreconcileModal.empresaName;
-    const next = {
-      ...conciliatedEmpresasRef.current,
-      [empName]: false,
-    };
+  // Conciliar todas as empresas de uma vez só
+  const handleConciliateAll = async () => {
+    const allEmpresas = Object.keys(groupedByEmpresa);
+    if (allEmpresas.length === 0) return;
+    const next: Record<string, boolean> = { ...conciliatedEmpresasRef.current };
+    allEmpresas.forEach((emp) => {
+      next[emp] = true;
+    });
     setConciliatedEmpresas(next);
     conciliatedEmpresasRef.current = next;
 
     if (typeof window !== 'undefined') {
       try {
         localStorage.setItem('wanfinance_conciliated_empresas_v1', JSON.stringify(next));
-      } catch {
-        // Ignore storage quota error
-      }
+      } catch {}
     }
-
-    setUnreconcileModal({
-      isOpen: false,
-      empresaName: '',
-      passwordInput: '',
-      error: null,
-      showPassword: false,
-    });
 
     if (activeSharedSession?.id) {
       await pushUpdateToSharedRoom(fechamentoItems, next);
     }
   };
 
-  const handleCloseUnreconcileModal = () => {
-    setUnreconcileModal({
-      isOpen: false,
-      empresaName: '',
-      passwordInput: '',
-      error: null,
-      showPassword: false,
+  // Desconciliar todas as empresas de uma vez só (sem senha)
+  const handleUnconciliateAll = async () => {
+    const allEmpresas = Object.keys(groupedByEmpresa);
+    if (allEmpresas.length === 0) return;
+    const next: Record<string, boolean> = { ...conciliatedEmpresasRef.current };
+    allEmpresas.forEach((emp) => {
+      next[emp] = false;
     });
+    setConciliatedEmpresas(next);
+    conciliatedEmpresasRef.current = next;
+
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('wanfinance_conciliated_empresas_v1', JSON.stringify(next));
+      } catch {}
+    }
+
+    if (activeSharedSession?.id) {
+      await pushUpdateToSharedRoom(fechamentoItems, next);
+    }
   };
+
+  // Conciliar apenas as empresas correspondentes aos itens selecionados
+  const handleConciliateSelected = async () => {
+    if (selectedIds.length === 0) return;
+    const selectedItems = filteredItems.filter((i) => selectedIds.includes(i.id));
+    const selectedEmpresas = Array.from(new Set(selectedItems.map((i) => i.empresa)));
+    if (selectedEmpresas.length === 0) return;
+
+    const next: Record<string, boolean> = { ...conciliatedEmpresasRef.current };
+    selectedEmpresas.forEach((emp) => {
+      next[emp] = true;
+    });
+    setConciliatedEmpresas(next);
+    conciliatedEmpresasRef.current = next;
+
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('wanfinance_conciliated_empresas_v1', JSON.stringify(next));
+      } catch {}
+    }
+
+    if (activeSharedSession?.id) {
+      await pushUpdateToSharedRoom(fechamentoItems, next);
+    }
+  };
+
+  // Desconciliar as empresas correspondentes aos itens selecionados
+  const handleUnconciliateSelected = async () => {
+    if (selectedIds.length === 0) return;
+    const selectedItems = filteredItems.filter((i) => selectedIds.includes(i.id));
+    const selectedEmpresas = Array.from(new Set(selectedItems.map((i) => i.empresa)));
+    if (selectedEmpresas.length === 0) return;
+
+    const next: Record<string, boolean> = { ...conciliatedEmpresasRef.current };
+    selectedEmpresas.forEach((emp) => {
+      next[emp] = false;
+    });
+    setConciliatedEmpresas(next);
+    conciliatedEmpresasRef.current = next;
+
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('wanfinance_conciliated_empresas_v1', JSON.stringify(next));
+      } catch {}
+    }
+
+    if (activeSharedSession?.id) {
+      await pushUpdateToSharedRoom(fechamentoItems, next);
+    }
+  };
+
+  // Helper properties for selection & bulk conciliation
+  const areAllEmpresasConciliated = useMemo(() => {
+    const empKeys = Object.keys(groupedByEmpresa);
+    if (empKeys.length === 0) return false;
+    return empKeys.every((emp) => !!conciliatedEmpresas[emp]);
+  }, [groupedByEmpresa, conciliatedEmpresas]);
+
+  const selectedEmpresasCount = useMemo(() => {
+    if (selectedIds.length === 0) return 0;
+    const selectedItems = filteredItems.filter((i) => selectedIds.includes(i.id));
+    return new Set(selectedItems.map((i) => i.empresa)).size;
+  }, [selectedIds, filteredItems]);
 
   // Collapse / Expand states
   const [collapsedEmpresas, setCollapsedEmpresas] = useState<Record<string, boolean>>({});
@@ -1433,6 +1462,100 @@ export function FechamentoView({
             )}
           </div>
         </div>
+
+        {/* Bulk Selection & Batch Conciliation Bar */}
+        {filteredItems.length > 0 && (
+          <div className="bg-slate-50 border-t border-slate-200 px-4 py-2.5 flex flex-wrap items-center justify-between gap-3">
+            {/* Left: Master Checkbox & Selection Info */}
+            <div className="flex items-center gap-3 flex-wrap">
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={
+                    filteredItems.length > 0 &&
+                    filteredItems.every((i) => selectedIds.includes(i.id))
+                  }
+                  ref={(el) => {
+                    if (el) {
+                      el.indeterminate =
+                        selectedIds.length > 0 &&
+                        selectedIds.length < filteredItems.length;
+                    }
+                  }}
+                  onChange={handleSelectAll}
+                  className="w-4 h-4 rounded border-slate-300 text-amber-600 focus:ring-amber-500 cursor-pointer"
+                />
+                <span className="font-extrabold text-xs text-slate-800">
+                  Marcar Todos ({filteredItems.length} lançamentos)
+                </span>
+              </label>
+
+              {selectedIds.length > 0 && (
+                <div className="flex items-center gap-2">
+                  <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
+                    {selectedIds.length} selecionado{selectedIds.length > 1 ? 's' : ''} ({selectedEmpresasCount} empresa{selectedEmpresasCount > 1 ? 's' : ''})
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedIds([])}
+                    className="text-[11px] text-slate-500 hover:text-slate-800 underline font-semibold cursor-pointer"
+                  >
+                    Limpar seleção
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Right: Batch Conciliation Actions */}
+            <div className="flex items-center gap-2 flex-wrap">
+              {selectedIds.length > 0 ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={handleConciliateSelected}
+                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs transition-all shadow-2xs flex items-center gap-1.5 cursor-pointer active:scale-95"
+                    title={`Conciliar no sistema as ${selectedEmpresasCount} empresas dos itens selecionados`}
+                  >
+                    <Check className="w-3.5 h-3.5 stroke-[3]" />
+                    <span>Conciliar Selecionados ({selectedEmpresasCount} emp)</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleUnconciliateSelected}
+                    className="px-3 py-1.5 bg-slate-700 hover:bg-slate-800 text-white font-bold rounded-lg text-xs transition-all shadow-2xs flex items-center gap-1.5 cursor-pointer active:scale-95"
+                    title="Desconciliar as empresas dos itens selecionados (sem senha)"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>Desconciliar Selecionados</span>
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={handleConciliateAll}
+                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs transition-all shadow-2xs flex items-center gap-1.5 cursor-pointer active:scale-95"
+                    title="Marcar todas as empresas como conciliadas no sistema de uma vez só"
+                  >
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>Conciliar Todas ({Object.keys(groupedByEmpresa).length} Empresas)</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleUnconciliateAll}
+                    className="px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 font-bold rounded-lg text-xs transition-all flex items-center gap-1.5 cursor-pointer active:scale-95"
+                    title="Desconciliar todas as empresas de uma vez (sem senha)"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5 text-slate-500" />
+                    <span>Desconciliar Todas</span>
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Main Table Content */}
@@ -1480,6 +1603,10 @@ export function FechamentoView({
                   {/* Level 1: Empresa Accordion Header */}
                   {(() => {
                     const isEmpresaConciliada = !!conciliatedEmpresas[empName];
+                    const empItems = Object.values(empData.departamentos).flatMap((d) => d.items);
+                    const empIds = empItems.map((i) => i.id);
+                    const allEmpSelected = empIds.length > 0 && empIds.every((id) => selectedIds.includes(id));
+                    const someEmpSelected = empIds.some((id) => selectedIds.includes(id)) && !allEmpSelected;
 
                     return (
                       <div
@@ -1490,8 +1617,28 @@ export function FechamentoView({
                             : 'bg-slate-100/90 hover:bg-slate-200/80 text-slate-900 border-slate-200/90 shadow-2xs'
                         }`}
                       >
-                        {/* Left: Identifier, Icon & Empresa Name (Compact, Refined Apple Typography) */}
+                        {/* Left: Checkbox, Identifier, Icon & Empresa Name */}
                         <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                          {/* Empresa Select Checkbox */}
+                          <div onClick={(e) => e.stopPropagation()} className="flex items-center">
+                            <input
+                              type="checkbox"
+                              checked={allEmpSelected}
+                              ref={(el) => {
+                                if (el) el.indeterminate = someEmpSelected;
+                              }}
+                              onChange={() => {
+                                if (allEmpSelected) {
+                                  setSelectedIds((prev) => prev.filter((id) => !empIds.includes(id)));
+                                } else {
+                                  setSelectedIds((prev) => Array.from(new Set([...prev, ...empIds])));
+                                }
+                              }}
+                              className="w-4 h-4 rounded border-slate-300 text-amber-600 focus:ring-amber-500 cursor-pointer"
+                              title={allEmpSelected ? 'Desmarcar todos os itens desta empresa' : 'Marcar todos os itens desta empresa'}
+                            />
+                          </div>
+
                           <button
                             type="button"
                             className={`w-7 h-7 rounded-lg border flex items-center justify-center flex-shrink-0 shadow-2xs transition-colors ${
@@ -1548,7 +1695,7 @@ export function FechamentoView({
                             onClick={(e) => toggleEmpresaConciliada(empName, e)}
                             title={
                               isEmpresaConciliada
-                                ? 'Empresa conciliada no sistema. Clique para desconciliar (solicita a senha padrão 123).'
+                                ? 'Empresa conciliada no sistema. Clique para desconciliar.'
                                 : 'Clique para marcar esta empresa como conciliada no sistema.'
                             }
                             className={`w-44 h-8 px-3 rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 transition-all duration-200 cursor-pointer whitespace-nowrap ${
@@ -1917,8 +2064,21 @@ export function FechamentoView({
                         filteredItems.length > 0 &&
                         filteredItems.every((i) => selectedIds.includes(i.id))
                       }
+                      ref={(el) => {
+                        if (el) {
+                          el.indeterminate =
+                            selectedIds.length > 0 &&
+                            selectedIds.length < filteredItems.length;
+                        }
+                      }}
                       onChange={handleSelectAll}
-                      className="rounded border-slate-300 text-amber-600 focus:ring-amber-500"
+                      className="rounded border-slate-300 text-amber-600 focus:ring-amber-500 cursor-pointer"
+                      title={
+                        filteredItems.length > 0 &&
+                        filteredItems.every((i) => selectedIds.includes(i.id))
+                          ? 'Desmarcar todos os lançamentos'
+                          : 'Marcar todos os lançamentos'
+                      }
                     />
                   </th>
                   <th className="p-3 min-w-[160px] text-center">Empresa</th>
@@ -2393,133 +2553,6 @@ export function FechamentoView({
         }}
         onManualSync={() => performLiveSync(true)}
       />
-
-      {/* Modal: Confirmação com Senha para Desconciliar Empresa (Senha Padrão: 123) */}
-      {unreconcileModal.isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-md animate-fade-in">
-          <div
-            className="bg-slate-900 border border-slate-750 text-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden animate-scale-up"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Header */}
-            <div className="p-5 bg-gradient-to-r from-slate-900 via-amber-950/40 to-slate-900 border-b border-slate-750/80 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="p-2.5 bg-amber-500/20 text-amber-400 rounded-2xl border border-amber-500/30">
-                  <ShieldAlert className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="font-bold text-base text-white tracking-tight">
-                    Desconciliar Empresa
-                  </h3>
-                  <p className="text-xs text-amber-300/80">
-                    Confirmação de segurança necessária
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={handleCloseUnreconcileModal}
-                className="p-1.5 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 transition-colors"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Form */}
-            <form onSubmit={handleConfirmUnreconcile} className="p-6 space-y-4">
-              <div className="bg-slate-800/80 border border-slate-700/80 rounded-2xl p-3.5 space-y-1.5">
-                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                  Empresa Selecionada:
-                </span>
-                <div className="flex items-center gap-2 text-sm font-extrabold text-amber-300">
-                  <Building2 className="w-4 h-4 text-amber-400 shrink-0" />
-                  <span className="truncate">{unreconcileModal.empresaName}</span>
-                </div>
-              </div>
-
-              <p className="text-xs text-slate-300 leading-relaxed">
-                Para desconciliar esta empresa e retornar os lançamentos ao estado pendente, informe a senha padrão de autorização:
-              </p>
-
-              {/* Password Input */}
-              <div className="space-y-1.5">
-                <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-300">
-                  Senha de Autorização
-                </label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
-                    <KeyRound className="w-4 h-4" />
-                  </div>
-                  <input
-                    type={unreconcileModal.showPassword ? 'text' : 'password'}
-                    value={unreconcileModal.passwordInput}
-                    onChange={(e) =>
-                      setUnreconcileModal((prev) => ({
-                        ...prev,
-                        passwordInput: e.target.value,
-                        error: null,
-                      }))
-                    }
-                    placeholder="Digite a senha (padrão: 123)"
-                    autoFocus
-                    className={`w-full bg-slate-950 border ${
-                      unreconcileModal.error
-                        ? 'border-rose-500 ring-1 ring-rose-500'
-                        : 'border-slate-700 focus:border-amber-500 focus:ring-1 focus:ring-amber-500'
-                    } rounded-xl pl-10 pr-10 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none transition-all`}
-                  />
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setUnreconcileModal((prev) => ({
-                        ...prev,
-                        showPassword: !prev.showPassword,
-                      }))
-                    }
-                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-200 transition-colors"
-                  >
-                    {unreconcileModal.showPassword ? (
-                      <EyeOff className="w-4 h-4" />
-                    ) : (
-                      <Eye className="w-4 h-4" />
-                    )}
-                  </button>
-                </div>
-
-                {/* Error Message */}
-                {unreconcileModal.error && (
-                  <div className="flex items-center gap-1.5 text-xs text-rose-400 pt-1 animate-fade-in font-medium">
-                    <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-                    <span>{unreconcileModal.error}</span>
-                  </div>
-                )}
-                
-                <p className="text-[11px] text-slate-400 pt-0.5">
-                  Dica: A senha padrão configurada é <strong className="text-amber-300 font-mono">123</strong>.
-                </p>
-              </div>
-
-              {/* Actions */}
-              <div className="pt-3 flex items-center justify-end gap-3 border-t border-slate-800">
-                <button
-                  type="button"
-                  onClick={handleCloseUnreconcileModal}
-                  className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-300 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 rounded-xl text-xs font-bold bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 shadow-lg shadow-amber-500/25 flex items-center gap-2 transition-all active:scale-95 cursor-pointer"
-                >
-                  <Unlock className="w-3.5 h-3.5" />
-                  Confirmar Desconciliação
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
