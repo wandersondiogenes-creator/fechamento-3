@@ -124,7 +124,7 @@ export default function Home() {
   const [deletedFechamentoIds, setDeletedFechamentoIds] = useState<Set<string>>(new Set());
   const [activeSharedSession, setActiveSharedSession] = useState<SharedFechamentoSession | null>(null);
 
-  // Automatic check for shared session room code from URL query (?sala=... or ?shared=...)
+  // Automatic check for shared session room code from URL query (?sala=... or ?shared=...) ONLY when explicitly passed in URL
   useEffect(() => {
     if (typeof window === 'undefined') return;
     try {
@@ -136,8 +136,7 @@ export default function Home() {
           break;
         }
       }
-      const rawCandidate = roomParam || getActiveRoomIdLocally();
-      const codeToLoad = extractRoomCode(rawCandidate);
+      const codeToLoad = roomParam ? extractRoomCode(roomParam) : null;
 
       if (codeToLoad) {
         fetchSharedSession(codeToLoad, currentUser).then((res) => {
@@ -187,12 +186,16 @@ export default function Home() {
     const hasDealerData = (dealerState.rawData && dealerState.rawData.length > 0) || (dealerState.processedData && dealerState.processedData.length > 0);
     const hasSitefData = (sitefState.rawData && sitefState.rawData.length > 0) || (sitefState.processedData && sitefState.processedData.length > 0);
 
-    // If both dealer and sitef are empty (and no shared session active), fechamento is 100% clean and empty
+    // If both dealer and sitef are empty (and no manual historic restoration active), fechamento is completely clean and empty
     if (!hasDealerData && !hasSitefData) {
+      // If user explicitly restored a historic record into manualFechamentoItems, show those items
+      if (manualFechamentoItems.length > 0 && manualFechamentoItems.some(i => i.id?.startsWith('restored_') || !i.id?.startsWith('manual_'))) {
+        return manualFechamentoItems.filter(item => !deletedFechamentoIds.has(item.id));
+      }
       return [];
     }
 
-    // 2. Local mode: Deduplicate between auto-computed items from spreadsheets and manual items
+    // 2. Local mode: The live calculation from Dealer and SiTef (autoFechamentoItems) is the ground truth
     const map = new Map<string, FechamentoItem>();
     autoFechamentoItems.forEach((item) => {
       if (item && item.id && !deletedFechamentoIds.has(item.id)) {
@@ -200,9 +203,12 @@ export default function Home() {
       }
     });
 
+    // Add only user-created manual items (isManual or id starting with manual_) without overwriting auto-computed items
     manualFechamentoItems.forEach((item) => {
       if (item && item.id && !deletedFechamentoIds.has(item.id)) {
-        map.set(item.id, item);
+        if (item.isManual || item.id.startsWith('manual_') || !map.has(item.id)) {
+          map.set(item.id, item);
+        }
       }
     });
 
@@ -329,7 +335,13 @@ export default function Home() {
         if (data.dealerState) setDealerState(data.dealerState);
         if (data.sitefState) setSitefState(data.sitefState);
         if (data.pendenteCdcState) setPendenteCdcState(data.pendenteCdcState);
-        if (data.manualFechamentoItems) setManualFechamentoItems(data.manualFechamentoItems);
+        if (data.manualFechamentoItems) {
+          setManualFechamentoItems(
+            data.manualFechamentoItems.filter(
+              (i: FechamentoItem) => i && (i.isManual || i.id?.startsWith('manual_'))
+            )
+          );
+        }
         if (data.deletedFechamentoIds) setDeletedFechamentoIds(new Set(data.deletedFechamentoIds));
         if (data.activeTab) setActiveTab(data.activeTab as any);
         if (data.tabFilters) {
@@ -1093,7 +1105,11 @@ export default function Home() {
     setSitefState(buildEmptySpreadsheetState('SITEF.xlsx'));
     setPendenteCdcState(buildEmptySpreadsheetState('PENDENTE_DE_CDC.xlsx'));
     setDeletedFechamentoIds(new Set());
-    setManualFechamentoItems(record.items || []);
+    const restored = (record.items || []).map((i) => ({
+      ...i,
+      id: i.id.startsWith('restored_') ? i.id : `restored_${i.id}`,
+    }));
+    setManualFechamentoItems(restored);
     setActiveTab('fechamento');
   }, []);
 
