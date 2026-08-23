@@ -1,6 +1,15 @@
 import { SpreadsheetState } from '@/types/spreadsheet';
 import { FechamentoItem } from '@/lib/fechamento-utils';
 import { getSupabase, isSupabaseConfigured } from './supabase-client';
+import {
+  SESSION_MAX_HOURS,
+  SESSION_MAX_AGE_MS,
+  cleanEmailKey,
+  isSessionExpired,
+  saveUserPendingFile,
+  extractMetricsFromSession,
+  PendingFileRecord,
+} from './pending-files-service';
 
 export interface AppDiagnosticLog {
   id: string;
@@ -36,9 +45,13 @@ export interface AutosaveSessionData {
   };
 }
 
-const LOCAL_STORAGE_SESSION_KEY = 'wanfinance_active_session_v2';
 const LOCAL_STORAGE_LOGS_KEY = 'wanfinance_diagnostic_logs_v1';
 const MAX_LOGS = 200;
+
+export function getEmailSessionKey(email?: string): string {
+  const clean = cleanEmailKey(email);
+  return `wanfinance_active_session_v3_${clean}`;
+}
 
 // Log registry
 let inMemoryLogs: AppDiagnosticLog[] = [];
@@ -102,111 +115,229 @@ export function clearDiagnosticLogs(): void {
 }
 
 /**
- * Autosave session to localStorage and optional Supabase cloud
+ * Autosave session to localStorage (scoped by email) and cloud APIs (for cross-device access)
  */
 export async function saveAppSession(session: AutosaveSessionData): Promise<{ success: boolean; cloudSaved: boolean; error?: string }> {
   if (typeof window === 'undefined') return { success: false, cloudSaved: false };
 
+  const cleanEmail = cleanEmailKey(session.userEmail);
+  const emailKey = getEmailSessionKey(cleanEmail);
   let localOk = false;
   let cloudOk = false;
 
-  // 1. LocalStorage Persistence (Instant, Zero Latency)
+  const sessionWithTime: AutosaveSessionData = {
+    ...session,
+    userEmail: cleanEmail,
+    lastSavedAt: new Date().toISOString(),
+  };
+
+  // 1. Email-Scoped LocalStorage Persistence (Instant, Zero Latency)
   try {
-    const serialized = JSON.stringify(session);
-    localStorage.setItem(LOCAL_STORAGE_SESSION_KEY, serialized);
+    const serialized = JSON.stringify(sessionWithTime);
+    localStorage.setItem(emailKey, serialized);
     localOk = true;
   } catch (err: any) {
-    logDiagnostic('warn', 'Autosave', 'Falha ao gravar sessão em LocalStorage (cota excedida ou desativado).', err?.message);
+    logDiagnostic('warn', 'Autosave', `Falha ao gravar sessão em LocalStorage para ${cleanEmail}.`, err?.message);
   }
 
-  // 2. Supabase Cloud Persistence (Safe against device clear / Vercel container refresh)
+  // 2. Server API Workspace Sync for Cross-Device Support
+  try {
+    const res = await fetch('/api/fechamento/workspace', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        userEmail: cleanEmail,
+        lastActiveAt: sessionWithTime.lastSavedAt,
+        dealerState: sessionWithTime.dealerState,
+        sitefState: sessionWithTime.sitefState,
+        pendenteCdcState: sessionWithTime.pendenteCdcState,
+        manualFechamentoItems: sessionWithTime.manualFechamentoItems,
+        deletedFechamentoIds: sessionWithTime.deletedFechamentoIds,
+        activeTab: sessionWithTime.activeTab,
+        tabFilters: sessionWithTime.tabFilters,
+      }),
+    });
+    if (res.ok) {
+      cloudOk = true;
+    }
+  } catch (err: any) {
+    logDiagnostic('warn', 'CloudWorkspaceSync', `Falha na sincronização do workspace para ${cleanEmail}.`, err?.message);
+  }
+
+  // 3. Supabase Cloud Persistence (if configured)
   const supabase = getSupabase();
   if (supabase && isSupabaseConfigured()) {
     try {
-      const userKey = session.userEmail || 'default_user';
       const { error } = await retryWithBackoff(async () => {
         return await supabase
           .from('user_sessions')
           .upsert(
             {
-              user_id: userKey,
-              session_payload: session,
-              updated_at: new Date().toISOString(),
+              user_id: cleanEmail,
+              session_payload: sessionWithTime,
+              updated_at: sessionWithTime.lastSavedAt,
             },
             { onConflict: 'user_id' }
           );
       }, 3, 500);
 
-      if (error) {
-        logDiagnostic('warn', 'SupabaseSync', 'Erro ao sincronizar sessão na nuvem Supabase.', error.message);
-      } else {
+      if (!error) {
         cloudOk = true;
-        logDiagnostic('info', 'SupabaseSync', 'Sessão sincronizada com sucesso no Supabase.');
       }
-    } catch (err: any) {
-      logDiagnostic('warn', 'SupabaseSync', 'Falha na conexão com Supabase durante autosave.', err?.message);
-    }
+    } catch {}
   }
 
   return { success: localOk || cloudOk, cloudSaved: cloudOk };
 }
 
 /**
- * Load session from LocalStorage or Supabase Cloud fallback
+ * Load session from LocalStorage or Cloud API, strictly scoped by email and enforcing the 8-hour TTL rule.
+ * If session is older than 8 hours, it archives to Pending Files and returns blank state.
  */
-export async function loadAppSession(userEmail?: string): Promise<{ data: AutosaveSessionData | null; source: 'local' | 'cloud' | 'none' }> {
+export async function loadAppSession(userEmail?: string): Promise<{
+  data: AutosaveSessionData | null;
+  source: 'local' | 'cloud' | 'none';
+  wasAutoArchived?: boolean;
+  archivedTitle?: string;
+}> {
   if (typeof window === 'undefined') return { data: null, source: 'none' };
 
-  // 1. Try local storage first
+  const cleanEmail = cleanEmailKey(userEmail);
+  const emailKey = getEmailSessionKey(cleanEmail);
+
+  let rawSession: AutosaveSessionData | null = null;
+  let source: 'local' | 'cloud' | 'none' = 'none';
+
+  // 1. Try Cloud API first for cross-device retrieval
   try {
-    const raw = localStorage.getItem(LOCAL_STORAGE_SESSION_KEY);
-    if (raw) {
-      const parsed: AutosaveSessionData = JSON.parse(raw);
-      if (parsed && (parsed.dealerState?.rawData?.length || parsed.sitefState?.rawData?.length || parsed.manualFechamentoItems?.length)) {
-        logDiagnostic('info', 'SessionRecovery', 'Sessão local recuperada com sucesso.', {
-          lastSavedAt: parsed.lastSavedAt,
-          dealerRows: parsed.dealerState?.rawData?.length || 0,
-          sitefRows: parsed.sitefState?.rawData?.length || 0,
-        });
-        return { data: parsed, source: 'local' };
+    const res = await fetch(`/api/fechamento/workspace?email=${encodeURIComponent(cleanEmail)}`, {
+      cache: 'no-store',
+    });
+    if (res.ok) {
+      const json = await res.json();
+      if (json.success) {
+        if (json.wasAutoArchived && json.archivedFile) {
+          logDiagnostic('info', 'SessionTTL', `Sessão anterior de ${cleanEmail} (+8h) foi salva automaticamente em Arquivos Pendentes pelo servidor.`);
+          // Clear local active key as well
+          localStorage.removeItem(emailKey);
+          return {
+            data: null,
+            source: 'none',
+            wasAutoArchived: true,
+            archivedTitle: json.archivedFile.title,
+          };
+        }
+        if (json.activeWorkspace) {
+          const ws = json.activeWorkspace;
+          rawSession = {
+            version: 3,
+            lastSavedAt: ws.lastActiveAt,
+            userEmail: cleanEmail,
+            activeTab: ws.activeTab || 'dealer',
+            dealerState: ws.dealerState,
+            sitefState: ws.sitefState,
+            pendenteCdcState: ws.pendenteCdcState,
+            manualFechamentoItems: ws.manualFechamentoItems || [],
+            deletedFechamentoIds: ws.deletedFechamentoIds || [],
+            tabFilters: ws.tabFilters,
+          };
+          source = 'cloud';
+        }
       }
     }
   } catch (err: any) {
-    logDiagnostic('warn', 'SessionRecovery', 'Erro ao ler sessão local.', err?.message);
+    logDiagnostic('warn', 'SessionRecovery', 'Tentativa de busca no servidor falhou, buscando cache local...', err?.message);
   }
 
-  // 2. Try Supabase cloud
-  const supabase = getSupabase();
-  if (supabase && isSupabaseConfigured()) {
+  // 2. Fallback to LocalStorage (strictly by email)
+  if (!rawSession) {
     try {
-      const userKey = userEmail || 'default_user';
-      const { data, error } = await retryWithBackoff(async () => {
-        return await supabase
-          .from('user_sessions')
-          .select('session_payload, updated_at')
-          .eq('user_id', userKey)
-          .maybeSingle();
-      }, 3, 500);
-
-      if (data?.session_payload) {
-        logDiagnostic('info', 'SessionRecovery', 'Sessão recuperada da nuvem Supabase.', {
-          updatedAt: data.updated_at,
-        });
-        return { data: data.session_payload as AutosaveSessionData, source: 'cloud' };
+      const localRaw = localStorage.getItem(emailKey);
+      if (localRaw) {
+        rawSession = JSON.parse(localRaw);
+        source = 'local';
       }
     } catch (err: any) {
-      logDiagnostic('warn', 'SessionRecovery', 'Falha ao buscar sessão no Supabase.', err?.message);
+      logDiagnostic('warn', 'SessionRecovery', `Erro ao ler sessão local para ${cleanEmail}.`, err?.message);
     }
   }
 
-  return { data: null, source: 'none' };
+  if (!rawSession) {
+    return { data: null, source: 'none' };
+  }
+
+  // 3. Strict 8-Hour Rule Check
+  const hasData =
+    (rawSession.dealerState?.rawData && rawSession.dealerState.rawData.length > 0) ||
+    (rawSession.sitefState?.rawData && rawSession.sitefState.rawData.length > 0) ||
+    (rawSession.manualFechamentoItems && rawSession.manualFechamentoItems.length > 0);
+
+  if (isSessionExpired(rawSession.lastSavedAt)) {
+    let archivedTitle = '';
+    if (hasData) {
+      const metrics = extractMetricsFromSession(
+        rawSession.dealerState,
+        rawSession.sitefState,
+        rawSession.pendenteCdcState,
+        rawSession.manualFechamentoItems
+      );
+      const dateFormatted = new Date(rawSession.lastSavedAt).toLocaleString('pt-BR');
+      archivedTitle = `Arquivado Automaticamente (+8h) - ${dateFormatted}`;
+
+      const pendingRecord: PendingFileRecord = {
+        id: `pend_auto_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        userEmail: cleanEmail,
+        createdAt: new Date().toISOString(),
+        title: archivedTitle,
+        description: `Sessão iniciada em ${dateFormatted} arquivada automaticamente por expirar o limite de 8h.`,
+        source: 'auto_expired',
+        dealerState: rawSession.dealerState,
+        sitefState: rawSession.sitefState,
+        pendenteCdcState: rawSession.pendenteCdcState,
+        manualFechamentoItems: rawSession.manualFechamentoItems || [],
+        deletedFechamentoIds: rawSession.deletedFechamentoIds || [],
+        conciliatedEmpresas: {},
+        activeTab: rawSession.activeTab,
+        tabFilters: rawSession.tabFilters,
+        metrics,
+      };
+
+      await saveUserPendingFile(pendingRecord);
+      logDiagnostic('info', 'SessionTTL', `Sessão com mais de 8 horas arquivada automaticamente em Arquivos Pendentes para ${cleanEmail}.`);
+    }
+
+    // Clean active storage
+    try {
+      localStorage.removeItem(emailKey);
+      fetch(`/api/fechamento/workspace?email=${encodeURIComponent(cleanEmail)}`, { method: 'DELETE' }).catch(() => {});
+    } catch {}
+
+    return {
+      data: null,
+      source: 'none',
+      wasAutoArchived: Boolean(hasData),
+      archivedTitle,
+    };
+  }
+
+  // Session is fresh (<= 8 hours)
+  logDiagnostic('info', 'SessionRecovery', `Sessão ativa de ${cleanEmail} restaurada com sucesso (${source.toUpperCase()}).`, {
+    lastSavedAt: rawSession.lastSavedAt,
+    dealerRows: rawSession.dealerState?.rawData?.length || 0,
+    sitefRows: rawSession.sitefState?.rawData?.length || 0,
+  });
+
+  return { data: rawSession, source };
 }
 
-export function clearLocalSession(): void {
+export function clearLocalSession(email?: string): void {
   if (typeof window === 'undefined') return;
   try {
-    localStorage.removeItem(LOCAL_STORAGE_SESSION_KEY);
-    logDiagnostic('info', 'Session', 'Sessão local foi reiniciada.');
+    const cleanEmail = cleanEmailKey(email);
+    const emailKey = getEmailSessionKey(cleanEmail);
+    localStorage.removeItem(emailKey);
+    fetch(`/api/fechamento/workspace?email=${encodeURIComponent(cleanEmail)}`, { method: 'DELETE' }).catch(() => {});
+    logDiagnostic('info', 'Session', `Sessão ativa de ${cleanEmail} foi limpa.`);
   } catch (err) {
     console.error('Erro ao limpar sessão:', err);
   }
@@ -230,10 +361,9 @@ export async function retryWithBackoff<T>(
     } catch (error: any) {
       attempt++;
       if (attempt >= retries) {
-        logDiagnostic('error', 'RetryPolicy', `Tentativa ${attempt}/${retries} falhou definitivamente: ${error?.message || error}`);
+        logDiagnostic('error', 'RetryPolicy', `Tentativa ${attempt}/${retries} falhou: ${error?.message || error}`);
         throw error;
       }
-      logDiagnostic('warn', 'RetryPolicy', `Falha na tentativa ${attempt}/${retries}. Reexecutando em ${currentDelay}ms...`);
       await new Promise((resolve) => setTimeout(resolve, currentDelay));
       currentDelay *= factor;
     }

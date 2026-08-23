@@ -65,3 +65,21 @@ export const fechamentoRecords = pgTable('fechamento_records', {
   items: jsonb('items').notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
+
+export const userWorkspaces = pgTable('user_workspaces', {
+  userEmail: text('user_email').primaryKey(),
+  lastActiveAt: text('last_active_at').notNull(),
+  workspacePayload: jsonb('workspace_payload').notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+export const userPendingFiles = pgTable('user_pending_files', {
+  id: text('id').primaryKey(),
+  userEmail: text('user_email').notNull(),
+  title: text('title').notNull(),
+  source: text('source').notNull(), // 'auto_expired' | 'manual_save' | 'fechamento_snapshot'
+  payload: jsonb('payload').notNull(),
+  metrics: jsonb('metrics').notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+

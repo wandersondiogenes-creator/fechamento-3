@@ -66,6 +66,7 @@ import {
   Eye,
   EyeOff,
   Unlock,
+  FolderArchive,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
@@ -87,6 +88,8 @@ interface FechamentoViewProps {
   onUpdateFechamentoItem?: (updatedItem: FechamentoItem) => void;
   onRecalculateAuto?: () => void;
   onTriggerFileImport?: () => void;
+  onOpenPendingFilesModal?: () => void;
+  pendingFilesCount?: number;
   activeTab?: 'dealer' | 'sitef' | 'pendente_cdc' | 'fechamento';
   tabCounts?: { dealer: number; sitef: number; pendente_cdc: number; fechamento?: number };
   onTabChange?: (tab: 'dealer' | 'sitef' | 'pendente_cdc' | 'fechamento') => void;
@@ -119,6 +122,8 @@ export function FechamentoView({
   onDeleteFechamentoItems,
   onRecalculateAuto,
   onTriggerFileImport,
+  onOpenPendingFilesModal,
+  pendingFilesCount = 0,
   onFechamentoConcluido,
   onRestoreFechamentoRecord,
   dealerState,
@@ -1566,6 +1571,23 @@ export function FechamentoView({
               >
                 <RefreshCw className={`w-3.5 h-3.5 text-blue-600 ${isRefreshingAuto ? 'animate-spin' : ''}`} />
                 <span>{isRefreshingAuto ? 'Atualizando...' : 'Atualizar Dados'}</span>
+              </button>
+            )}
+
+            {/* Arquivos Pendentes Button */}
+            {onOpenPendingFilesModal && (
+              <button
+                onClick={onOpenPendingFilesModal}
+                className="px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-900 font-extrabold rounded-lg text-xs border border-amber-300 transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                title="Abrir Arquivos Pendentes salvos por e-mail e regra de 8h"
+              >
+                <FolderArchive className="w-3.5 h-3.5 text-amber-700" />
+                <span>Arquivos Pendentes</span>
+                {pendingFilesCount > 0 && (
+                  <span className="px-1.5 py-0.2 bg-amber-600 text-white rounded-full text-[10px] font-black">
+                    {pendingFilesCount}
+                  </span>
+                )}
               </button>
             )}
 

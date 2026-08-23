@@ -36,6 +36,7 @@ import { AIAssistantDrawer } from '@/components/AIAssistantDrawer';
 import { ICloudLoginView } from '@/components/ICloudLoginView';
 import { AppErrorBoundary } from '@/components/AppErrorBoundary';
 import { SystemDiagnosticsModal } from '@/components/SystemDiagnosticsModal';
+import { PendingFilesModal } from '@/components/PendingFilesModal';
 import {
   saveAppSession,
   loadAppSession,
@@ -43,7 +44,13 @@ import {
   logDiagnostic,
   AutosaveSessionData,
 } from '@/lib/autosave-service';
-import { Sparkles, FileSpreadsheet, Zap, CheckCircle2, Bookmark, FolderOpen, X, TrendingUp, TrendingDown, Wallet, Clock, RotateCcw, CreditCard, ShieldCheck, HardDriveDownload } from 'lucide-react';
+import {
+  PendingFileRecord,
+  fetchUserPendingFiles,
+  cleanEmailKey,
+  saveUserPendingFile,
+} from '@/lib/pending-files-service';
+import { Sparkles, FileSpreadsheet, Zap, CheckCircle2, Bookmark, FolderOpen, X, TrendingUp, TrendingDown, Wallet, Clock, RotateCcw, CreditCard, ShieldCheck, HardDriveDownload, FolderArchive } from 'lucide-react';
 
 function buildEmptySpreadsheetState(defaultName: string = 'DEALER.xlsx'): SpreadsheetState {
   return {
@@ -270,6 +277,8 @@ export default function Home() {
   const [isPresetsModalOpen, setIsPresetsModalOpen] = useState(false);
   const [isAIDrawerOpen, setIsAIDrawerOpen] = useState(false);
   const [isDiagnosticsModalOpen, setIsDiagnosticsModalOpen] = useState(false);
+  const [isPendingFilesModalOpen, setIsPendingFilesModalOpen] = useState(false);
+  const [pendingFilesCount, setPendingFilesCount] = useState<number>(0);
 
   // Autosave status state
   const [autosaveStatus, setAutosaveStatus] = useState<{
@@ -289,7 +298,24 @@ export default function Home() {
     lastSavedAt: string;
   } | null>(null);
 
-  // Autosave Trigger Function
+  // Auto-Archived (>8h) banner indicator
+  const [autoArchivedBanner, setAutoArchivedBanner] = useState<{
+    show: boolean;
+    title: string;
+  } | null>(null);
+
+  // Refresh count of pending files for the current email
+  const refreshPendingFilesCount = useCallback(async (email?: string) => {
+    try {
+      const userEmail = email || currentUser?.email || 'infroberto360@gmail.com';
+      const list = await fetchUserPendingFiles(userEmail);
+      setPendingFilesCount(list.length);
+    } catch {
+      // ignore
+    }
+  }, [currentUser?.email]);
+
+  // Autosave Trigger Function (Scoped by email & cloud-synced)
   const triggerAutosave = useCallback(
     async (
       dState = dealerState,
@@ -301,10 +327,11 @@ export default function Home() {
       filters = tabFilters
     ) => {
       setAutosaveStatus((prev) => ({ ...prev, isSaving: true }));
+      const cleanEmail = cleanEmailKey(currentUser?.email || 'infroberto360@gmail.com');
       const sessionData: AutosaveSessionData = {
-        version: 2,
+        version: 3,
         lastSavedAt: new Date().toISOString(),
-        userEmail: currentUser?.email || 'infroberto360@gmail.com',
+        userEmail: cleanEmail,
         activeTab: tab,
         dealerState: dState,
         sitefState: sState,
@@ -333,10 +360,29 @@ export default function Home() {
     ]
   );
 
-  // Restore Session Function
+  // Restore Session Function with strict 8-Hour Rule & Email Scoping
   const restoreSavedSession = useCallback(async () => {
+    const cleanEmail = cleanEmailKey(currentUser?.email || 'infroberto360@gmail.com');
     try {
-      const res = await loadAppSession(currentUser?.email);
+      refreshPendingFilesCount(cleanEmail);
+      const res = await loadAppSession(cleanEmail);
+
+      if (res.wasAutoArchived) {
+        // Session expired (+8h): auto-archived to Pending Files, reset UI to blank state
+        setDealerState(buildEmptySpreadsheetState('DEALER.xlsx'));
+        setSitefState(buildEmptySpreadsheetState('SITEF.xlsx'));
+        setPendenteCdcState(buildEmptySpreadsheetState('PENDENTE_DE_CDC.xlsx'));
+        setManualFechamentoItems([]);
+        setDeletedFechamentoIds(new Set());
+        setRecoveredBanner(null);
+        setAutoArchivedBanner({
+          show: true,
+          title: res.archivedTitle || 'Sessão anterior (+8h) foi salva em Arquivos Pendentes',
+        });
+        refreshPendingFilesCount(cleanEmail);
+        return;
+      }
+
       if (res.data) {
         const { data, source } = res;
         if (data.dealerState) setDealerState(data.dealerState);
@@ -363,6 +409,7 @@ export default function Home() {
           }));
         }
 
+        setAutoArchivedBanner(null);
         setRecoveredBanner({
           show: true,
           source,
@@ -372,14 +419,82 @@ export default function Home() {
         logDiagnostic(
           'success',
           'Autosave',
-          `Sessão anterior restaurada com sucesso a partir da fonte: ${source.toUpperCase()}`,
+          `Sessão ativa de ${cleanEmail} restaurada com sucesso (${source.toUpperCase()})`,
           { lastSavedAt: data.lastSavedAt }
         );
+      } else {
+        // No session exists for this email: start clean from blank
+        setDealerState(buildEmptySpreadsheetState('DEALER.xlsx'));
+        setSitefState(buildEmptySpreadsheetState('SITEF.xlsx'));
+        setPendenteCdcState(buildEmptySpreadsheetState('PENDENTE_DE_CDC.xlsx'));
+        setManualFechamentoItems([]);
+        setDeletedFechamentoIds(new Set());
+        setRecoveredBanner(null);
       }
     } catch (err: any) {
-      logDiagnostic('warn', 'Autosave', 'Erro ao restaurar sessão anterior.', err?.message);
+      logDiagnostic('warn', 'Autosave', 'Erro ao restaurar sessão.', err?.message);
     }
-  }, [currentUser?.email]);
+  }, [currentUser?.email, refreshPendingFilesCount]);
+
+  // Handler to Restore a Pending File
+  const handleRestorePendingFile = useCallback(
+    (file: PendingFileRecord) => {
+      if (file.dealerState) setDealerState(file.dealerState);
+      if (file.sitefState) setSitefState(file.sitefState);
+      if (file.pendenteCdcState) setPendenteCdcState(file.pendenteCdcState);
+      if (file.manualFechamentoItems) {
+        setManualFechamentoItems(file.manualFechamentoItems || []);
+      }
+      if (file.deletedFechamentoIds) {
+        setDeletedFechamentoIds(new Set(file.deletedFechamentoIds));
+      }
+      if (file.conciliatedEmpresas && typeof window !== 'undefined') {
+        try {
+          const clean = cleanEmailKey(currentUser?.email);
+          localStorage.setItem(`wanfinance_conciliated_${clean}`, JSON.stringify(file.conciliatedEmpresas));
+          localStorage.setItem('wanfinance_conciliated_empresas_v1', JSON.stringify(file.conciliatedEmpresas));
+        } catch {}
+      }
+      if (file.tabFilters) {
+        setTabFilters((prev) => ({
+          ...prev,
+          ...file.tabFilters,
+        }));
+      }
+      if (file.activeTab) {
+        setActiveTab(file.activeTab as any);
+      } else {
+        setActiveTab('fechamento');
+      }
+
+      setAutoArchivedBanner(null);
+      setRecoveredBanner({
+        show: true,
+        source: 'cloud',
+        lastSavedAt: file.createdAt,
+      });
+
+      logDiagnostic(
+        'info',
+        'PendingFiles',
+        `Arquivo pendente "${file.title}" restaurado com sucesso para ${currentUser?.email}.`
+      );
+
+      // Save as active workspace immediately
+      triggerAutosave(
+        file.dealerState,
+        file.sitefState,
+        file.pendenteCdcState,
+        file.manualFechamentoItems || [],
+        new Set(file.deletedFechamentoIds || []),
+        (file.activeTab as any) || 'fechamento',
+        file.tabFilters
+      );
+
+      refreshPendingFilesCount(currentUser?.email);
+    },
+    [currentUser?.email, triggerAutosave, refreshPendingFilesCount]
+  );
 
   // Initial mount: attempt session recovery if local/cloud session exists
   useEffect(() => {
@@ -1315,6 +1430,8 @@ export default function Home() {
           onOpenAIDrawer={() => setIsAIDrawerOpen(true)}
           onLogout={handleLogout}
           onOpenDiagnostics={() => setIsDiagnosticsModalOpen(true)}
+          onOpenPendingFilesModal={() => setIsPendingFilesModalOpen(true)}
+          pendingFilesCount={pendingFilesCount}
           autosaveStatus={autosaveStatus}
           onClearAllData={handleClearAllData}
           onClearDealerFile={handleClearDealerFile}
@@ -1337,6 +1454,48 @@ export default function Home() {
             }
           }}
         />
+
+        {/* Auto-Archived (>8 Hours) Notification Banner */}
+        {autoArchivedBanner && autoArchivedBanner.show && (
+          <div className="max-w-7xl mx-auto px-4 w-full pt-3">
+            <div className="bg-gradient-to-r from-amber-50 via-orange-50 to-amber-50 border border-amber-300/80 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3 shadow-sm animate-in slide-in-from-top duration-300">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-amber-500 text-white flex items-center justify-center shadow-xs flex-shrink-0">
+                  <Clock className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="text-xs font-bold text-amber-950 flex items-center gap-2">
+                    <span>Sessão anterior (+8h) foi salva em Arquivos Pendentes</span>
+                    <span className="px-2 py-0.5 rounded-full bg-amber-200/90 text-amber-900 text-[10px] font-extrabold uppercase tracking-wide">
+                      Limite de 8h
+                    </span>
+                  </div>
+                  <div className="text-[12px] text-amber-900/90 mt-0.5">
+                    O sistema foi iniciado <strong>em branco</strong> pronto para novos lançamentos de <strong>{currentUser?.email}</strong>. Para resgatar o trabalho anterior, acesse os arquivos pendentes.
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    setAutoArchivedBanner(null);
+                    setIsPendingFilesModalOpen(true);
+                  }}
+                  className="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 active:scale-95 text-white font-bold rounded-xl text-xs shadow-xs transition-all cursor-pointer flex items-center gap-1.5"
+                >
+                  <FolderArchive className="w-3.5 h-3.5" />
+                  <span>Ver Arquivos Pendentes ({pendingFilesCount})</span>
+                </button>
+                <button
+                  onClick={() => setAutoArchivedBanner(null)}
+                  className="w-7 h-7 rounded-lg hover:bg-amber-200/60 flex items-center justify-center text-amber-900 text-xs transition-colors cursor-pointer"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Autosave Recovery Notification Banner */}
         {recoveredBanner && recoveredBanner.show && (
@@ -1426,6 +1585,8 @@ export default function Home() {
                 onTriggerFileImport={triggerFileImport}
                 onFechamentoConcluido={handleFechamentoConcluido}
                 onRestoreFechamentoRecord={handleRestoreFechamentoRecord}
+                onOpenPendingFilesModal={() => setIsPendingFilesModalOpen(true)}
+                pendingFilesCount={pendingFilesCount}
                 dealerState={dealerState}
                 sitefState={sitefState}
                 pendenteCdcState={pendenteCdcState}
@@ -1682,6 +1843,25 @@ export default function Home() {
         autosaveStatus={autosaveStatus}
         onForceSave={() => triggerAutosave()}
         onRestoreSession={() => restoreSavedSession()}
+      />
+
+      {/* Pending Files & 8-Hour Session Recovery Modal */}
+      <PendingFilesModal
+        isOpen={isPendingFilesModalOpen}
+        onClose={() => {
+          setIsPendingFilesModalOpen(false);
+          refreshPendingFilesCount(currentUser?.email);
+        }}
+        currentUserEmail={currentUser?.email || 'infroberto360@gmail.com'}
+        currentDealerState={dealerState}
+        currentSitefState={sitefState}
+        currentPendenteCdcState={pendenteCdcState}
+        currentManualItems={manualFechamentoItems}
+        currentDeletedIds={deletedFechamentoIds}
+        activeTab={activeTab}
+        tabFilters={tabFilters}
+        onRestorePendingFile={handleRestorePendingFile}
+        onPendingFilesUpdated={() => refreshPendingFilesCount(currentUser?.email)}
       />
     </div>
   );
