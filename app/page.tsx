@@ -1,7 +1,5 @@
 'use client';
 
-export const dynamic = 'force-dynamic';
-
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { ColumnConfig, ColumnRule, RulePreset, RuleType, SpreadsheetState } from '@/types/spreadsheet';
 import {
@@ -18,6 +16,7 @@ import { FechamentoCaixaRecord } from '@/lib/fechamento-caixa-service';
 import {
   SharedFechamentoSession,
   fetchSharedSession,
+  createOrUpdateSharedSession,
   getActiveRoomIdLocally,
   extractRoomCode,
 } from '@/lib/shared-fechamento-service';
@@ -1071,6 +1070,55 @@ export default function Home() {
     }
   }, []);
 
+  const handleClearAllData = useCallback(() => {
+    setDealerState(buildEmptySpreadsheetState('DEALER.xlsx'));
+    setSitefState(buildEmptySpreadsheetState('SITEF.xlsx'));
+    setPendenteCdcState(buildEmptySpreadsheetState('PENDENTE_DE_CDC.xlsx'));
+    setManualFechamentoItems([]);
+    setDeletedFechamentoIds(new Set());
+    setActiveSharedSession(null);
+    saveActiveRoomIdLocally('');
+    clearLocalSession();
+    setRecoveredBanner(null);
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.removeItem('wanfinance_conciliated_empresas_v1');
+        localStorage.removeItem('wanfinance_fechamento_state_v1');
+        localStorage.removeItem('wanfinance_shared_sessions_v1');
+        localStorage.removeItem('wanfinance_active_shared_room_v1');
+        localStorage.removeItem('wanfinance_autosave_session_v2');
+      } catch {
+        // ignore
+      }
+    }
+  }, []);
+
+  const handleClearDealerFile = useCallback(() => {
+    setDealerState(buildEmptySpreadsheetState('DEALER.xlsx'));
+    setManualFechamentoItems([]);
+    setDeletedFechamentoIds(new Set());
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.removeItem('wanfinance_conciliated_empresas_v1');
+      } catch {}
+    }
+  }, []);
+
+  const handleClearSitefFile = useCallback(() => {
+    setSitefState(buildEmptySpreadsheetState('SITEF.xlsx'));
+    setManualFechamentoItems([]);
+    setDeletedFechamentoIds(new Set());
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.removeItem('wanfinance_conciliated_empresas_v1');
+      } catch {}
+    }
+  }, []);
+
+  const handleClearPendenteCdcFile = useCallback(() => {
+    setPendenteCdcState(buildEmptySpreadsheetState('PENDENTE_DE_CDC.xlsx'));
+  }, []);
+
   const handleApplySharedSpreadsheets = useCallback(
     (
       sharedDealer?: SpreadsheetState,
@@ -1161,55 +1209,6 @@ export default function Home() {
     setPendenteCdcState(buildEmptySpreadsheetState('PENDENTE_DE_CDC.xlsx'));
     setManualFechamentoItems([]);
     setDeletedFechamentoIds(new Set());
-  }, []);
-
-  const handleClearAllData = useCallback(() => {
-    setDealerState(buildEmptySpreadsheetState('DEALER.xlsx'));
-    setSitefState(buildEmptySpreadsheetState('SITEF.xlsx'));
-    setPendenteCdcState(buildEmptySpreadsheetState('PENDENTE_DE_CDC.xlsx'));
-    setManualFechamentoItems([]);
-    setDeletedFechamentoIds(new Set());
-    setActiveSharedSession(null);
-    saveActiveRoomIdLocally('');
-    clearLocalSession();
-    setRecoveredBanner(null);
-    if (typeof window !== 'undefined') {
-      try {
-        localStorage.removeItem('wanfinance_conciliated_empresas_v1');
-        localStorage.removeItem('wanfinance_fechamento_state_v1');
-        localStorage.removeItem('wanfinance_shared_sessions_v1');
-        localStorage.removeItem('wanfinance_active_shared_room_v1');
-        localStorage.removeItem('wanfinance_autosave_session_v2');
-      } catch {
-        // ignore
-      }
-    }
-  }, []);
-
-  const handleClearDealerFile = useCallback(() => {
-    setDealerState(buildEmptySpreadsheetState('DEALER.xlsx'));
-    setManualFechamentoItems([]);
-    setDeletedFechamentoIds(new Set());
-    if (typeof window !== 'undefined') {
-      try {
-        localStorage.removeItem('wanfinance_conciliated_empresas_v1');
-      } catch {}
-    }
-  }, []);
-
-  const handleClearSitefFile = useCallback(() => {
-    setSitefState(buildEmptySpreadsheetState('SITEF.xlsx'));
-    setManualFechamentoItems([]);
-    setDeletedFechamentoIds(new Set());
-    if (typeof window !== 'undefined') {
-      try {
-        localStorage.removeItem('wanfinance_conciliated_empresas_v1');
-      } catch {}
-    }
-  }, []);
-
-  const handleClearPendenteCdcFile = useCallback(() => {
-    setPendenteCdcState(buildEmptySpreadsheetState('PENDENTE_DE_CDC.xlsx'));
   }, []);
 
   const handleRestoreFechamentoRecord = useCallback((record: FechamentoCaixaRecord) => {
