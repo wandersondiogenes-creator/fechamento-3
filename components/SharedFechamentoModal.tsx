@@ -96,8 +96,7 @@ export function SharedFechamentoModal({
   const isHost = activeSession
     ? activeSession.createdBy.id === currentUser.id ||
       activeSession.createdBy.email === currentUser.email ||
-      currentUser.role === 'admin' ||
-      currentUser.role === 'administrador'
+      currentUser.role === 'admin'
     : true;
 
   // Load active rooms when tab is 'join' or modal opens

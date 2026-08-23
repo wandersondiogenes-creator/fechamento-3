@@ -12,6 +12,8 @@ import {
   createOrUpdateSharedSession,
   getActiveRoomIdLocally,
   saveActiveRoomIdLocally,
+  deleteSharedSession,
+  leaveSharedSession,
 } from '@/lib/shared-fechamento-service';
 import { getCurrentUser } from '@/lib/auth-service';
 import {
@@ -156,8 +158,7 @@ export function FechamentoView({
   const isHost = activeSharedSession
     ? activeSharedSession.createdBy.id === currentUser.id ||
       activeSharedSession.createdBy.email === currentUser.email ||
-      currentUser.role === 'admin' ||
-      currentUser.role === 'administrador'
+      currentUser.role === 'admin'
     : true;
 
   const searchQuery = externalSearchQuery !== undefined ? externalSearchQuery : internalSearchQuery;
@@ -470,6 +471,147 @@ export function FechamentoView({
     }
   };
 
+  const formatBRL = (val: number) => {
+    return new Intl.NumberFormat('pt-BR', {
+      style: 'currency',
+      currency: 'BRL',
+    }).format(val || 0);
+  };
+
+  // Filter items based on searchQuery, selectedEmpresaFilter, and filterMode
+  const filteredItems = useMemo(() => {
+    return fechamentoItems.filter((item) => {
+      if (selectedEmpresaFilter !== 'ALL' && item.empresa !== selectedEmpresaFilter) {
+        return false;
+      }
+      if (filterMode === 'divergent' && !item.temDivergencia) return false;
+      if (filterMode === 'concolidated' && item.temDivergencia) return false;
+      if (
+        filterMode === 'pix_validation' &&
+        !(item.isPixValidationNeeded || item.status.includes('VALIDAÇÃO NECESSÁRIA'))
+      ) {
+        return false;
+      }
+
+      if (!searchQuery.trim()) return true;
+      const q = searchQuery.toLowerCase();
+      return (
+        item.empresa.toLowerCase().includes(q) ||
+        (item.departamento && item.departamento.toLowerCase().includes(q)) ||
+        item.contaGerencial.toLowerCase().includes(q) ||
+        item.caixaLoja.toLowerCase().includes(q) ||
+        item.nsu.toLowerCase().includes(q) ||
+        item.status.toLowerCase().includes(q) ||
+        item.data.toLowerCase().includes(q) ||
+        item.tipoPagamento.toLowerCase().includes(q) ||
+        (item.bandeiraDealer && item.bandeiraDealer.toLowerCase().includes(q)) ||
+        (item.bandeiraSitef && item.bandeiraSitef.toLowerCase().includes(q)) ||
+        (item.criterioConciliacao && item.criterioConciliacao.toLowerCase().includes(q))
+      );
+    }).sort((a, b) => {
+      if (empresaSortOrder === 'asc') {
+        const empDiff = a.empresa.localeCompare(b.empresa, 'pt-BR');
+        if (empDiff !== 0) return empDiff;
+      } else if (empresaSortOrder === 'desc') {
+        const empDiff = b.empresa.localeCompare(a.empresa, 'pt-BR');
+        if (empDiff !== 0) return empDiff;
+      }
+      return 0;
+    });
+  }, [fechamentoItems, selectedEmpresaFilter, filterMode, searchQuery, empresaSortOrder]);
+
+  // Grouped structure: Empresa -> Departamento -> Items
+  const groupedByEmpresa = useMemo(() => {
+    const map: Record<
+      string,
+      {
+        empresaName: string;
+        totalDealer: number;
+        totalSitef: number;
+        diferencaTotal: number;
+        countDivergencias: number;
+        countTotal: number;
+        departamentos: Record<
+          string,
+          {
+            departamentoName: string;
+            totalDealer: number;
+            totalSitef: number;
+            diferencaTotal: number;
+            countDivergencias: number;
+            items: FechamentoItem[];
+          }
+        >;
+      }
+    > = {};
+
+    filteredItems.forEach((item) => {
+      const emp = item.empresa || 'Empresa 01';
+      const dep = item.departamento || item.contaGerencial || 'Geral';
+
+      if (!map[emp]) {
+        map[emp] = {
+          empresaName: emp,
+          totalDealer: 0,
+          totalSitef: 0,
+          diferencaTotal: 0,
+          countDivergencias: 0,
+          countTotal: 0,
+          departamentos: {},
+        };
+      }
+
+      const empObj = map[emp];
+      empObj.totalDealer += item.valorDealer || 0;
+      empObj.totalSitef += item.valorSitef || 0;
+      if (item.temDivergencia) empObj.countDivergencias++;
+      empObj.countTotal++;
+
+      if (!empObj.departamentos[dep]) {
+        empObj.departamentos[dep] = {
+          departamentoName: dep,
+          totalDealer: 0,
+          totalSitef: 0,
+          diferencaTotal: 0,
+          countDivergencias: 0,
+          items: [],
+        };
+      }
+
+      const depObj = empObj.departamentos[dep];
+      depObj.items.push(item);
+      depObj.totalDealer += item.valorDealer || 0;
+      depObj.totalSitef += item.valorSitef || 0;
+      if (item.temDivergencia) depObj.countDivergencias++;
+    });
+
+    Object.values(map).forEach((emp) => {
+      emp.totalDealer = Math.round(emp.totalDealer * 100) / 100;
+      emp.totalSitef = Math.round(emp.totalSitef * 100) / 100;
+      emp.diferencaTotal = Math.round((emp.totalDealer - emp.totalSitef) * 100) / 100;
+
+      Object.values(emp.departamentos).forEach((dep) => {
+        dep.totalDealer = Math.round(dep.totalDealer * 100) / 100;
+        dep.totalSitef = Math.round(dep.totalSitef * 100) / 100;
+        dep.diferencaTotal = Math.round((dep.totalDealer - dep.totalSitef) * 100) / 100;
+      });
+    });
+
+    // Sort keys based on empresaSortOrder
+    const sortedEntries = Object.entries(map).sort(([empA], [empB]) => {
+      if (empresaSortOrder === 'asc') return empA.localeCompare(empB, 'pt-BR');
+      if (empresaSortOrder === 'desc') return empB.localeCompare(empA, 'pt-BR');
+      return 0;
+    });
+
+    const sortedMap: typeof map = {};
+    sortedEntries.forEach(([key, val]) => {
+      sortedMap[key] = val;
+    });
+
+    return sortedMap;
+  }, [filteredItems, empresaSortOrder]);
+
   // Conciliar todas as empresas de uma vez só
   const handleConciliateAll = async () => {
     const allEmpresas = Object.keys(groupedByEmpresa);
@@ -612,147 +754,6 @@ export function FechamentoView({
     operador: string;
     count: number;
   } | null>(null);
-
-  const formatBRL = (val: number) => {
-    return new Intl.NumberFormat('pt-BR', {
-      style: 'currency',
-      currency: 'BRL',
-    }).format(val || 0);
-  };
-
-  // Filter items based on searchQuery, selectedEmpresaFilter, and filterMode
-  const filteredItems = useMemo(() => {
-    return fechamentoItems.filter((item) => {
-      if (selectedEmpresaFilter !== 'ALL' && item.empresa !== selectedEmpresaFilter) {
-        return false;
-      }
-      if (filterMode === 'divergent' && !item.temDivergencia) return false;
-      if (filterMode === 'concolidated' && item.temDivergencia) return false;
-      if (
-        filterMode === 'pix_validation' &&
-        !(item.isPixValidationNeeded || item.status.includes('VALIDAÇÃO NECESSÁRIA'))
-      ) {
-        return false;
-      }
-
-      if (!searchQuery.trim()) return true;
-      const q = searchQuery.toLowerCase();
-      return (
-        item.empresa.toLowerCase().includes(q) ||
-        (item.departamento && item.departamento.toLowerCase().includes(q)) ||
-        item.contaGerencial.toLowerCase().includes(q) ||
-        item.caixaLoja.toLowerCase().includes(q) ||
-        item.nsu.toLowerCase().includes(q) ||
-        item.status.toLowerCase().includes(q) ||
-        item.data.toLowerCase().includes(q) ||
-        item.tipoPagamento.toLowerCase().includes(q) ||
-        (item.bandeiraDealer && item.bandeiraDealer.toLowerCase().includes(q)) ||
-        (item.bandeiraSitef && item.bandeiraSitef.toLowerCase().includes(q)) ||
-        (item.criterioConciliacao && item.criterioConciliacao.toLowerCase().includes(q))
-      );
-    }).sort((a, b) => {
-      if (empresaSortOrder === 'asc') {
-        const empDiff = a.empresa.localeCompare(b.empresa, 'pt-BR');
-        if (empDiff !== 0) return empDiff;
-      } else if (empresaSortOrder === 'desc') {
-        const empDiff = b.empresa.localeCompare(a.empresa, 'pt-BR');
-        if (empDiff !== 0) return empDiff;
-      }
-      return 0;
-    });
-  }, [fechamentoItems, selectedEmpresaFilter, filterMode, searchQuery, empresaSortOrder]);
-
-  // Grouped structure: Empresa -> Departamento -> Items
-  const groupedByEmpresa = useMemo(() => {
-    const map: Record<
-      string,
-      {
-        empresaName: string;
-        totalDealer: number;
-        totalSitef: number;
-        diferencaTotal: number;
-        countDivergencias: number;
-        countTotal: number;
-        departamentos: Record<
-          string,
-          {
-            departamentoName: string;
-            totalDealer: number;
-            totalSitef: number;
-            diferencaTotal: number;
-            countDivergencias: number;
-            items: FechamentoItem[];
-          }
-        >;
-      }
-    > = {};
-
-    filteredItems.forEach((item) => {
-      const emp = item.empresa || 'Empresa 01';
-      const dep = item.departamento || item.contaGerencial || 'Geral';
-
-      if (!map[emp]) {
-        map[emp] = {
-          empresaName: emp,
-          totalDealer: 0,
-          totalSitef: 0,
-          diferencaTotal: 0,
-          countDivergencias: 0,
-          countTotal: 0,
-          departamentos: {},
-        };
-      }
-
-      const empObj = map[emp];
-      empObj.totalDealer += item.valorDealer || 0;
-      empObj.totalSitef += item.valorSitef || 0;
-      if (item.temDivergencia) empObj.countDivergencias++;
-      empObj.countTotal++;
-
-      if (!empObj.departamentos[dep]) {
-        empObj.departamentos[dep] = {
-          departamentoName: dep,
-          totalDealer: 0,
-          totalSitef: 0,
-          diferencaTotal: 0,
-          countDivergencias: 0,
-          items: [],
-        };
-      }
-
-      const depObj = empObj.departamentos[dep];
-      depObj.items.push(item);
-      depObj.totalDealer += item.valorDealer || 0;
-      depObj.totalSitef += item.valorSitef || 0;
-      if (item.temDivergencia) depObj.countDivergencias++;
-    });
-
-    Object.values(map).forEach((emp) => {
-      emp.totalDealer = Math.round(emp.totalDealer * 100) / 100;
-      emp.totalSitef = Math.round(emp.totalSitef * 100) / 100;
-      emp.diferencaTotal = Math.round((emp.totalDealer - emp.totalSitef) * 100) / 100;
-
-      Object.values(emp.departamentos).forEach((dep) => {
-        dep.totalDealer = Math.round(dep.totalDealer * 100) / 100;
-        dep.totalSitef = Math.round(dep.totalSitef * 100) / 100;
-        dep.diferencaTotal = Math.round((dep.totalDealer - dep.totalSitef) * 100) / 100;
-      });
-    });
-
-    // Sort keys based on empresaSortOrder
-    const sortedEntries = Object.entries(map).sort(([empA], [empB]) => {
-      if (empresaSortOrder === 'asc') return empA.localeCompare(empB, 'pt-BR');
-      if (empresaSortOrder === 'desc') return empB.localeCompare(empA, 'pt-BR');
-      return 0;
-    });
-
-    const sortedMap: typeof map = {};
-    sortedEntries.forEach(([key, val]) => {
-      sortedMap[key] = val;
-    });
-
-    return sortedMap;
-  }, [filteredItems, empresaSortOrder]);
 
   // Collapse / Expand handlers
   const toggleEmpresaCollapse = (empName: string) => {
@@ -1359,7 +1360,7 @@ export function FechamentoView({
               <button
                 type="button"
                 onClick={() =>
-                  setEmpresaSortOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'))
+                  setEmpresaSortOrder(empresaSortOrder === 'asc' ? 'desc' : 'asc')
                 }
                 className={`px-2 py-1 rounded-md text-xs font-bold border transition-all flex items-center gap-1 cursor-pointer ${
                   empresaSortOrder === 'asc'

@@ -1,6 +1,6 @@
 import { AuditLogEntry, AuditLogFilters, AuditOperationType } from '@/types/audit';
 import { getCurrentUser } from './auth-service';
-import { supabase } from './supabase';
+import { supabase, getSupabase } from './supabase';
 
 const AUDIT_STORAGE_KEY = 'trataexcel_audit_logs_v1';
 
@@ -35,9 +35,12 @@ function saveLocalAuditLogs(logs: AuditLogEntry[]): void {
 export async function logAuditAction(entry: {
   operacao: AuditOperationType | string;
   descricao: string;
+  user_id?: string;
+  user_name?: string;
   empresa?: string;
   banco?: string;
   registro?: string;
+  documento_afetado?: string;
   valor?: number;
   situacao_anterior?: string;
   situacao_nova?: string;
@@ -49,13 +52,14 @@ export async function logAuditAction(entry: {
   const newLog: AuditLogEntry = {
     id: 'aud_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8),
     created_at: new Date().toISOString(),
-    user_id: activeUser.id,
-    user_name: activeUser.name,
+    user_id: entry.user_id || activeUser.id,
+    user_name: entry.user_name || activeUser.name,
     empresa: entry.empresa || activeUser.empresa || 'TODAS / GLOBAL',
     banco: entry.banco || 'BANCO DO BRASIL',
     operacao: entry.operacao,
     descricao: entry.descricao,
-    registro: entry.registro || '-',
+    registro: entry.registro || entry.documento_afetado || '-',
+    documento_afetado: entry.documento_afetado || entry.registro || '-',
     valor: entry.valor ?? undefined,
     situacao_anterior: entry.situacao_anterior || '-',
     situacao_nova: entry.situacao_nova || '-',
@@ -229,12 +233,14 @@ export async function getItemAuditTimeline(registroOrId: string): Promise<AuditL
  */
 export function subscribeToAuditRealtime(onNewLog: (log: AuditLogEntry) => void) {
   try {
-    const channel = supabase
+    const s = getSupabase();
+    if (!s) return () => {};
+    const channel = s
       .channel('public:audit_logs')
       .on(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'audit_logs' },
-        (payload) => {
+        (payload: any) => {
           if (payload.new) {
             const newLog: AuditLogEntry = {
               id: payload.new.id,
@@ -246,6 +252,7 @@ export function subscribeToAuditRealtime(onNewLog: (log: AuditLogEntry) => void)
               operacao: payload.new.operacao,
               descricao: payload.new.descricao,
               registro: payload.new.registro,
+              documento_afetado: payload.new.documento_afetado || payload.new.registro,
               valor: payload.new.valor ? Number(payload.new.valor) : undefined,
               situacao_anterior: payload.new.situacao_anterior,
               situacao_nova: payload.new.situacao_nova,
@@ -265,7 +272,7 @@ export function subscribeToAuditRealtime(onNewLog: (log: AuditLogEntry) => void)
       .subscribe();
 
     return () => {
-      supabase.removeChannel(channel);
+      s.removeChannel(channel);
     };
   } catch (err) {
     console.warn('Erro ao conectar ao canal Realtime do Supabase:', err);

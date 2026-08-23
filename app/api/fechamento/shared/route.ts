@@ -25,7 +25,7 @@ function cleanParticipantList(participants: SessionParticipant[], kickedUserIds:
   });
 }
 
-export function deduplicateItems(items: FechamentoItem[]): FechamentoItem[] {
+function deduplicateItems(items: FechamentoItem[]): FechamentoItem[] {
   if (!items || !Array.isArray(items)) return [];
   const map = new Map<string, FechamentoItem>();
   for (const item of items) {
@@ -36,7 +36,7 @@ export function deduplicateItems(items: FechamentoItem[]): FechamentoItem[] {
   return Array.from(map.values());
 }
 
-export function computeSessionSummary(items: FechamentoItem[]): FechamentoSummary {
+function computeSessionSummary(items: FechamentoItem[]): FechamentoSummary {
   let totalDealer = 0;
   let totalSitef = 0;
   let countDivergencias = 0;

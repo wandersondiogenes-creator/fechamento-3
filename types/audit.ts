@@ -54,6 +54,7 @@ export interface AuditLogEntry {
   operacao: AuditOperationType | string;
   descricao: string;
   registro?: string; // Document / NSU / Record ID
+  documento_afetado?: string;
   valor?: number;
   situacao_anterior?: string;
   situacao_nova?: string;
@@ -71,6 +72,7 @@ export interface AuditLogFilters {
   situacao?: string;
   lote_id?: string;
   registro?: string;
+  documento_afetado?: string;
   valor_min?: number;
   valor_max?: number;
   query?: string;

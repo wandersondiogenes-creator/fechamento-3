@@ -18,6 +18,7 @@ import {
   fetchSharedSession,
   createOrUpdateSharedSession,
   getActiveRoomIdLocally,
+  saveActiveRoomIdLocally,
   extractRoomCode,
 } from '@/lib/shared-fechamento-service';
 import { logAuditAction } from '@/lib/audit-service';
@@ -1164,6 +1165,7 @@ export default function Home() {
   // Real-time synchronization of spreadsheet edits to active shared room
   useEffect(() => {
     if (!activeSharedSession?.id || !mounted) return;
+    const sessionToSync = activeSharedSession;
     const timer = setTimeout(async () => {
       try {
         const autoItems = generateAutoFechamento(
@@ -1174,9 +1176,9 @@ export default function Home() {
         );
         const res = await createOrUpdateSharedSession(
           {
-            id: activeSharedSession.id,
-            title: activeSharedSession.title,
-            dataMovimento: activeSharedSession.dataMovimento,
+            id: sessionToSync.id,
+            title: sessionToSync.title,
+            dataMovimento: sessionToSync.dataMovimento,
             status: 'active',
             dealerState,
             sitefState,
@@ -1194,12 +1196,12 @@ export default function Home() {
     }, 1200);
     return () => clearTimeout(timer);
   }, [
-    dealerState.processedData,
-    dealerState.columns,
-    sitefState.processedData,
-    sitefState.columns,
-    pendenteCdcState.processedData,
-    activeSharedSession?.id,
+    dealerState,
+    sitefState,
+    pendenteCdcState,
+    activeSharedSession,
+    currentUser,
+    mounted,
   ]);
 
   const handleFechamentoConcluido = useCallback((record?: FechamentoCaixaRecord) => {

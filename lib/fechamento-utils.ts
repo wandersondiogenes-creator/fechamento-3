@@ -23,6 +23,17 @@ export interface FechamentoItem {
   temDivergencia: boolean;
   detalhes?: string;
   origem: 'auto' | 'manual';
+  isManual?: boolean;
+}
+
+export interface FechamentoSummary {
+  totalDealer: number;
+  totalSitef: number;
+  diferencaTotal: number;
+  countTotal: number;
+  countDivergencias: number;
+  countConciliados: number;
+  countPixValidacao: number;
 }
 
 export function parseNumericValue(val: any): number {

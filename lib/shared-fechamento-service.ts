@@ -229,7 +229,7 @@ export async function fetchSharedSession(
       query.set('userId', currentUser.id);
       query.set('userName', currentUser.name);
       query.set('userEmail', currentUser.email);
-      query.set('userEmpresa', currentUser.empresa);
+      if (currentUser.empresa) query.set('userEmpresa', currentUser.empresa);
       query.set('userRole', currentUser.role);
     }
 
