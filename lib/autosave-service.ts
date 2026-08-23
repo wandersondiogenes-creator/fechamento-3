@@ -53,7 +53,6 @@ export function getEmailSessionKey(email?: string): string {
   return `wanfinance_active_session_v3_${clean}`;
 }
 
-// Log registry
 let inMemoryLogs: AppDiagnosticLog[] = [];
 
 export function logDiagnostic(
@@ -76,16 +75,12 @@ export function logDiagnostic(
     inMemoryLogs = inMemoryLogs.slice(0, MAX_LOGS);
   }
 
-  // Persist locally
   if (typeof window !== 'undefined') {
     try {
       localStorage.setItem(LOCAL_STORAGE_LOGS_KEY, JSON.stringify(inMemoryLogs));
-    } catch {
-      // ignore storage quota errors
-    }
+    } catch {}
   }
 
-  // Console output
   const prefix = `[${level.toUpperCase()}][${module}]`;
   if (level === 'error') console.error(prefix, message, details || '');
   else if (level === 'warn') console.warn(prefix, message, details || '');
@@ -114,9 +109,6 @@ export function clearDiagnosticLogs(): void {
   logDiagnostic('info', 'System', 'Logs de diagnóstico foram limpos pelo usuário.');
 }
 
-/**
- * Autosave session to localStorage (scoped by email) and cloud APIs (for cross-device access)
- */
 export async function saveAppSession(session: AutosaveSessionData): Promise<{ success: boolean; cloudSaved: boolean; error?: string }> {
   if (typeof window === 'undefined') return { success: false, cloudSaved: false };
 
@@ -131,7 +123,6 @@ export async function saveAppSession(session: AutosaveSessionData): Promise<{ su
     lastSavedAt: new Date().toISOString(),
   };
 
-  // 1. Email-Scoped LocalStorage Persistence (Instant, Zero Latency)
   try {
     const serialized = JSON.stringify(sessionWithTime);
     localStorage.setItem(emailKey, serialized);
@@ -140,7 +131,6 @@ export async function saveAppSession(session: AutosaveSessionData): Promise<{ su
     logDiagnostic('warn', 'Autosave', `Falha ao gravar sessão em LocalStorage para ${cleanEmail}.`, err?.message);
   }
 
-  // 2. Server API Workspace Sync for Cross-Device Support
   try {
     const res = await fetch('/api/fechamento/workspace', {
       method: 'POST',
@@ -164,22 +154,19 @@ export async function saveAppSession(session: AutosaveSessionData): Promise<{ su
     logDiagnostic('warn', 'CloudWorkspaceSync', `Falha na sincronização do workspace para ${cleanEmail}.`, err?.message);
   }
 
-  // 3. Supabase Cloud Persistence (if configured)
   const supabase = getSupabase();
   if (supabase && isSupabaseConfigured()) {
     try {
-      const { error } = await retryWithBackoff(async () => {
-        return await supabase
-          .from('user_sessions')
-          .upsert(
-            {
-              user_id: cleanEmail,
-              session_payload: sessionWithTime,
-              updated_at: sessionWithTime.lastSavedAt,
-            },
-            { onConflict: 'user_id' }
-          );
-      }, 3, 500);
+      const { error } = await supabase
+        .from('user_sessions')
+        .upsert(
+          {
+            user_id: cleanEmail,
+            session_payload: sessionWithTime,
+            updated_at: sessionWithTime.lastSavedAt,
+          },
+          { onConflict: 'user_id' }
+        );
 
       if (!error) {
         cloudOk = true;
@@ -190,10 +177,6 @@ export async function saveAppSession(session: AutosaveSessionData): Promise<{ su
   return { success: localOk || cloudOk, cloudSaved: cloudOk };
 }
 
-/**
- * Load session from LocalStorage or Cloud API, strictly scoped by email and enforcing the 8-hour TTL rule.
- * If session is older than 8 hours, it archives to Pending Files and returns blank state.
- */
 export async function loadAppSession(userEmail?: string): Promise<{
   data: AutosaveSessionData | null;
   source: 'local' | 'cloud' | 'none';
@@ -208,7 +191,6 @@ export async function loadAppSession(userEmail?: string): Promise<{
   let rawSession: AutosaveSessionData | null = null;
   let source: 'local' | 'cloud' | 'none' = 'none';
 
-  // 1. Try Cloud API first for cross-device retrieval
   try {
     const res = await fetch(`/api/fechamento/workspace?email=${encodeURIComponent(cleanEmail)}`, {
       cache: 'no-store',
@@ -218,7 +200,6 @@ export async function loadAppSession(userEmail?: string): Promise<{
       if (json.success) {
         if (json.wasAutoArchived && json.archivedFile) {
           logDiagnostic('info', 'SessionTTL', `Sessão anterior de ${cleanEmail} (+8h) foi salva automaticamente em Arquivos Pendentes pelo servidor.`);
-          // Clear local active key as well
           localStorage.removeItem(emailKey);
           return {
             data: null,
@@ -249,7 +230,6 @@ export async function loadAppSession(userEmail?: string): Promise<{
     logDiagnostic('warn', 'SessionRecovery', 'Tentativa de busca no servidor falhou, buscando cache local...', err?.message);
   }
 
-  // 2. Fallback to LocalStorage (strictly by email)
   if (!rawSession) {
     try {
       const localRaw = localStorage.getItem(emailKey);
@@ -266,7 +246,6 @@ export async function loadAppSession(userEmail?: string): Promise<{
     return { data: null, source: 'none' };
   }
 
-  // 3. Strict 8-Hour Rule Check
   const hasData =
     (rawSession.dealerState?.rawData && rawSession.dealerState.rawData.length > 0) ||
     (rawSession.sitefState?.rawData && rawSession.sitefState.rawData.length > 0) ||
@@ -306,7 +285,6 @@ export async function loadAppSession(userEmail?: string): Promise<{
       logDiagnostic('info', 'SessionTTL', `Sessão com mais de 8 horas arquivada automaticamente em Arquivos Pendentes para ${cleanEmail}.`);
     }
 
-    // Clean active storage
     try {
       localStorage.removeItem(emailKey);
       fetch(`/api/fechamento/workspace?email=${encodeURIComponent(cleanEmail)}`, { method: 'DELETE' }).catch(() => {});
@@ -320,7 +298,6 @@ export async function loadAppSession(userEmail?: string): Promise<{
     };
   }
 
-  // Session is fresh (<= 8 hours)
   logDiagnostic('info', 'SessionRecovery', `Sessão ativa de ${cleanEmail} restaurada com sucesso (${source.toUpperCase()}).`, {
     lastSavedAt: rawSession.lastSavedAt,
     dealerRows: rawSession.dealerState?.rawData?.length || 0,
@@ -341,34 +318,6 @@ export function clearLocalSession(email?: string): void {
   } catch (err) {
     console.error('Erro ao limpar sessão:', err);
   }
-}
-
-/**
- * Retry helper with exponential backoff for resilient API calls
- */
-export async function retryWithBackoff<T>(
-  fn: () => Promise<T>,
-  retries = 3,
-  delayMs = 600,
-  factor = 2
-): Promise<T> {
-  let attempt = 0;
-  let currentDelay = delayMs;
-
-  while (attempt < retries) {
-    try {
-      return await fn();
-    } catch (error: any) {
-      attempt++;
-      if (attempt >= retries) {
-        logDiagnostic('error', 'RetryPolicy', `Tentativa ${attempt}/${retries} falhou: ${error?.message || error}`);
-        throw error;
-      }
-      await new Promise((resolve) => setTimeout(resolve, currentDelay));
-      currentDelay *= factor;
-    }
-  }
-  throw new Error('Número máximo de tentativas atingido.');
 }
 
 function getCircularReplacer() {

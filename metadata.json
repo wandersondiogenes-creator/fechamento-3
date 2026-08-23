@@ -1,6 +1,8 @@
 {
-  "name": "Wanfinance Pro - Conciliação Financeira",
-  "description": "Plataforma de alta precisão inspirada no design Apple para conciliação bancária, extratos TEF/SiTef, integração Dealer e auditoria em tempo real.",
+  "name": "WAN Finance - Fechamento & Conciliação",
+  "description": "Sistema avançado de conciliação financeira, fechamento de caixa multi-empresa e auditoria",
   "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }

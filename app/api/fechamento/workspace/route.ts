@@ -9,12 +9,9 @@ import {
   isSessionExpired,
   extractMetricsFromSession,
 } from '@/lib/pending-files-service';
+import { inMemoryWorkspaces, inMemoryPendingFiles } from '@/lib/server-workspace-store';
 
 export const dynamic = 'force-dynamic';
-
-// Resilient In-Memory store for fast cross-device sync & server-side retention
-const inMemoryWorkspaces = new Map<string, UserWorkspaceSession>();
-const inMemoryPendingFiles = new Map<string, PendingFileRecord[]>();
 
 export async function GET(req: NextRequest) {
   try {

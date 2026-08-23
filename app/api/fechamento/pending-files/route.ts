@@ -3,7 +3,7 @@ import { getDb } from '@/src/db';
 import { userPendingFiles } from '@/src/db/schema';
 import { eq, desc, and } from 'drizzle-orm';
 import { PendingFileRecord, cleanEmailKey } from '@/lib/pending-files-service';
-import { inMemoryPendingFiles } from '../workspace/route';
+import { inMemoryPendingFiles } from '@/lib/server-workspace-store';
 
 export const dynamic = 'force-dynamic';
 
