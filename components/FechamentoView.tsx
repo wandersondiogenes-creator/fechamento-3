@@ -90,9 +90,14 @@ interface FechamentoViewProps {
   onTabChange?: (tab: 'dealer' | 'sitef' | 'pendente_cdc' | 'fechamento') => void;
   onFechamentoConcluido?: (record: FechamentoCaixaRecord) => void;
   onRestoreFechamentoRecord?: (record: FechamentoCaixaRecord) => void;
+  dealerState?: any;
+  sitefState?: any;
+  pendenteCdcState?: any;
   activeSharedSession?: SharedFechamentoSession | null;
   onSharedSessionChange?: (session: SharedFechamentoSession | null) => void;
   onApplySharedItems?: (items: FechamentoItem[], conciliated: Record<string, boolean>) => void;
+  onApplySharedSpreadsheets?: (dealerState?: any, sitefState?: any, pendenteCdcState?: any) => void;
+  onGuestLeaveOrKicked?: (reason: 'left' | 'kicked' | 'deleted') => void;
 }
 
 export function FechamentoView({
@@ -114,9 +119,14 @@ export function FechamentoView({
   onTriggerFileImport,
   onFechamentoConcluido,
   onRestoreFechamentoRecord,
+  dealerState,
+  sitefState,
+  pendenteCdcState,
   activeSharedSession: externalActiveSharedSession,
   onSharedSessionChange,
   onApplySharedItems,
+  onApplySharedSpreadsheets,
+  onGuestLeaveOrKicked,
 }: FechamentoViewProps) {
   const fechamentoItems = useMemo(
     () => fechamentoItemsProp || itemsProp || [],
@@ -142,6 +152,13 @@ export function FechamentoView({
   const [lastSyncText, setLastSyncText] = useState<string>('');
   const [copiedSessionLink, setCopiedSessionLink] = useState(false);
   const currentUser = getCurrentUser();
+
+  const isHost = activeSharedSession
+    ? activeSharedSession.createdBy.id === currentUser.id ||
+      activeSharedSession.createdBy.email === currentUser.email ||
+      currentUser.role === 'admin' ||
+      currentUser.role === 'administrador'
+    : true;
 
   const searchQuery = externalSearchQuery !== undefined ? externalSearchQuery : internalSearchQuery;
   const setSearchQuery = (val: string) => {
@@ -290,8 +307,35 @@ export function FechamentoView({
     if (showIndicator) setIsSyncingLive(true);
     try {
       const res = await fetchSharedSession(activeSharedSession.id, currentUser);
-      if (res.success && res.session) {
+      if (!res.success) {
+        if (res.kicked) {
+          setSharedSession(null);
+          saveActiveRoomIdLocally(null);
+          onGuestLeaveOrKicked?.('kicked');
+          alert('Você foi removido desta sala pelo administrador.');
+          return;
+        }
+        if (res.deleted) {
+          setSharedSession(null);
+          saveActiveRoomIdLocally(null);
+          if (!isHost) {
+            onGuestLeaveOrKicked?.('deleted');
+            alert('Esta sala foi encerrada e excluída pelo administrador.');
+          }
+          return;
+        }
+      } else if (res.session) {
         const serverSession = res.session;
+        if (serverSession.status === 'deleted') {
+          setSharedSession(null);
+          saveActiveRoomIdLocally(null);
+          if (!isHost) {
+            onGuestLeaveOrKicked?.('deleted');
+            alert('Esta sala foi encerrada e excluída pelo administrador.');
+          }
+          return;
+        }
+
         setSharedSession(serverSession);
         setLastSyncText(new Date().toLocaleTimeString('pt-BR'));
 
@@ -312,6 +356,16 @@ export function FechamentoView({
           if (onApplySharedItems && serverSession.items) {
             onApplySharedItems(serverSession.items, serverSession.conciliatedEmpresas || {});
           }
+          if (
+            onApplySharedSpreadsheets &&
+            (serverSession.dealerState || serverSession.sitefState || serverSession.pendenteCdcState)
+          ) {
+            onApplySharedSpreadsheets(
+              serverSession.dealerState,
+              serverSession.sitefState,
+              serverSession.pendenteCdcState
+            );
+          }
         }
       }
     } catch {
@@ -321,7 +375,15 @@ export function FechamentoView({
         setTimeout(() => setIsSyncingLive(false), 500);
       }
     }
-  }, [activeSharedSession?.id, currentUser, onApplySharedItems, setSharedSession]);
+  }, [
+    activeSharedSession?.id,
+    currentUser,
+    isHost,
+    onApplySharedItems,
+    onApplySharedSpreadsheets,
+    onGuestLeaveOrKicked,
+    setSharedSession,
+  ]);
 
   useEffect(() => {
     if (!activeSharedSession?.id) return;
@@ -332,7 +394,7 @@ export function FechamentoView({
     return () => clearInterval(interval);
   }, [activeSharedSession?.id, performLiveSync]);
 
-  // Push local updates to shared session
+  // Push local updates to shared session (includes dealerState and sitefState)
   const pushUpdateToSharedRoom = useCallback(
     async (
       updatedItems: FechamentoItem[],
@@ -355,6 +417,9 @@ export function FechamentoView({
           items: dedupedItems,
           conciliatedEmpresas: updatedConciliated,
           summary,
+          dealerState,
+          sitefState,
+          pendenteCdcState,
         };
         const res = await createOrUpdateSharedSession(payload, currentUser);
         if (res.success && res.session) {
@@ -369,7 +434,15 @@ export function FechamentoView({
         console.warn('Erro ao propagar alterações na sala compartilhada:', err);
       }
     },
-    [activeSharedSession, currentUser, summary, setSharedSession]
+    [
+      activeSharedSession,
+      currentUser,
+      summary,
+      dealerState,
+      sitefState,
+      pendenteCdcState,
+      setSharedSession,
+    ]
   );
 
   // Direct toggle conciliação da empresa no sistema (sem exigir senha)
@@ -781,13 +854,57 @@ export function FechamentoView({
 
     onAddFechamentoItem(newItem);
     setIsAddModalOpen(false);
+    if (activeSharedSession?.id) {
+      pushUpdateToSharedRoom([newItem, ...fechamentoItems], conciliatedEmpresas);
+    }
   };
 
   // Confirm Delete Handler
   const handleConfirmDelete = () => {
     onDeleteFechamentoItems(deleteConfirm.ids);
+    const remainingItems = fechamentoItems.filter((i) => !deleteConfirm.ids.includes(i.id));
     setSelectedIds((prev) => prev.filter((id) => !deleteConfirm.ids.includes(id)));
     setDeleteConfirm({ isOpen: false, ids: [] });
+    if (activeSharedSession?.id) {
+      pushUpdateToSharedRoom(remainingItems, conciliatedEmpresas);
+    }
+  };
+
+  // Handler for leaving or deleting the room
+  const handleLeaveOrDeleteRoom = async () => {
+    if (!activeSharedSession?.id) return;
+    if (isHost) {
+      if (
+        !confirm(
+          'Deseja realmente EXCLUIR e encerrar esta sala compartilhada para todos os participantes? Os seus dados continuarão na sua tela, mas os convidados serão desconectados.'
+        )
+      ) {
+        return;
+      }
+      try {
+        await deleteSharedSession(activeSharedSession.id, currentUser);
+      } catch (err) {
+        console.warn('Erro ao excluir sala:', err);
+      }
+      setSharedSession(null);
+      saveActiveRoomIdLocally(null);
+    } else {
+      if (
+        !confirm(
+          'Deseja realmente SAIR desta sala compartilhada? Ao sair, os dados compartilhados serão limpos da sua tela.'
+        )
+      ) {
+        return;
+      }
+      try {
+        await leaveSharedSession(activeSharedSession.id, currentUser);
+      } catch (err) {
+        console.warn('Erro ao sair da sala:', err);
+      }
+      setSharedSession(null);
+      saveActiveRoomIdLocally(null);
+      onGuestLeaveOrKicked?.('left');
+    }
   };
 
   // Export Fechamento to Excel
@@ -1099,14 +1216,12 @@ export function FechamentoView({
             </button>
 
             <button
-              onClick={() => {
-                setSharedSession(null);
-                saveActiveRoomIdLocally(null);
-              }}
-              className="p-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 rounded-xl border border-rose-500/30 transition-all cursor-pointer"
-              title="Desconectar da Sala"
+              onClick={handleLeaveOrDeleteRoom}
+              className="px-3 py-1.5 bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 text-xs font-bold rounded-xl border border-rose-500/40 transition-all flex items-center gap-1.5 cursor-pointer"
+              title={isHost ? 'Excluir e encerrar sala para todos' : 'Sair da sala compartilhada'}
             >
-              <LogOut className="w-4 h-4" />
+              <LogOut className="w-3.5 h-3.5 text-rose-400" />
+              <span>{isHost ? 'Excluir Sala' : 'Sair da Sala'}</span>
             </button>
           </div>
         </div>
@@ -2537,6 +2652,9 @@ export function FechamentoView({
         fechamentoItems={fechamentoItems}
         conciliatedEmpresas={conciliatedEmpresas}
         summary={summary}
+        dealerState={dealerState}
+        sitefState={sitefState}
+        pendenteCdcState={pendenteCdcState}
         activeSession={activeSharedSession}
         onSessionConnected={(session) => {
           setSharedSession(session);
@@ -2546,10 +2664,24 @@ export function FechamentoView({
           if (onApplySharedItems && session.items) {
             onApplySharedItems(session.items, session.conciliatedEmpresas || {});
           }
+          if (
+            onApplySharedSpreadsheets &&
+            (session.dealerState || session.sitefState || session.pendenteCdcState)
+          ) {
+            onApplySharedSpreadsheets(
+              session.dealerState,
+              session.sitefState,
+              session.pendenteCdcState
+            );
+          }
         }}
-        onSessionDisconnected={() => {
+        onSessionDisconnected={(isGuestLeave) => {
+          const wasHost = isHost;
           setSharedSession(null);
           saveActiveRoomIdLocally(null);
+          if (isGuestLeave || !wasHost) {
+            onGuestLeaveOrKicked?.('left');
+          }
         }}
         onManualSync={() => performLiveSync(true)}
       />

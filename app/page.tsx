@@ -1,5 +1,7 @@
 'use client';
 
+export const dynamic = 'force-dynamic';
+
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { ColumnConfig, ColumnRule, RulePreset, RuleType, SpreadsheetState } from '@/types/spreadsheet';
 import {
@@ -1069,6 +1071,89 @@ export default function Home() {
     }
   }, []);
 
+  const handleApplySharedSpreadsheets = useCallback(
+    (
+      sharedDealer?: SpreadsheetState,
+      sharedSitef?: SpreadsheetState,
+      sharedPendenteCdc?: SpreadsheetState
+    ) => {
+      if (sharedDealer && sharedDealer.rawData && sharedDealer.rawData.length > 0) {
+        setDealerState(sharedDealer);
+      }
+      if (sharedSitef && sharedSitef.rawData && sharedSitef.rawData.length > 0) {
+        setSitefState(sharedSitef);
+      }
+      if (sharedPendenteCdc && sharedPendenteCdc.rawData && sharedPendenteCdc.rawData.length > 0) {
+        setPendenteCdcState(sharedPendenteCdc);
+      }
+    },
+    []
+  );
+
+  const handleGuestLeaveOrKicked = useCallback(
+    (reason: 'left' | 'kicked' | 'deleted') => {
+      handleClearAllData();
+      if (reason === 'kicked') {
+        setAutoOrganizeBanner({
+          show: true,
+          message: 'Você foi removido da sala pelo administrador e os dados foram limpos da tela.',
+        });
+      } else if (reason === 'deleted') {
+        setAutoOrganizeBanner({
+          show: true,
+          message: 'A sala de fechamento foi encerrada pelo administrador e os dados foram limpos da tela.',
+        });
+      } else {
+        setAutoOrganizeBanner({
+          show: true,
+          message: 'Você saiu da sala compartilhada com sucesso. Os dados compartilhados foram limpos da sua tela.',
+        });
+      }
+    },
+    [handleClearAllData]
+  );
+
+  // Real-time synchronization of spreadsheet edits to active shared room
+  useEffect(() => {
+    if (!activeSharedSession?.id || !mounted) return;
+    const timer = setTimeout(async () => {
+      try {
+        const autoItems = generateAutoFechamento(
+          dealerState.processedData,
+          dealerState.columns,
+          sitefState.processedData,
+          sitefState.columns
+        );
+        const res = await createOrUpdateSharedSession(
+          {
+            id: activeSharedSession.id,
+            title: activeSharedSession.title,
+            dataMovimento: activeSharedSession.dataMovimento,
+            status: 'active',
+            dealerState,
+            sitefState,
+            pendenteCdcState,
+            items: autoItems,
+          },
+          currentUser
+        );
+        if (res.success && res.session) {
+          setActiveSharedSession(res.session);
+        }
+      } catch (err) {
+        console.warn('Erro ao sincronizar planilhas na sala compartilhada:', err);
+      }
+    }, 1200);
+    return () => clearTimeout(timer);
+  }, [
+    dealerState.processedData,
+    dealerState.columns,
+    sitefState.processedData,
+    sitefState.columns,
+    pendenteCdcState.processedData,
+    activeSharedSession?.id,
+  ]);
+
   const handleFechamentoConcluido = useCallback((record?: FechamentoCaixaRecord) => {
     // Clear all imported spreadsheets and manual items to leave screen clean for next cash closure
     setDealerState(buildEmptySpreadsheetState('DEALER.xlsx'));
@@ -1319,9 +1404,14 @@ export default function Home() {
                 onTriggerFileImport={triggerFileImport}
                 onFechamentoConcluido={handleFechamentoConcluido}
                 onRestoreFechamentoRecord={handleRestoreFechamentoRecord}
+                dealerState={dealerState}
+                sitefState={sitefState}
+                pendenteCdcState={pendenteCdcState}
                 activeSharedSession={activeSharedSession}
                 onSharedSessionChange={setActiveSharedSession}
                 onApplySharedItems={handleApplySharedItems}
+                onApplySharedSpreadsheets={handleApplySharedSpreadsheets}
+                onGuestLeaveOrKicked={handleGuestLeaveOrKicked}
               />
             ) : (
               <>

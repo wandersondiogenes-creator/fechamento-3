@@ -1,4 +1,5 @@
 import { FechamentoItem } from './fechamento-utils';
+import { SpreadsheetState } from '@/types/spreadsheet';
 import { UserProfile } from '@/types/audit';
 
 export interface SessionParticipant {
@@ -31,7 +32,7 @@ export interface SharedFechamentoSession {
     empresa: string;
     role: string;
   };
-  status: 'active' | 'closed' | 'archived';
+  status: 'active' | 'closed' | 'deleted' | 'archived';
   items: FechamentoItem[];
   conciliatedEmpresas: Record<string, boolean>;
   summary: {
@@ -43,6 +44,11 @@ export interface SharedFechamentoSession {
     countConciliados: number;
     countPixValidacao: number;
   };
+  dealerState?: SpreadsheetState;
+  sitefState?: SpreadsheetState;
+  pendenteCdcState?: SpreadsheetState;
+  kickedUserIds?: string[];
+  deletedAt?: string;
   activeParticipants: SessionParticipant[];
   chatMessages?: SessionChatMessage[];
   version: number;
@@ -161,7 +167,7 @@ export function getActiveRoomIdLocally(): string | null {
 // API Calls to server backend
 
 export async function createOrUpdateSharedSession(
-  session: Partial<SharedFechamentoSession> & { id: string; items: FechamentoItem[] },
+  session: Partial<SharedFechamentoSession> & { id: string },
   currentUser: UserProfile
 ): Promise<{ success: boolean; session?: SharedFechamentoSession; error?: string }> {
   try {
@@ -205,7 +211,13 @@ export async function createOrUpdateSharedSession(
 export async function fetchSharedSession(
   sessionId: string,
   currentUser?: UserProfile
-): Promise<{ success: boolean; session?: SharedFechamentoSession; error?: string }> {
+): Promise<{
+  success: boolean;
+  session?: SharedFechamentoSession;
+  kicked?: boolean;
+  deleted?: boolean;
+  error?: string;
+}> {
   try {
     const cleanId = extractRoomCode(sessionId);
     if (!cleanId) {
@@ -229,6 +241,15 @@ export async function fetchSharedSession(
 
     const data = await res.json();
     if (!res.ok || !data.success || !data.session) {
+      if (data?.kicked) {
+        saveActiveRoomIdLocally(null);
+        return { success: false, kicked: true, error: data.error || 'Você foi removido desta sala pelo administrador.' };
+      }
+      if (data?.deleted) {
+        saveActiveRoomIdLocally(null);
+        return { success: false, deleted: true, error: data.error || 'Esta sala foi encerrada e excluída pelo administrador.' };
+      }
+
       // Check local backup fallback (in case user opened room created on same browser)
       const localBackup = getLocalSharedSessionsBackup()[cleanId];
       if (localBackup && currentUser) {
@@ -237,6 +258,16 @@ export async function fetchSharedSession(
         return { success: true, session: localBackup };
       }
       return { success: false, error: data?.error || `Sala "${cleanId}" não encontrada ou expirada.` };
+    }
+
+    if (data.session.status === 'deleted') {
+      saveActiveRoomIdLocally(null);
+      return { success: false, deleted: true, error: 'Esta sala foi encerrada e excluída pelo administrador.' };
+    }
+
+    if (currentUser && data.session.kickedUserIds?.includes(currentUser.id)) {
+      saveActiveRoomIdLocally(null);
+      return { success: false, kicked: true, error: 'Você foi removido desta sala pelo administrador.' };
     }
 
     saveLocalSharedSessionBackup(data.session);
@@ -281,7 +312,7 @@ export async function sendSharedSessionChatMessage(
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         action: 'chat',
-        sessionId,
+        sessionId: extractRoomCode(sessionId),
         user: {
           id: user.id,
           name: user.name,
@@ -300,19 +331,102 @@ export async function sendSharedSessionChatMessage(
   }
 }
 
-export async function closeSharedSession(
+export async function leaveSharedSession(
   sessionId: string,
   user: UserProfile
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    const res = await fetch(`/api/fechamento/shared?id=${encodeURIComponent(sessionId)}&userId=${encodeURIComponent(user.id)}`, {
-      method: 'DELETE',
+    const cleanId = extractRoomCode(sessionId);
+    const res = await fetch('/api/fechamento/shared', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'leave',
+        sessionId: cleanId,
+        user: {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          empresa: user.empresa,
+          role: user.role,
+        },
+      }),
+    });
+
+    saveActiveRoomIdLocally(null);
+    const data = await res.json();
+    return { success: data.success, error: data.error };
+  } catch (err: any) {
+    saveActiveRoomIdLocally(null);
+    return { success: false, error: err.message };
+  }
+}
+
+export async function deleteSharedSession(
+  sessionId: string,
+  user: UserProfile
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const cleanId = extractRoomCode(sessionId);
+    const res = await fetch('/api/fechamento/shared', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'delete_room',
+        sessionId: cleanId,
+        user: {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          empresa: user.empresa,
+          role: user.role,
+        },
+      }),
+    });
+
+    saveActiveRoomIdLocally(null);
+    const data = await res.json();
+    return { success: data.success, error: data.error };
+  } catch (err: any) {
+    saveActiveRoomIdLocally(null);
+    return { success: false, error: err.message };
+  }
+}
+
+export async function kickParticipantFromSharedSession(
+  sessionId: string,
+  targetUserId: string,
+  currentUser: UserProfile
+): Promise<{ success: boolean; session?: SharedFechamentoSession; error?: string }> {
+  try {
+    const cleanId = extractRoomCode(sessionId);
+    const res = await fetch('/api/fechamento/shared', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'kick_participant',
+        sessionId: cleanId,
+        targetUserId,
+        user: {
+          id: currentUser.id,
+          name: currentUser.name,
+          email: currentUser.email,
+          empresa: currentUser.empresa,
+          role: currentUser.role,
+        },
+      }),
     });
 
     const data = await res.json();
-    saveActiveRoomIdLocally(null);
-    return { success: data.success, error: data.error };
+    return { success: data.success, session: data.session, error: data.error };
   } catch (err: any) {
     return { success: false, error: err.message };
   }
+}
+
+export async function closeSharedSession(
+  sessionId: string,
+  user: UserProfile
+): Promise<{ success: boolean; error?: string }> {
+  return deleteSharedSession(sessionId, user);
 }

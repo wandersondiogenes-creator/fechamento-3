@@ -15,10 +15,11 @@ export const dynamic = 'force-dynamic';
 // Resilient in-memory storage for high-speed multi-user synchronization
 const inMemorySessions = new Map<string, SharedFechamentoSession>();
 
-function cleanParticipantList(participants: SessionParticipant[]): SessionParticipant[] {
+function cleanParticipantList(participants: SessionParticipant[], kickedUserIds: string[] = []): SessionParticipant[] {
   const now = Date.now();
-  // Keep users seen in last 45 seconds as active, or recent
+  const kickedSet = new Set(kickedUserIds || []);
   return (participants || []).filter((p) => {
+    if (kickedSet.has(p.id)) return false;
     const last = new Date(p.lastSeen).getTime();
     return now - last < 1000 * 60 * 60 * 12; // 12 hours retention in list
   });
@@ -78,6 +79,12 @@ export async function GET(req: NextRequest) {
       searchParams.get('fechamento');
     const id = extractRoomCode(rawId);
 
+    const userId = searchParams.get('userId');
+    const userName = searchParams.get('userName');
+    const userEmail = searchParams.get('userEmail');
+    const userEmpresa = searchParams.get('userEmpresa');
+    const userRole = searchParams.get('userRole');
+
     // 1. List active shared sessions
     if (listAll) {
       const allSessions: SharedFechamentoSession[] = [];
@@ -85,7 +92,7 @@ export async function GET(req: NextRequest) {
         if (s.status === 'active') {
           allSessions.push({
             ...s,
-            activeParticipants: cleanParticipantList(s.activeParticipants),
+            activeParticipants: cleanParticipantList(s.activeParticipants, s.kickedUserIds),
           });
         }
       });
@@ -112,6 +119,10 @@ export async function GET(req: NextRequest) {
                 items: row.items as any,
                 conciliatedEmpresas: (row.conciliatedEmpresas as any) || {},
                 summary: row.summary as any,
+                dealerState: (row.dealerState as any) || undefined,
+                sitefState: (row.sitefState as any) || undefined,
+                pendenteCdcState: (row.pendenteCdcState as any) || undefined,
+                kickedUserIds: (row.kickedUserIds as any) || [],
                 activeParticipants: (row.activeParticipants as any) || [],
                 chatMessages: (row.chatMessages as any) || [],
                 version: row.version || 1,
@@ -177,6 +188,10 @@ export async function GET(req: NextRequest) {
             items: row.items as any,
             conciliatedEmpresas: (row.conciliatedEmpresas as any) || {},
             summary: row.summary as any,
+            dealerState: (row.dealerState as any) || undefined,
+            sitefState: (row.sitefState as any) || undefined,
+            pendenteCdcState: (row.pendenteCdcState as any) || undefined,
+            kickedUserIds: (row.kickedUserIds as any) || [],
             activeParticipants: (row.activeParticipants as any) || [],
             chatMessages: (row.chatMessages as any) || [],
             version: row.version || 1,
@@ -190,9 +205,26 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    // Check if session is deleted
+    if (session && session.status === 'deleted') {
+      return NextResponse.json({
+        success: false,
+        deleted: true,
+        error: 'Esta sala foi encerrada e excluída pelo administrador.',
+      });
+    }
+
+    // Check if user was kicked
+    if (session && userId && session.kickedUserIds?.includes(userId)) {
+      return NextResponse.json({
+        success: false,
+        kicked: true,
+        error: 'Você foi removido desta sala pelo administrador.',
+      });
+    }
+
     if (!session) {
-      // If the code is formatted as a valid room code (FC-XXXXX), auto-bootstrap a collaborative room on-the-fly
-      // so users sharing newly generated codes can immediately connect and synchronize without 404 errors!
+      // Auto-bootstrap room on valid room pattern
       const isRoomCodePattern = /^FC-?\d{4,8}$/i.test(id);
       if (isRoomCodePattern) {
         const nowIso = new Date().toISOString();
@@ -220,6 +252,7 @@ export async function GET(req: NextRequest) {
             countConciliados: 0,
             countPixValidacao: 0,
           },
+          kickedUserIds: [],
           activeParticipants: [],
           chatMessages: [],
           version: 1,
@@ -231,19 +264,26 @@ export async function GET(req: NextRequest) {
         if (process.env.DATABASE_URL) {
           try {
             const db = getDb();
-            await db.insert(sharedFechamentos).values({
-              id: session.id,
-              title: session.title,
-              dataMovimento: session.dataMovimento,
-              createdBy: session.createdBy,
-              status: session.status,
-              items: session.items,
-              conciliatedEmpresas: session.conciliatedEmpresas,
-              summary: session.summary,
-              activeParticipants: session.activeParticipants,
-              chatMessages: session.chatMessages || [],
-              updatedAt: new Date(),
-            }).onConflictDoNothing();
+            await db
+              .insert(sharedFechamentos)
+              .values({
+                id: session.id,
+                title: session.title,
+                dataMovimento: session.dataMovimento,
+                createdBy: session.createdBy,
+                status: session.status,
+                items: session.items,
+                conciliatedEmpresas: session.conciliatedEmpresas,
+                summary: session.summary,
+                dealerState: session.dealerState,
+                sitefState: session.sitefState,
+                pendenteCdcState: session.pendenteCdcState,
+                kickedUserIds: session.kickedUserIds || [],
+                activeParticipants: session.activeParticipants,
+                chatMessages: session.chatMessages || [],
+                updatedAt: new Date(),
+              })
+              .onConflictDoNothing();
           } catch (dbErr) {
             console.warn('DB auto-provision error:', dbErr);
           }
@@ -253,20 +293,17 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Register participant heartbeat if user query params provided
-    const userId = searchParams.get('userId');
-    const userName = searchParams.get('userName');
-    const userEmail = searchParams.get('userEmail');
-    const userEmpresa = searchParams.get('userEmpresa');
-    const userRole = searchParams.get('userRole');
-
+    // Register participant heartbeat
     if (userId && userName) {
       const nowIso = new Date().toISOString();
       const existingPartIdx = session.activeParticipants.findIndex((p) => p.id === userId || p.email === userEmail);
+      const isHost = session.createdBy.id === userId || session.createdBy.email === userEmail;
+
       if (existingPartIdx >= 0) {
         session.activeParticipants[existingPartIdx].lastSeen = nowIso;
         if (userName) session.activeParticipants[existingPartIdx].name = userName;
         if (userEmpresa) session.activeParticipants[existingPartIdx].empresa = userEmpresa;
+        session.activeParticipants[existingPartIdx].isHost = isHost;
       } else {
         session.activeParticipants.push({
           id: userId,
@@ -275,10 +312,10 @@ export async function GET(req: NextRequest) {
           empresa: userEmpresa || 'Geral',
           role: userRole || 'operador',
           lastSeen: nowIso,
-          isHost: session.createdBy.id === userId || session.createdBy.email === userEmail,
+          isHost,
         });
       }
-      session.activeParticipants = cleanParticipantList(session.activeParticipants);
+      session.activeParticipants = cleanParticipantList(session.activeParticipants, session.kickedUserIds);
     }
 
     if (session) {
@@ -301,13 +338,47 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
+    const action = body.action;
 
-    // Action: Chat Message
-    if (body.action === 'chat') {
-      const { sessionId, user, message } = body;
+    // 1. Action: Leave Room
+    if (action === 'leave') {
+      const { sessionId, user } = body;
       const cleanSessionId = extractRoomCode(sessionId);
-      if (!cleanSessionId || !message || !user) {
-        return NextResponse.json({ success: false, error: 'Dados inválidos para mensagem' }, { status: 400 });
+      if (!cleanSessionId || !user) {
+        return NextResponse.json({ success: false, error: 'Dados inválidos para sair da sala' }, { status: 400 });
+      }
+
+      const session = inMemorySessions.get(cleanSessionId);
+      if (session) {
+        session.activeParticipants = session.activeParticipants.filter(
+          (p) => p.id !== user.id && p.email !== user.email
+        );
+        session.updatedAt = new Date().toISOString();
+        session.version = (session.version || 1) + 1;
+        inMemorySessions.set(cleanSessionId, session);
+
+        if (process.env.DATABASE_URL) {
+          try {
+            const db = getDb();
+            await db
+              .update(sharedFechamentos)
+              .set({ activeParticipants: session.activeParticipants, updatedAt: new Date() })
+              .where(eq(sharedFechamentos.id, cleanSessionId));
+          } catch (dbErr) {
+            console.warn('DB leave update error:', dbErr);
+          }
+        }
+      }
+
+      return NextResponse.json({ success: true, message: 'Usuário desconectado da sala' });
+    }
+
+    // 2. Action: Delete Room (Admin only)
+    if (action === 'delete_room') {
+      const { sessionId, user } = body;
+      const cleanSessionId = extractRoomCode(sessionId);
+      if (!cleanSessionId || !user) {
+        return NextResponse.json({ success: false, error: 'Dados inválidos para excluir a sala' }, { status: 400 });
       }
 
       let session = inMemorySessions.get(cleanSessionId);
@@ -315,28 +386,108 @@ export async function POST(req: NextRequest) {
         const db = getDb();
         const rows = await db.select().from(sharedFechamentos).where(eq(sharedFechamentos.id, cleanSessionId)).limit(1);
         if (rows.length > 0) {
-          const row = rows[0];
-          const rawItems = (row.items as any) || [];
-          const deduped = deduplicateItems(rawItems);
-          session = {
-            id: row.id,
-            title: row.title,
-            dataMovimento: row.dataMovimento,
-            createdBy: row.createdBy as any,
-            status: row.status as any,
-            items: deduped,
-            conciliatedEmpresas: (row.conciliatedEmpresas as any) || {},
-            summary: computeSessionSummary(deduped),
-            activeParticipants: (row.activeParticipants as any) || [],
-            chatMessages: (row.chatMessages as any) || [],
-            version: row.version || 1,
-            createdAt: row.createdAt.toISOString(),
-            updatedAt: row.updatedAt.toISOString(),
-          };
-          inMemorySessions.set(cleanSessionId, session);
+          session = rows[0] as any;
         }
       }
 
+      if (!session) {
+        return NextResponse.json({ success: false, error: 'Sessão não encontrada' }, { status: 404 });
+      }
+
+      const isHost =
+        session.createdBy.id === user.id ||
+        session.createdBy.email === user.email ||
+        user.role === 'admin' ||
+        user.role === 'administrador';
+
+      if (!isHost) {
+        return NextResponse.json({ success: false, error: 'Apenas o anfitrião ou administrador pode excluir a sala' }, { status: 403 });
+      }
+
+      // Mark session as deleted
+      session.status = 'deleted';
+      session.deletedAt = new Date().toISOString();
+      session.updatedAt = new Date().toISOString();
+      session.activeParticipants = [];
+      session.version = (session.version || 1) + 1;
+      inMemorySessions.set(cleanSessionId, session);
+
+      if (process.env.DATABASE_URL) {
+        try {
+          const db = getDb();
+          await db
+            .update(sharedFechamentos)
+            .set({ status: 'deleted', updatedAt: new Date() })
+            .where(eq(sharedFechamentos.id, cleanSessionId));
+        } catch (dbErr) {
+          console.warn('DB delete update error:', dbErr);
+        }
+      }
+
+      return NextResponse.json({ success: true, message: 'Sala excluída com sucesso' });
+    }
+
+    // 3. Action: Kick Participant (Admin only)
+    if (action === 'kick_participant') {
+      const { sessionId, targetUserId, user } = body;
+      const cleanSessionId = extractRoomCode(sessionId);
+      if (!cleanSessionId || !targetUserId || !user) {
+        return NextResponse.json({ success: false, error: 'Dados inválidos para remover usuário' }, { status: 400 });
+      }
+
+      let session = inMemorySessions.get(cleanSessionId);
+      if (!session) {
+        return NextResponse.json({ success: false, error: 'Sessão não encontrada' }, { status: 404 });
+      }
+
+      const isHost =
+        session.createdBy.id === user.id ||
+        session.createdBy.email === user.email ||
+        user.role === 'admin' ||
+        user.role === 'administrador';
+
+      if (!isHost) {
+        return NextResponse.json({ success: false, error: 'Apenas o anfitrião pode remover participantes da sala' }, { status: 403 });
+      }
+
+      if (!session.kickedUserIds) session.kickedUserIds = [];
+      if (!session.kickedUserIds.includes(targetUserId)) {
+        session.kickedUserIds.push(targetUserId);
+      }
+
+      session.activeParticipants = session.activeParticipants.filter((p) => p.id !== targetUserId);
+      session.updatedAt = new Date().toISOString();
+      session.version = (session.version || 1) + 1;
+      inMemorySessions.set(cleanSessionId, session);
+
+      if (process.env.DATABASE_URL) {
+        try {
+          const db = getDb();
+          await db
+            .update(sharedFechamentos)
+            .set({
+              kickedUserIds: session.kickedUserIds,
+              activeParticipants: session.activeParticipants,
+              updatedAt: new Date(),
+            })
+            .where(eq(sharedFechamentos.id, cleanSessionId));
+        } catch (dbErr) {
+          console.warn('DB kick participant error:', dbErr);
+        }
+      }
+
+      return NextResponse.json({ success: true, session });
+    }
+
+    // 4. Action: Chat Message
+    if (action === 'chat') {
+      const { sessionId, user, message } = body;
+      const cleanSessionId = extractRoomCode(sessionId);
+      if (!cleanSessionId || !message || !user) {
+        return NextResponse.json({ success: false, error: 'Dados inválidos para mensagem' }, { status: 400 });
+      }
+
+      let session = inMemorySessions.get(cleanSessionId);
       if (!session) {
         return NextResponse.json({ success: false, error: 'Sessão não encontrada' }, { status: 404 });
       }
@@ -358,7 +509,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true, session });
     }
 
-    // Create or Update Session
+    // 5. Create or Update Session (including full dealerState and sitefState)
     const { session: incomingSession, user } = body;
     if (!incomingSession || !incomingSession.id) {
       return NextResponse.json({ success: false, error: 'ID da sessão é obrigatório' }, { status: 400 });
@@ -372,10 +523,15 @@ export async function POST(req: NextRequest) {
 
     if (user) {
       const userIdx = updatedParticipants.findIndex((p) => p.id === user.id || p.email === user.email);
+      const isHost = existing
+        ? existing.createdBy?.id === user.id || existing.createdBy?.email === user.email
+        : true;
+
       if (userIdx >= 0) {
         updatedParticipants[userIdx].lastSeen = nowIso;
         updatedParticipants[userIdx].name = user.name;
         updatedParticipants[userIdx].empresa = user.empresa;
+        updatedParticipants[userIdx].isHost = isHost;
       } else {
         updatedParticipants.push({
           id: user.id,
@@ -384,7 +540,7 @@ export async function POST(req: NextRequest) {
           empresa: user.empresa,
           role: user.role,
           lastSeen: nowIso,
-          isHost: existing ? existing.createdBy?.id === user.id : true,
+          isHost,
         });
       }
     }
@@ -398,6 +554,21 @@ export async function POST(req: NextRequest) {
       incomingSession.conciliatedEmpresas !== undefined
         ? incomingSession.conciliatedEmpresas
         : (existing?.conciliatedEmpresas || {});
+
+    // Spreadsheets states
+    const dealerState =
+      incomingSession.dealerState !== undefined ? incomingSession.dealerState : existing?.dealerState;
+    const sitefState =
+      incomingSession.sitefState !== undefined ? incomingSession.sitefState : existing?.sitefState;
+    const pendenteCdcState =
+      incomingSession.pendenteCdcState !== undefined
+        ? incomingSession.pendenteCdcState
+        : existing?.pendenteCdcState;
+
+    const kickedUserIds =
+      incomingSession.kickedUserIds !== undefined
+        ? incomingSession.kickedUserIds
+        : (existing?.kickedUserIds || []);
 
     const fullSession: SharedFechamentoSession = {
       id: roomId,
@@ -414,7 +585,11 @@ export async function POST(req: NextRequest) {
       items: sanitizedItems,
       conciliatedEmpresas: mergedConciliatedEmpresas,
       summary: accurateSummary,
-      activeParticipants: cleanParticipantList(updatedParticipants),
+      dealerState,
+      sitefState,
+      pendenteCdcState,
+      kickedUserIds,
+      activeParticipants: cleanParticipantList(updatedParticipants, kickedUserIds),
       chatMessages: incomingSession.chatMessages || existing?.chatMessages || [],
       version: (existing?.version || 0) + 1,
       createdAt: existing?.createdAt || nowIso,
@@ -438,6 +613,10 @@ export async function POST(req: NextRequest) {
             items: fullSession.items,
             conciliatedEmpresas: fullSession.conciliatedEmpresas,
             summary: fullSession.summary,
+            dealerState: fullSession.dealerState,
+            sitefState: fullSession.sitefState,
+            pendenteCdcState: fullSession.pendenteCdcState,
+            kickedUserIds: fullSession.kickedUserIds,
             activeParticipants: fullSession.activeParticipants,
             chatMessages: fullSession.chatMessages || [],
             updatedAt: new Date(),
@@ -451,6 +630,10 @@ export async function POST(req: NextRequest) {
               items: fullSession.items,
               conciliatedEmpresas: fullSession.conciliatedEmpresas,
               summary: fullSession.summary,
+              dealerState: fullSession.dealerState,
+              sitefState: fullSession.sitefState,
+              pendenteCdcState: fullSession.pendenteCdcState,
+              kickedUserIds: fullSession.kickedUserIds,
               activeParticipants: fullSession.activeParticipants,
               chatMessages: fullSession.chatMessages || [],
               updatedAt: new Date(),
@@ -477,19 +660,27 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'ID da sala não informado' }, { status: 400 });
     }
 
-    inMemorySessions.delete(id);
+    const session = inMemorySessions.get(id);
+    if (session) {
+      session.status = 'deleted';
+      session.deletedAt = new Date().toISOString();
+      session.updatedAt = new Date().toISOString();
+      session.version = (session.version || 1) + 1;
+      inMemorySessions.set(id, session);
+    }
 
     if (process.env.DATABASE_URL) {
       try {
         const db = getDb();
-        await db.update(sharedFechamentos).set({ status: 'closed', updatedAt: new Date() }).where(eq(sharedFechamentos.id, id));
+        await db.update(sharedFechamentos).set({ status: 'deleted', updatedAt: new Date() }).where(eq(sharedFechamentos.id, id));
       } catch (dbErr) {
-        console.warn('DB close error:', dbErr);
+        console.warn('DB delete error:', dbErr);
       }
     }
 
-    return NextResponse.json({ success: true, message: 'Sessão encerrada com sucesso' });
+    return NextResponse.json({ success: true, message: 'Sessão excluída com sucesso' });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }
+
