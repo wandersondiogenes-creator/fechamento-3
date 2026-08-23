@@ -1132,13 +1132,13 @@ export default function Home() {
       sharedPendenteCdc?: SpreadsheetState
     ) => {
       isReceivingRemoteUpdateRef.current = true;
-      if (sharedDealer && sharedDealer.rawData && sharedDealer.rawData.length > 0) {
+      if (sharedDealer) {
         setDealerState(sharedDealer);
       }
-      if (sharedSitef && sharedSitef.rawData && sharedSitef.rawData.length > 0) {
+      if (sharedSitef) {
         setSitefState(sharedSitef);
       }
-      if (sharedPendenteCdc && sharedPendenteCdc.rawData && sharedPendenteCdc.rawData.length > 0) {
+      if (sharedPendenteCdc) {
         setPendenteCdcState(sharedPendenteCdc);
       }
     },
@@ -1271,7 +1271,7 @@ export default function Home() {
     return (
       <ICloudLoginView
         onLoginSuccess={handleLoginSuccess}
-        defaultEmail="infroberto360@gmail.com"
+        defaultEmail=""
       />
     );
   }

@@ -66,12 +66,44 @@ export const DEFAULT_USERS: UserProfile[] = [
 const CURRENT_USER_STORAGE_KEY = 'trataexcel_active_user_v1';
 const ALL_USERS_STORAGE_KEY = 'trataexcel_all_users_v1';
 export const AUTH_SESSION_KEY = 'wanfinance_gmail_session_v1';
+const USER_PASSWORDS_STORAGE_KEY = 'wanfinance_user_passwords_v1';
 
 export interface AuthSession {
   user: UserProfile;
   loginAt: string;
   rememberMe: boolean;
   authProvider: 'google' | 'gmail_direct';
+}
+
+export function getUserPasswords(): Record<string, string> {
+  if (typeof window === 'undefined') return {};
+  try {
+    const raw = localStorage.getItem(USER_PASSWORDS_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+export function verifyUserPassword(email: string, passwordAttempt: string): boolean {
+  const cleanEmail = email.trim().toLowerCase();
+  const passwords = getUserPasswords();
+  const storedPassword = passwords[cleanEmail] || '123'; // Default password is '123'
+  return String(passwordAttempt) === String(storedPassword);
+}
+
+export function updateUserPassword(email: string, newPassword: string): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    const cleanEmail = email.trim().toLowerCase();
+    const passwords = getUserPasswords();
+    passwords[cleanEmail] = String(newPassword).trim();
+    localStorage.setItem(USER_PASSWORDS_STORAGE_KEY, JSON.stringify(passwords));
+    return true;
+  } catch (err) {
+    console.error('Erro ao atualizar senha:', err);
+    return false;
+  }
 }
 
 export function isUserLoggedIn(): boolean {

@@ -13,9 +13,12 @@ import {
   HelpCircle,
   ExternalLink,
   ChevronRight,
+  Eye,
+  EyeOff,
+  RefreshCw,
 } from 'lucide-react';
 import { UserProfile } from '@/types/audit';
-import { loginWithGmail } from '@/lib/auth-service';
+import { loginWithGmail, verifyUserPassword, updateUserPassword } from '@/lib/auth-service';
 import { logAuditAction } from '@/lib/audit-service';
 
 interface ICloudLoginViewProps {
@@ -23,43 +26,27 @@ interface ICloudLoginViewProps {
   defaultEmail?: string;
 }
 
-export function ICloudLoginView({ onLoginSuccess, defaultEmail = 'infroberto360@gmail.com' }: ICloudLoginViewProps) {
+export function ICloudLoginView({ onLoginSuccess, defaultEmail = '' }: ICloudLoginViewProps) {
   const [email, setEmail] = useState(defaultEmail);
   const [password, setPassword] = useState('');
   const [showPasswordStep, setShowPasswordStep] = useState(false);
+  const [showPasswordText, setShowPasswordText] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Suggested quick-select Gmail accounts
-  const quickAccounts = [
-    {
-      name: 'Roberto Santos',
-      email: 'infroberto360@gmail.com',
-      role: 'Administrador Matriz',
-      initials: 'RS',
-      gradient: 'from-blue-600 to-indigo-700',
-    },
-    {
-      name: 'João Silva',
-      email: 'joao.silva@gmail.com',
-      role: 'Operador Financeiro',
-      initials: 'JS',
-      gradient: 'from-indigo-600 to-purple-700',
-    },
-    {
-      name: 'Maria Santos',
-      email: 'maria.santos@gmail.com',
-      role: 'Caixa / Lançamentos',
-      initials: 'MS',
-      gradient: 'from-purple-600 to-pink-600',
-    },
-  ];
+  // Change Password Modal state
+  const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
+  const [changeEmail, setChangeEmail] = useState('');
+  const [currentPass, setCurrentPass] = useState('');
+  const [newPass, setNewPass] = useState('');
+  const [confirmNewPass, setConfirmNewPass] = useState('');
+  const [changePassError, setChangePassError] = useState<string | null>(null);
+  const [changePassSuccess, setChangePassSuccess] = useState<string | null>(null);
 
   const validateGmail = (inputEmail: string) => {
     const clean = inputEmail.trim().toLowerCase();
     if (!clean) return false;
-    // Allow gmail.com addresses or valid corporate emails
     const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     return re.test(clean);
   };
@@ -70,31 +57,48 @@ export function ICloudLoginView({ onLoginSuccess, defaultEmail = 'infroberto360@
 
     const cleanEmail = email.trim().toLowerCase();
     if (!cleanEmail) {
-      setErrorMessage('Por favor, digite seu endereço de e-mail do Gmail.');
+      setErrorMessage('Por favor, digite seu endereço de e-mail.');
       return;
     }
 
+    let targetEmail = cleanEmail;
     if (!cleanEmail.includes('@')) {
-      // Auto-append @gmail.com if user only typed the username
-      setEmail(`${cleanEmail}@gmail.com`);
+      targetEmail = `${cleanEmail}@gmail.com`;
+      setEmail(targetEmail);
     }
 
-    const targetEmail = cleanEmail.includes('@') ? cleanEmail : `${cleanEmail}@gmail.com`;
-
     if (!validateGmail(targetEmail)) {
-      setErrorMessage('Por favor, informe um e-mail do Gmail válido (ex: nome@gmail.com).');
+      setErrorMessage('Por favor, informe um e-mail válido (ex: seu.nome@gmail.com).');
       return;
     }
 
     setShowPasswordStep(true);
+    setPassword('');
   };
 
   const handleFinalLogin = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     setErrorMessage(null);
-    setLoading(true);
 
     const targetEmail = email.trim().toLowerCase();
+    if (!targetEmail) {
+      setErrorMessage('Por favor, digite seu e-mail.');
+      return;
+    }
+
+    if (!password) {
+      setErrorMessage('Por favor, digite a sua senha para entrar.');
+      return;
+    }
+
+    // Verify password against stored password or standard default '123'
+    const isPassValid = verifyUserPassword(targetEmail, password);
+    if (!isPassValid) {
+      setErrorMessage('Senha incorreta para este usuário. Tente novamente ou altere sua senha.');
+      return;
+    }
+
+    setLoading(true);
 
     try {
       // Authenticate user via Gmail
@@ -106,7 +110,7 @@ export function ICloudLoginView({ onLoginSuccess, defaultEmail = 'infroberto360@
         user_name: user.name,
         empresa: user.empresa,
         operacao: 'LOGIN',
-        descricao: `Sessão iniciada via autenticação Gmail (${targetEmail}) no Wanfinance Pro.`,
+        descricao: `Sessão iniciada via autenticação com senha (${targetEmail}) no Wanfinance Pro.`,
       });
 
       // Brief smooth transition
@@ -120,29 +124,58 @@ export function ICloudLoginView({ onLoginSuccess, defaultEmail = 'infroberto360@
     }
   };
 
-  const handleQuickLogin = async (accountEmail: string, accountName: string) => {
-    setEmail(accountEmail);
-    setLoading(true);
-    setErrorMessage(null);
+  const handleOpenChangePassword = (initialEmail?: string) => {
+    setChangeEmail(initialEmail || email.trim().toLowerCase() || '');
+    setCurrentPass('');
+    setNewPass('');
+    setConfirmNewPass('');
+    setChangePassError(null);
+    setChangePassSuccess(null);
+    setIsChangePasswordOpen(true);
+  };
 
-    try {
-      const user = loginWithGmail(accountEmail, accountName, rememberMe, 'google');
+  const handleChangePasswordSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setChangePassError(null);
+    setChangePassSuccess(null);
 
-      await logAuditAction({
-        user_id: user.id,
-        user_name: user.name,
-        empresa: user.empresa,
-        operacao: 'LOGIN',
-        descricao: `Acesso rápido com Conta Gmail (${accountEmail}) autenticado com sucesso.`,
-      });
+    const targetEmail = changeEmail.trim().toLowerCase();
+    if (!targetEmail || !validateGmail(targetEmail)) {
+      setChangePassError('Por favor, informe um endereço de e-mail válido.');
+      return;
+    }
 
+    if (!currentPass) {
+      setChangePassError('Informe a senha atual (padrão: 123 caso nunca tenha alterado).');
+      return;
+    }
+
+    if (!verifyUserPassword(targetEmail, currentPass)) {
+      setChangePassError('A senha atual informada está incorreta.');
+      return;
+    }
+
+    if (!newPass || newPass.length < 3) {
+      setChangePassError('A nova senha deve conter pelo menos 3 caracteres.');
+      return;
+    }
+
+    if (newPass !== confirmNewPass) {
+      setChangePassError('A confirmação da nova senha não confere.');
+      return;
+    }
+
+    const success = updateUserPassword(targetEmail, newPass);
+    if (success) {
+      setChangePassSuccess('Senha alterada com sucesso! Você já pode utilizá-la para fazer login.');
+      if (email.trim().toLowerCase() === targetEmail) {
+        setPassword('');
+      }
       setTimeout(() => {
-        setLoading(false);
-        onLoginSuccess(user);
-      }, 350);
-    } catch (err: any) {
-      setLoading(false);
-      setErrorMessage('Erro ao efetuar login rápido.');
+        setIsChangePasswordOpen(false);
+      }, 1600);
+    } else {
+      setChangePassError('Não foi possível salvar a nova senha no momento.');
     }
   };
 
@@ -237,11 +270,11 @@ export function ICloudLoginView({ onLoginSuccess, defaultEmail = 'infroberto360@
           )}
 
           {!showPasswordStep ? (
-            /* STEP 1: GMAIL EMAIL INPUT (iCloud style with embedded arrow button) */
+            /* STEP 1: GMAIL EMAIL INPUT */
             <form onSubmit={handleInitialSubmit} className="space-y-4">
               <div className="space-y-1.5">
                 <label className="block text-xs font-semibold text-slate-700">
-                  E-mail do Gmail
+                  Endereço de E-mail
                 </label>
                 <div className="relative flex items-center">
                   <div className="absolute left-3.5 text-slate-400 pointer-events-none">
@@ -256,21 +289,21 @@ export function ICloudLoginView({ onLoginSuccess, defaultEmail = 'infroberto360@
                       setEmail(e.target.value);
                       if (errorMessage) setErrorMessage(null);
                     }}
-                    placeholder="exemplo@gmail.com"
+                    placeholder="Digite seu e-mail (ex: usuario@gmail.com)"
                     className="w-full pl-10 pr-12 py-3 bg-slate-50/80 border border-slate-200 rounded-2xl text-sm text-[#1D1D1F] placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#007AFF] focus:bg-white focus:border-transparent transition-all shadow-inner-2xs"
                   />
                   {/* iCloud Circle Arrow Button */}
                   <button
                     type="submit"
                     className="absolute right-2 w-8 h-8 rounded-full bg-[#007AFF] hover:bg-[#0062D2] active:scale-95 text-white flex items-center justify-center shadow-xs transition-all cursor-pointer"
-                    title="Continuar"
+                    title="Avançar para senha"
                   >
                     <ArrowRight className="w-4 h-4" />
                   </button>
                 </div>
               </div>
 
-              {/* Keep signed in checkbox */}
+              {/* Keep signed in & Change Password link */}
               <div className="flex items-center justify-between pt-1">
                 <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer select-none">
                   <input
@@ -281,48 +314,38 @@ export function ICloudLoginView({ onLoginSuccess, defaultEmail = 'infroberto360@
                   />
                   <span>Mantenha-me conectado</span>
                 </label>
-              </div>
 
-              {/* Official Google Sign-In Styled Button */}
-              <div className="pt-2">
                 <button
                   type="button"
-                  onClick={() => handleInitialSubmit()}
-                  className="w-full py-2.5 px-4 bg-white hover:bg-slate-50 active:scale-98 border border-slate-200 text-slate-700 font-semibold rounded-2xl text-xs shadow-2xs flex items-center justify-center gap-2.5 transition-all cursor-pointer"
+                  onClick={() => handleOpenChangePassword(email)}
+                  className="text-xs text-[#007AFF] font-medium hover:underline flex items-center gap-1 cursor-pointer"
                 >
-                  <svg className="w-4 h-4" viewBox="0 0 24 24">
-                    <path
-                      fill="#4285F4"
-                      d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17Z"
-                    />
-                    <path
-                      fill="#34A853"
-                      d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.15C3.26 21.36 7.33 24 12 24Z"
-                    />
-                    <path
-                      fill="#FBBC05"
-                      d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.25C.45 8.18 0 9.98 0 12s.45 3.82 1.25 5.42l4.03-3.15Z"
-                    />
-                    <path
-                      fill="#EA4335"
-                      d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.33 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98Z"
-                    />
-                  </svg>
-                  <span>Continuar com Conta Google</span>
+                  <KeyRound className="w-3.5 h-3.5" />
+                  <span>Mudar de senha</span>
+                </button>
+              </div>
+
+              <div className="pt-2">
+                <button
+                  type="submit"
+                  className="w-full py-3 px-4 bg-gradient-to-b from-[#007AFF] to-[#0062D2] hover:brightness-105 active:scale-98 text-white font-bold rounded-2xl text-xs shadow-xs shadow-blue-500/25 transition-all flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <span>Continuar com este e-mail</span>
+                  <ArrowRight className="w-4 h-4" />
                 </button>
               </div>
             </form>
           ) : (
-            /* STEP 2: CONFIRMATION / PASSWORD / DIRECT GMAIL AUTH */
+            /* STEP 2: PASSWORD STEP (Masked by default, with eye toggle, standard password 123) */
             <form onSubmit={handleFinalLogin} className="space-y-4 animate-in fade-in duration-200">
               <div className="flex items-center justify-between p-2.5 bg-slate-50 rounded-2xl border border-slate-200">
                 <div className="flex items-center gap-2.5 overflow-hidden">
                   <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 text-white font-bold text-xs flex items-center justify-center flex-shrink-0">
-                    {email.charAt(0).toUpperCase()}
+                    {email.charAt(0).toUpperCase() || 'U'}
                   </div>
                   <div className="truncate text-left">
                     <div className="text-xs font-bold text-slate-800 truncate">{email}</div>
-                    <div className="text-[10px] text-slate-500">Conta Google Verificada</div>
+                    <div className="text-[10px] text-slate-500">Usuário do Sistema</div>
                   </div>
                 </div>
                 <button
@@ -330,26 +353,50 @@ export function ICloudLoginView({ onLoginSuccess, defaultEmail = 'infroberto360@
                   onClick={() => setShowPasswordStep(false)}
                   className="text-xs text-[#007AFF] font-semibold hover:underline cursor-pointer"
                 >
-                  Alterar
+                  Trocar e-mail
                 </button>
               </div>
 
               <div className="space-y-1.5">
-                <label className="block text-xs font-semibold text-slate-700">
-                  Senha ou Código de Acesso
-                </label>
+                <div className="flex items-center justify-between">
+                  <label className="block text-xs font-semibold text-slate-700">
+                    Senha de Acesso
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => handleOpenChangePassword(email)}
+                    className="text-[11px] text-[#007AFF] hover:underline font-medium cursor-pointer"
+                  >
+                    Alterar senha deste e-mail
+                  </button>
+                </div>
                 <div className="relative flex items-center">
                   <div className="absolute left-3.5 text-slate-400 pointer-events-none">
                     <Lock className="w-4 h-4" />
                   </div>
                   <input
-                    type="password"
+                    type={showPasswordText ? 'text' : 'password'}
                     autoFocus
+                    required
                     value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="Digite sua senha ou pressione Entrar"
-                    className="w-full pl-10 pr-12 py-3 bg-slate-50/80 border border-slate-200 rounded-2xl text-sm text-[#1D1D1F] placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#007AFF] focus:bg-white focus:border-transparent transition-all shadow-inner-2xs"
+                    onChange={(e) => {
+                      setPassword(e.target.value);
+                      if (errorMessage) setErrorMessage(null);
+                    }}
+                    placeholder="Digite sua senha para entrar"
+                    className="w-full pl-10 pr-20 py-3 bg-slate-50/80 border border-slate-200 rounded-2xl text-sm text-[#1D1D1F] placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#007AFF] focus:bg-white focus:border-transparent transition-all shadow-inner-2xs"
                   />
+                  
+                  {/* Eye Toggle to toggle visibility for typing without showing plaintext permanently in panel */}
+                  <button
+                    type="button"
+                    onClick={() => setShowPasswordText(!showPasswordText)}
+                    className="absolute right-11 p-1.5 text-slate-400 hover:text-slate-600 rounded-full transition-colors cursor-pointer"
+                    title={showPasswordText ? 'Ocultar senha' : 'Exibir senha'}
+                  >
+                    {showPasswordText ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+
                   <button
                     type="submit"
                     disabled={loading}
@@ -385,41 +432,133 @@ export function ICloudLoginView({ onLoginSuccess, defaultEmail = 'infroberto360@
             </form>
           )}
 
-          {/* Quick Access Account Selector */}
-          <div className="mt-6 pt-5 border-t border-slate-100">
-            <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2.5 text-center">
-              Acesso Rápido com Contas Autorizadas
-            </div>
-            <div className="grid grid-cols-1 gap-2">
-              {quickAccounts.map((acc) => (
-                <button
-                  key={acc.email}
-                  type="button"
-                  onClick={() => handleQuickLogin(acc.email, acc.name)}
-                  className="w-full flex items-center justify-between p-2.5 rounded-2xl hover:bg-slate-50 active:bg-slate-100 border border-slate-200/80 transition-all text-left group cursor-pointer"
-                >
-                  <div className="flex items-center gap-2.5 overflow-hidden">
-                    <div
-                      className={`w-7 h-7 rounded-full bg-gradient-to-tr ${acc.gradient} text-white font-black text-[10px] flex items-center justify-center shadow-xs flex-shrink-0`}
-                    >
-                      {acc.initials}
-                    </div>
-                    <div className="truncate">
-                      <div className="text-xs font-bold text-slate-800 group-hover:text-[#007AFF] transition-colors truncate">
-                        {acc.name}
-                      </div>
-                      <div className="text-[10px] text-slate-500 truncate">{acc.email}</div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-1 text-[10px] text-slate-400 group-hover:text-[#007AFF] font-medium flex-shrink-0">
-                    <span>{acc.role}</span>
-                    <ChevronRight className="w-3.5 h-3.5" />
-                  </div>
-                </button>
-              ))}
-            </div>
+          {/* Change Password quick button at bottom of card */}
+          <div className="mt-5 pt-4 border-t border-slate-100 flex items-center justify-center">
+            <button
+              type="button"
+              onClick={() => handleOpenChangePassword(email)}
+              className="text-xs text-slate-500 hover:text-[#007AFF] font-medium flex items-center gap-1.5 transition-colors cursor-pointer"
+            >
+              <KeyRound className="w-3.5 h-3.5" />
+              <span>Deseja alterar a senha de um usuário? Clique aqui</span>
+            </button>
           </div>
         </div>
+
+        {/* Change Password Modal */}
+        {isChangePasswordOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="w-full max-w-md bg-white rounded-3xl p-6 shadow-2xl border border-slate-200/80 space-y-4">
+              <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-blue-50 border border-blue-200 text-[#007AFF] flex items-center justify-center">
+                    <KeyRound className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900">Alterar Senha do Usuário</h3>
+                    <p className="text-[11px] text-slate-500">Defina uma nova senha para o e-mail informado</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsChangePasswordOpen(false)}
+                  className="w-7 h-7 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center text-xs cursor-pointer font-bold"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {changePassError && (
+                <div className="p-3 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 flex-shrink-0 text-rose-600" />
+                  <span>{changePassError}</span>
+                </div>
+              )}
+
+              {changePassSuccess && (
+                <div className="p-3 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs flex items-center gap-2">
+                  <Check className="w-4 h-4 flex-shrink-0 text-emerald-600" />
+                  <span>{changePassSuccess}</span>
+                </div>
+              )}
+
+              <form onSubmit={handleChangePasswordSubmit} className="space-y-3">
+                <div className="space-y-1">
+                  <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider">
+                    E-mail do Usuário
+                  </label>
+                  <input
+                    type="email"
+                    required
+                    value={changeEmail}
+                    onChange={(e) => setChangeEmail(e.target.value)}
+                    placeholder="usuario@gmail.com"
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#007AFF] focus:bg-white"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider">
+                    Senha Atual
+                  </label>
+                  <input
+                    type="password"
+                    required
+                    value={currentPass}
+                    onChange={(e) => setCurrentPass(e.target.value)}
+                    placeholder="Senha atual (padrão: 123)"
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#007AFF] focus:bg-white"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider">
+                    Nova Senha
+                  </label>
+                  <input
+                    type="password"
+                    required
+                    value={newPass}
+                    onChange={(e) => setNewPass(e.target.value)}
+                    placeholder="Digite a nova senha desejada"
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#007AFF] focus:bg-white"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider">
+                    Confirmar Nova Senha
+                  </label>
+                  <input
+                    type="password"
+                    required
+                    value={confirmNewPass}
+                    onChange={(e) => setConfirmNewPass(e.target.value)}
+                    placeholder="Repita a nova senha"
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#007AFF] focus:bg-white"
+                  />
+                </div>
+
+                <div className="pt-2 flex items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsChangePasswordOpen(false)}
+                    className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 cursor-pointer"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-5 py-2 rounded-xl text-xs font-bold bg-[#007AFF] hover:bg-[#0062D2] text-white shadow-xs cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                    <span>Salvar Nova Senha</span>
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
 
         {/* Security & Privacy Badge */}
         <div className="mt-6 flex items-center gap-2 text-slate-500 text-[11px] text-center max-w-sm">

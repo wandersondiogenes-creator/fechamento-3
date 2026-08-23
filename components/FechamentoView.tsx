@@ -207,7 +207,7 @@ export function FechamentoView({
   }, [onRecalculateAuto]);
 
   // State to track empresas marked as reconciled in the system by the user
-  const [conciliatedEmpresas, setConciliatedEmpresas] = useState<Record<string, boolean>>(() => {
+  const [conciliatedEmpresas, setConciliatedEmpresas] = useState<Record<string, any>>(() => {
     if (activeSharedSession?.conciliatedEmpresas && Object.keys(activeSharedSession.conciliatedEmpresas).length > 0) {
       return activeSharedSession.conciliatedEmpresas;
     }
@@ -222,7 +222,7 @@ export function FechamentoView({
     return {};
   });
 
-  const conciliatedEmpresasRef = useRef<Record<string, boolean>>(conciliatedEmpresas);
+  const conciliatedEmpresasRef = useRef<Record<string, any>>(conciliatedEmpresas);
   useEffect(() => {
     conciliatedEmpresasRef.current = conciliatedEmpresas;
   }, [conciliatedEmpresas]);
@@ -256,6 +256,23 @@ export function FechamentoView({
       });
     }
   }, [activeSharedSession?.id, activeSharedSession?.version, activeSharedSession?.conciliatedEmpresas]);
+
+  // Helper to extract boolean status and reconciler details for an empresa
+  const getEmpresaConciliation = useCallback((empName: string) => {
+    const raw = conciliatedEmpresas[empName];
+    if (!raw) return { isConciliated: false, reconciledBy: '', reconciledAt: '' };
+    if (typeof raw === 'boolean') {
+      return { isConciliated: raw, reconciledBy: '', reconciledAt: '' };
+    }
+    if (typeof raw === 'object') {
+      return {
+        isConciliated: Boolean(raw.reconciled),
+        reconciledBy: raw.reconciledBy || '',
+        reconciledAt: raw.reconciledAt || '',
+      };
+    }
+    return { isConciliated: false, reconciledBy: '', reconciledAt: '' };
+  }, [conciliatedEmpresas]);
 
   // List of unique empresas for dropdown
   const empresaList = useMemo(() => {
@@ -399,7 +416,7 @@ export function FechamentoView({
   const pushUpdateToSharedRoom = useCallback(
     async (
       updatedItems: FechamentoItem[],
-      updatedConciliated: Record<string, boolean>
+      updatedConciliated: Record<string, any>
     ) => {
       if (!activeSharedSession?.id) return;
       try {
@@ -446,15 +463,33 @@ export function FechamentoView({
     ]
   );
 
-  // Direct toggle conciliação da empresa no sistema (sem exigir senha)
+  // Direct toggle conciliação da empresa no sistema com registro de quem conciliou
   const toggleEmpresaConciliada = async (empName: string, e?: React.MouseEvent) => {
-    if (e) e.stopPropagation();
-    const isCurrentlyConciliated = !conciliatedEmpresas[empName];
+    if (e) {
+      e.stopPropagation();
+      e.preventDefault();
+    }
+    const currentStatus = getEmpresaConciliation(empName);
+    const willBeConciliated = !currentStatus.isConciliated;
+
+    const nextVal = willBeConciliated
+      ? {
+          reconciled: true,
+          reconciledBy: currentUser?.name || currentUser?.email?.split('@')[0] || 'Usuário',
+          userEmail: currentUser?.email || '',
+          reconciledAt: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+        }
+      : {
+          reconciled: false,
+          reconciledBy: '',
+          reconciledAt: '',
+        };
 
     const next = {
       ...conciliatedEmpresasRef.current,
-      [empName]: !isCurrentlyConciliated,
+      [empName]: nextVal,
     };
+
     setConciliatedEmpresas(next);
     conciliatedEmpresasRef.current = next;
 
@@ -1718,7 +1753,8 @@ export function FechamentoView({
                 <div key={empName} className="bg-slate-50/40">
                   {/* Level 1: Empresa Accordion Header */}
                   {(() => {
-                    const isEmpresaConciliada = !!conciliatedEmpresas[empName];
+                    const empConciliation = getEmpresaConciliation(empName);
+                    const isEmpresaConciliada = empConciliation.isConciliated;
                     const empItems = Object.values(empData.departamentos).flatMap((d) => d.items);
                     const empIds = empItems.map((i) => i.id);
                     const allEmpSelected = empIds.length > 0 && empIds.every((id) => selectedIds.includes(id));
@@ -1776,63 +1812,84 @@ export function FechamentoView({
                             }`}
                           />
 
-                          <span
-                            className={`font-bold text-xs md:text-sm tracking-tight truncate transition-colors ${
-                              isEmpresaConciliada ? 'text-emerald-950 font-black' : 'text-slate-800'
-                            }`}
-                            title={empName}
-                          >
-                            {empName}
-                          </span>
+                          <div className="flex flex-col min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span
+                                className={`font-bold text-xs md:text-sm tracking-tight truncate transition-colors ${
+                                  isEmpresaConciliada ? 'text-emerald-950 font-black' : 'text-slate-800'
+                                }`}
+                                title={empName}
+                              >
+                                {empName}
+                              </span>
 
-                          <span
-                            className={`text-[10px] border px-2 py-0.5 rounded-full font-semibold whitespace-nowrap flex-shrink-0 transition-colors ${
-                              isEmpresaConciliada
-                                ? 'bg-emerald-100/90 text-emerald-900 border-emerald-300'
-                                : 'bg-slate-200/80 text-slate-700 border-slate-300'
-                            }`}
-                          >
-                            {empData.countTotal} lanc.
-                          </span>
+                              <span
+                                className={`text-[10px] border px-2 py-0.5 rounded-full font-semibold whitespace-nowrap flex-shrink-0 transition-colors ${
+                                  isEmpresaConciliada
+                                    ? 'bg-emerald-100/90 text-emerald-900 border-emerald-300'
+                                    : 'bg-slate-200/80 text-slate-700 border-slate-300'
+                                }`}
+                              >
+                                {empData.countTotal} lanc.
+                              </span>
 
-                          {isEmpresaConciliada && (
-                            <span className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-600 text-white shadow-2xs whitespace-nowrap flex-shrink-0">
-                              <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
-                              Conciliado
-                            </span>
-                          )}
+                              {isEmpresaConciliada && (
+                                <span className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-600 text-white shadow-2xs whitespace-nowrap flex-shrink-0">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+                                  Conciliado
+                                </span>
+                              )}
+                            </div>
+
+                            {/* Reconciler user and timestamp info displayed below status */}
+                            {isEmpresaConciliada && empConciliation.reconciledBy && (
+                              <div className="text-[10px] text-emerald-800 font-semibold flex items-center gap-1 mt-0.5">
+                                <span>Conciliado por: <strong className="text-emerald-950 font-extrabold">{empConciliation.reconciledBy}</strong></span>
+                                {empConciliation.reconciledAt && (
+                                  <span className="text-emerald-700/80 font-normal">às {empConciliation.reconciledAt}</span>
+                                )}
+                              </div>
+                            )}
+                          </div>
                         </div>
 
                         {/* Right: Grid of perfectly aligned Apple Controls & Metric Columns */}
                         <div className="flex items-center gap-2 flex-shrink-0">
                           {/* Apple Dynamic Glass Button: Conciliar Empresa no Sistema */}
-                          <button
-                            type="button"
-                            onClick={(e) => toggleEmpresaConciliada(empName, e)}
-                            title={
-                              isEmpresaConciliada
-                                ? 'Empresa conciliada no sistema. Clique para desconciliar.'
-                                : 'Clique para marcar esta empresa como conciliada no sistema.'
-                            }
-                            className={`w-44 h-8 px-3 rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 transition-all duration-200 cursor-pointer whitespace-nowrap ${
-                              isEmpresaConciliada
-                                ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs border border-emerald-500 active:scale-95'
-                                : 'bg-white hover:bg-slate-50 text-slate-700 hover:text-slate-900 border border-slate-300 shadow-2xs active:scale-95'
-                            }`}
-                          >
-                            <div
-                              className={`w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0 transition-all ${
+                          <div onClick={(e) => e.stopPropagation()} className="flex flex-col items-center">
+                            <button
+                              type="button"
+                              onClick={(e) => toggleEmpresaConciliada(empName, e)}
+                              title={
                                 isEmpresaConciliada
-                                  ? 'bg-white text-emerald-700 shadow-2xs'
-                                  : 'border-2 border-slate-400'
+                                  ? `Empresa conciliada por ${empConciliation.reconciledBy || 'usuário'}. Clique para desconciliar.`
+                                  : 'Clique para marcar esta empresa como conciliada no sistema.'
+                              }
+                              className={`w-44 h-8 px-3 rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 transition-all duration-200 cursor-pointer whitespace-nowrap ${
+                                isEmpresaConciliada
+                                  ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs border border-emerald-500 active:scale-95'
+                                  : 'bg-white hover:bg-slate-50 text-slate-700 hover:text-slate-900 border border-slate-300 shadow-2xs active:scale-95'
                               }`}
                             >
-                              {isEmpresaConciliada && <Check className="w-3 h-3 stroke-[3]" />}
-                            </div>
-                            <span className="truncate">
-                              {isEmpresaConciliada ? 'Conciliado no Sistema' : 'Conciliar no Sistema'}
-                            </span>
-                          </button>
+                              <div
+                                className={`w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0 transition-all ${
+                                  isEmpresaConciliada
+                                    ? 'bg-white text-emerald-700 shadow-2xs'
+                                    : 'border-2 border-slate-400'
+                                }`}
+                              >
+                                {isEmpresaConciliada && <Check className="w-3 h-3 stroke-[3]" />}
+                              </div>
+                              <span className="truncate">
+                                {isEmpresaConciliada ? 'Conciliado no Sistema' : 'Conciliar no Sistema'}
+                              </span>
+                            </button>
+                            {isEmpresaConciliada && empConciliation.reconciledBy && (
+                              <span className="text-[9px] text-emerald-800 font-medium truncate max-w-[170px] mt-0.5">
+                                por {empConciliation.reconciledBy}
+                              </span>
+                            )}
+                          </div>
 
                           {/* Total Dealer Column */}
                           <div
@@ -2012,7 +2069,8 @@ export function FechamentoView({
                                       const isBandDiv = item.divergenciaBandeira;
                                       const isPixValNeeded =
                                         item.isPixValidationNeeded || item.status.includes('VALIDAÇÃO NECESSÁRIA');
-                                      const isEmpConciliated = !!conciliatedEmpresas[item.empresa];
+                                      const empConc = getEmpresaConciliation(item.empresa);
+                                      const isEmpConciliated = empConc.isConciliated;
 
                                       return (
                                         <tr
@@ -2092,10 +2150,17 @@ export function FechamentoView({
                                           <td className="p-2.5 text-center align-middle whitespace-nowrap">
                                             <div className="flex items-center justify-center">
                                               {isEmpConciliated ? (
-                                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] font-black bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-[0_2px_8px_rgba(16,185,129,0.3)] border border-emerald-400 uppercase tracking-tight">
-                                                  <CheckCircle2 className="w-3 h-3 text-emerald-200" />
-                                                  CONCILIADO NO SISTEMA
-                                                </span>
+                                                <div className="flex flex-col items-center justify-center gap-0.5">
+                                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] font-black bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-[0_2px_8px_rgba(16,185,129,0.3)] border border-emerald-400 uppercase tracking-tight">
+                                                    <CheckCircle2 className="w-3 h-3 text-emerald-200" />
+                                                    CONCILIADO NO SISTEMA
+                                                  </span>
+                                                  {empConc.reconciledBy && (
+                                                    <span className="text-[9px] text-emerald-800 font-semibold max-w-[180px] truncate">
+                                                      por {empConc.reconciledBy}
+                                                    </span>
+                                                  )}
+                                                </div>
                                               ) : isPixValNeeded ? (
                                                 <span
                                                   className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-black bg-indigo-600 text-white shadow-2xs uppercase cursor-help"
@@ -2219,7 +2284,8 @@ export function FechamentoView({
                   const isBandDiv = item.divergenciaBandeira;
                   const isPixValNeeded =
                     item.isPixValidationNeeded || item.status.includes('VALIDAÇÃO NECESSÁRIA');
-                  const isEmpConciliated = !!conciliatedEmpresas[item.empresa];
+                  const empConc = getEmpresaConciliation(item.empresa);
+                  const isEmpConciliated = empConc.isConciliated;
 
                   return (
                     <tr
@@ -2247,7 +2313,25 @@ export function FechamentoView({
                       {/* Empresa (uma linha abaixo da outra se conciliada) */}
                       <td className="p-3 text-center align-middle">
                         <div className="flex flex-col items-center justify-center gap-1">
-                          <span className="font-bold text-slate-900">{item.empresa}</span>
+                          <div className="flex items-center justify-center gap-1.5 flex-wrap">
+                            <span className="font-bold text-slate-900">{item.empresa}</span>
+                            <button
+                              type="button"
+                              onClick={(e) => toggleEmpresaConciliada(item.empresa, e)}
+                              title={
+                                isEmpConciliated
+                                  ? `Empresa conciliada por ${empConc.reconciledBy || 'usuário'}. Clique para desconciliar.`
+                                  : `Clique para conciliar toda a empresa ${item.empresa} no sistema`
+                              }
+                              className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-all cursor-pointer shadow-2xs ${
+                                isEmpConciliated
+                                  ? 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-500'
+                                  : 'bg-white hover:bg-emerald-50 text-slate-700 hover:text-emerald-800 border-slate-300 hover:border-emerald-400'
+                              }`}
+                            >
+                              {isEmpConciliated ? '✓ Conciliada' : 'Conciliar'}
+                            </button>
+                          </div>
                           {isEmpConciliated && (
                             <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300">
                               CONCILIADA NO SISTEMA
@@ -2318,10 +2402,17 @@ export function FechamentoView({
                       <td className="p-3 text-center align-middle whitespace-nowrap">
                         <div className="flex items-center justify-center">
                           {isEmpConciliated ? (
-                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] font-black bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-[0_2px_8px_rgba(16,185,129,0.3)] border border-emerald-400 uppercase tracking-tight">
-                              <CheckCircle2 className="w-3 h-3 text-emerald-200" />
-                              CONCILIADO NO SISTEMA
-                            </span>
+                            <div className="flex flex-col items-center justify-center gap-0.5">
+                              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] font-black bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-[0_2px_8px_rgba(16,185,129,0.3)] border border-emerald-400 uppercase tracking-tight">
+                                <CheckCircle2 className="w-3 h-3 text-emerald-200" />
+                                CONCILIADO NO SISTEMA
+                              </span>
+                              {empConc.reconciledBy && (
+                                <span className="text-[9px] text-emerald-800 font-semibold max-w-[180px] truncate">
+                                  por {empConc.reconciledBy}
+                                </span>
+                              )}
+                            </div>
                           ) : isPixValNeeded ? (
                             <span
                               className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-black bg-indigo-600 text-white shadow-2xs uppercase cursor-help"

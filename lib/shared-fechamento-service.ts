@@ -21,6 +21,13 @@ export interface SessionChatMessage {
   timestamp: string;
 }
 
+export interface ConciliationDetail {
+  reconciled: boolean;
+  reconciledBy?: string;
+  reconciledAt?: string;
+  userEmail?: string;
+}
+
 export interface SharedFechamentoSession {
   id: string; // Short code e.g. FC-84920
   title: string;
@@ -34,7 +41,7 @@ export interface SharedFechamentoSession {
   };
   status: 'active' | 'closed' | 'deleted' | 'archived';
   items: FechamentoItem[];
-  conciliatedEmpresas: Record<string, boolean>;
+  conciliatedEmpresas: Record<string, boolean | ConciliationDetail>;
   summary: {
     totalDealer: number;
     totalSitef: number;
