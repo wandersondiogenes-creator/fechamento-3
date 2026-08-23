@@ -9,6 +9,34 @@ async function initTables(p: Pool) {
   if (tablesInitialized) return;
   try {
     await p.query(`
+      CREATE TABLE IF NOT EXISTS imported_files (
+        id serial PRIMARY KEY,
+        file_name text NOT NULL,
+        imported_at timestamp DEFAULT now() NOT NULL,
+        total_rows integer DEFAULT 0,
+        headers jsonb NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS dealer_records (
+        id serial PRIMARY KEY,
+        file_id integer,
+        data text,
+        entrada numeric(12, 2),
+        saida numeric(12, 2),
+        conta_classificacao text,
+        historico text,
+        raw_content jsonb,
+        created_at timestamp DEFAULT now() NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS rule_presets (
+        id text PRIMARY KEY,
+        name text NOT NULL,
+        description text,
+        rules_config jsonb NOT NULL,
+        updated_at timestamp DEFAULT now() NOT NULL
+      );
+
       CREATE TABLE IF NOT EXISTS shared_fechamentos (
         id text PRIMARY KEY,
         title text NOT NULL,
@@ -18,6 +46,10 @@ async function initTables(p: Pool) {
         items jsonb NOT NULL,
         conciliated_empresas jsonb NOT NULL DEFAULT '{}'::jsonb,
         summary jsonb NOT NULL,
+        dealer_state jsonb,
+        sitef_state jsonb,
+        pendente_cdc_state jsonb,
+        kicked_user_ids jsonb DEFAULT '[]'::jsonb,
         active_participants jsonb NOT NULL DEFAULT '[]'::jsonb,
         chat_messages jsonb NOT NULL DEFAULT '[]'::jsonb,
         version integer DEFAULT 1,

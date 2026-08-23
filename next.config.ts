@@ -2,7 +2,7 @@ import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
   reactStrictMode: false,
-  serverExternalPackages: ['pg', 'drizzle-orm', 'xlsx', 'jspdf'],
+  serverExternalPackages: ['pg', 'drizzle-orm'],
   eslint: {
     ignoreDuringBuilds: true,
   },

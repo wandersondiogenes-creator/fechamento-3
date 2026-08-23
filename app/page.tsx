@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { ColumnConfig, ColumnRule, RulePreset, RuleType, SpreadsheetState } from '@/types/spreadsheet';
 import {
   cleanAndOrganizeRawData,
@@ -22,7 +22,7 @@ import {
   extractRoomCode,
 } from '@/lib/shared-fechamento-service';
 import { logAuditAction } from '@/lib/audit-service';
-import { getCurrentUser, isUserLoggedIn, logoutUser } from '@/lib/auth-service';
+import { getCurrentUser, isUserLoggedIn, logoutUser, DEFAULT_USERS } from '@/lib/auth-service';
 import { UserProfile } from '@/types/audit';
 import { SAMPLE_DATASETS } from '@/lib/sample-data';
 import { ExcelHeader } from '@/components/ExcelHeader';
@@ -59,7 +59,7 @@ function buildEmptySpreadsheetState(defaultName: string = 'DEALER.xlsx'): Spread
 export default function Home() {
   const [mounted, setMounted] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
-  const [currentUser, setCurrentUser] = useState<UserProfile>(() => getCurrentUser());
+  const [currentUser, setCurrentUser] = useState<UserProfile>(DEFAULT_USERS[0]);
 
   useEffect(() => {
     setMounted(true);
@@ -127,6 +127,12 @@ export default function Home() {
   const [activeSharedSession, setActiveSharedSession] = useState<SharedFechamentoSession | null>(null);
 
   // Automatic check for shared session room code from URL query (?sala=... or ?shared=...) ONLY when explicitly passed in URL
+  // References to prevent infinite ping-pong loops and stabilize collaborative room sync
+  const isReceivingRemoteUpdateRef = useRef<boolean>(false);
+  const lastSyncedSignatureRef = useRef<string>('');
+  const activeSharedSessionRef = useRef<SharedFechamentoSession | null>(activeSharedSession);
+  activeSharedSessionRef.current = activeSharedSession;
+
   useEffect(() => {
     if (typeof window === 'undefined') return;
     try {
@@ -168,7 +174,31 @@ export default function Home() {
 
   // Combined Fechamento items list (strictly synchronized with DEALER and SITEF spreadsheets)
   const allFechamentoItems = useMemo(() => {
-    // 1. If actively connected to a shared session that already contains items, use those authoritative items
+    const hasDealerData = (dealerState.rawData && dealerState.rawData.length > 0) || (dealerState.processedData && dealerState.processedData.length > 0);
+    const hasSitefData = (sitefState.rawData && sitefState.rawData.length > 0) || (sitefState.processedData && sitefState.processedData.length > 0);
+
+    // 1. Live calculation from Dealer and SiTef (autoFechamentoItems) is the primary authoritative ground truth
+    if (hasDealerData || hasSitefData) {
+      const map = new Map<string, FechamentoItem>();
+      autoFechamentoItems.forEach((item) => {
+        if (item && item.id && !deletedFechamentoIds.has(item.id)) {
+          map.set(item.id, item);
+        }
+      });
+
+      // Add user-created manual items without overwriting auto-computed items
+      manualFechamentoItems.forEach((item) => {
+        if (item && item.id && !deletedFechamentoIds.has(item.id)) {
+          if (item.isManual || item.id.startsWith('manual_') || !map.has(item.id)) {
+            map.set(item.id, item);
+          }
+        }
+      });
+
+      return Array.from(map.values());
+    }
+
+    // 2. If local spreadsheets are not yet loaded but connected to a shared session with items:
     if (activeSharedSession?.items && activeSharedSession.items.length > 0) {
       const map = new Map<string, FechamentoItem>();
       activeSharedSession.items.forEach((item) => {
@@ -176,7 +206,6 @@ export default function Home() {
           map.set(item.id, item);
         }
       });
-      // Merge any local manual items that aren't yet in the room
       manualFechamentoItems.forEach((item) => {
         if (item && item.id && !deletedFechamentoIds.has(item.id) && !map.has(item.id)) {
           map.set(item.id, item);
@@ -185,45 +214,21 @@ export default function Home() {
       return Array.from(map.values());
     }
 
-    const hasDealerData = (dealerState.rawData && dealerState.rawData.length > 0) || (dealerState.processedData && dealerState.processedData.length > 0);
-    const hasSitefData = (sitefState.rawData && sitefState.rawData.length > 0) || (sitefState.processedData && sitefState.processedData.length > 0);
-
-    // If both dealer and sitef are empty (and no manual historic restoration active), fechamento is completely clean and empty
-    if (!hasDealerData && !hasSitefData) {
-      // If user explicitly restored a historic record into manualFechamentoItems, show those items
-      if (manualFechamentoItems.length > 0 && manualFechamentoItems.some(i => i.id?.startsWith('restored_') || !i.id?.startsWith('manual_'))) {
-        return manualFechamentoItems.filter(item => !deletedFechamentoIds.has(item.id));
-      }
-      return [];
+    // 3. If user explicitly restored a historic record into manualFechamentoItems:
+    if (manualFechamentoItems.length > 0 && manualFechamentoItems.some(i => i.id?.startsWith('restored_') || !i.id?.startsWith('manual_'))) {
+      return manualFechamentoItems.filter(item => !deletedFechamentoIds.has(item.id));
     }
 
-    // 2. Local mode: The live calculation from Dealer and SiTef (autoFechamentoItems) is the ground truth
-    const map = new Map<string, FechamentoItem>();
-    autoFechamentoItems.forEach((item) => {
-      if (item && item.id && !deletedFechamentoIds.has(item.id)) {
-        map.set(item.id, item);
-      }
-    });
-
-    // Add only user-created manual items (isManual or id starting with manual_) without overwriting auto-computed items
-    manualFechamentoItems.forEach((item) => {
-      if (item && item.id && !deletedFechamentoIds.has(item.id)) {
-        if (item.isManual || item.id.startsWith('manual_') || !map.has(item.id)) {
-          map.set(item.id, item);
-        }
-      }
-    });
-
-    return Array.from(map.values());
+    return [];
   }, [
-    activeSharedSession?.items,
-    autoFechamentoItems,
-    manualFechamentoItems,
-    deletedFechamentoIds,
     dealerState.rawData,
     dealerState.processedData,
     sitefState.rawData,
     sitefState.processedData,
+    autoFechamentoItems,
+    manualFechamentoItems,
+    deletedFechamentoIds,
+    activeSharedSession?.items,
   ]);
 
   const spreadsheetState =
@@ -1054,6 +1059,7 @@ export default function Home() {
   }, [dealerState.rawData, dealerState.columns, sitefState.rawData, sitefState.columns]);
 
   const handleApplySharedItems = useCallback((items: FechamentoItem[], conciliated?: Record<string, boolean>) => {
+    isReceivingRemoteUpdateRef.current = true;
     const map = new Map<string, FechamentoItem>();
     (items || []).forEach((item) => {
       if (item && item.id) {
@@ -1061,7 +1067,6 @@ export default function Home() {
       }
     });
     setManualFechamentoItems(Array.from(map.values()));
-    setDeletedFechamentoIds(new Set());
     if (conciliated && typeof window !== 'undefined') {
       try {
         localStorage.setItem('wanfinance_conciliated_empresas_v1', JSON.stringify(conciliated));
@@ -1126,6 +1131,7 @@ export default function Home() {
       sharedSitef?: SpreadsheetState,
       sharedPendenteCdc?: SpreadsheetState
     ) => {
+      isReceivingRemoteUpdateRef.current = true;
       if (sharedDealer && sharedDealer.rawData && sharedDealer.rawData.length > 0) {
         setDealerState(sharedDealer);
       }
@@ -1162,23 +1168,36 @@ export default function Home() {
     [handleClearAllData]
   );
 
-  // Real-time synchronization of spreadsheet edits to active shared room
+  // Real-time synchronization of spreadsheet edits to active shared room (without loop / flickering)
   useEffect(() => {
-    if (!activeSharedSession?.id || !mounted) return;
-    const sessionToSync = activeSharedSession;
+    const activeSession = activeSharedSessionRef.current;
+    if (!activeSession?.id || !mounted) return;
+
+    if (isReceivingRemoteUpdateRef.current) {
+      isReceivingRemoteUpdateRef.current = false;
+      return;
+    }
+
+    const currentSig = `${dealerState.rawData.length}_${dealerState.processedData.length}_${sitefState.rawData.length}_${sitefState.processedData.length}_${pendenteCdcState.rawData.length}_${manualFechamentoItems.length}_${deletedFechamentoIds.size}`;
+    if (lastSyncedSignatureRef.current === currentSig) {
+      return;
+    }
+
     const timer = setTimeout(async () => {
+      lastSyncedSignatureRef.current = currentSig;
       try {
         const autoItems = generateAutoFechamento(
           dealerState.processedData,
           dealerState.columns,
           sitefState.processedData,
           sitefState.columns
-        );
+        ).filter((i) => !deletedFechamentoIds.has(i.id));
+
         const res = await createOrUpdateSharedSession(
           {
-            id: sessionToSync.id,
-            title: sessionToSync.title,
-            dataMovimento: sessionToSync.dataMovimento,
+            id: activeSession.id,
+            title: activeSession.title,
+            dataMovimento: activeSession.dataMovimento,
             status: 'active',
             dealerState,
             sitefState,
@@ -1188,18 +1207,20 @@ export default function Home() {
           currentUser
         );
         if (res.success && res.session) {
+          activeSharedSessionRef.current = res.session;
           setActiveSharedSession(res.session);
         }
       } catch (err) {
         console.warn('Erro ao sincronizar planilhas na sala compartilhada:', err);
       }
-    }, 1200);
+    }, 600);
     return () => clearTimeout(timer);
   }, [
     dealerState,
     sitefState,
     pendenteCdcState,
-    activeSharedSession,
+    manualFechamentoItems,
+    deletedFechamentoIds,
     currentUser,
     mounted,
   ]);
