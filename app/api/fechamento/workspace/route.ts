@@ -13,8 +13,8 @@ import {
 export const dynamic = 'force-dynamic';
 
 // Resilient In-Memory store for fast cross-device sync & server-side retention
-export const inMemoryWorkspaces = new Map<string, UserWorkspaceSession>();
-export const inMemoryPendingFiles = new Map<string, PendingFileRecord[]>();
+const inMemoryWorkspaces = new Map<string, UserWorkspaceSession>();
+const inMemoryPendingFiles = new Map<string, PendingFileRecord[]>();
 
 export async function GET(req: NextRequest) {
   try {

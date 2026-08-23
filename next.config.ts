@@ -1,6 +1,7 @@
 import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
+  distDir: 'dist',
   reactStrictMode: false,
   serverExternalPackages: ['pg', 'drizzle-orm'],
   eslint: {
