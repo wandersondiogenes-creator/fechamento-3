@@ -255,20 +255,31 @@ export function mapSitefEmpresa(
   if (!trimmed) return trimmed;
 
   const cleanUpper = removeAccents(trimmed.toUpperCase()).replace(/\s+/g, ' ');
+  const cleanNoPunct = cleanUpper.replace(/[.\-_/,()]/g, ' ').replace(/\s+/g, ' ').trim();
 
   // 1. Direct match in EMPRESAS_ALIASES_MAP
   if (EMPRESAS_ALIASES_MAP[cleanUpper]) {
     return EMPRESAS_ALIASES_MAP[cleanUpper];
   }
-  const cleanNoPunct = cleanUpper.replace(/[.\-_/,()]/g, ' ').replace(/\s+/g, ' ').trim();
   if (EMPRESAS_ALIASES_MAP[cleanNoPunct]) {
     return EMPRESAS_ALIASES_MAP[cleanNoPunct];
+  }
+
+  // Check normalized alias keys
+  for (const [aliasKey, targetEmpresa] of Object.entries(EMPRESAS_ALIASES_MAP)) {
+    const normKey = removeAccents(aliasKey.toUpperCase()).replace(/[.\-_/,()]/g, ' ').replace(/\s+/g, ' ').trim();
+    if (normKey === cleanNoPunct || cleanNoPunct.startsWith(normKey) || normKey.startsWith(cleanNoPunct)) {
+      if (Math.abs(normKey.length - cleanNoPunct.length) <= 4 || normKey === cleanNoPunct) {
+        return targetEmpresa;
+      }
+    }
   }
 
   // 2. Direct exact match in CADASTRO_EMPRESAS
   for (const emp of CADASTRO_EMPRESAS) {
     const normEmp = removeAccents(emp.toUpperCase());
-    if (normEmp === cleanUpper || normEmp === cleanNoPunct) return emp;
+    const normEmpNoPunct = normEmp.replace(/[.\-_/,()]/g, ' ').replace(/\s+/g, ' ').trim();
+    if (normEmp === cleanUpper || normEmpNoPunct === cleanNoPunct) return emp;
   }
 
   // Candidate pool: availableDealerEmpresas if passed, then CADASTRO_EMPRESAS
