@@ -72,9 +72,9 @@ export function extractMetricsFromSession(
 ): SessionMetrics {
   const summary = calculateSummaryMetrics(manualItems || []);
   return {
-    totalEntradas: summary.totalEntradas,
-    totalSaidas: summary.totalSaidas,
-    saldoLiquido: summary.saldoLiquido,
+    totalEntradas: summary.totalDealer || 0,
+    totalSaidas: summary.totalSitef || 0,
+    saldoLiquido: summary.diferencaTotal || 0,
     totalRegistros: (dealerState?.rawData?.length || 0) + (sitefState?.rawData?.length || 0),
     dealerRowCount: dealerState?.rawData?.length || 0,
     sitefRowCount: sitefState?.rawData?.length || 0,
