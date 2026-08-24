@@ -1770,7 +1770,7 @@ export function FechamentoView({
                         onClick={() => toggleEmpresaCollapse(empName)}
                         className={`px-4 py-2.5 flex items-center justify-between gap-3 cursor-pointer transition-all duration-200 border-b select-none ${
                           isEmpresaConciliada
-                            ? 'bg-emerald-50/70 hover:bg-emerald-100/60 border-emerald-300 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)]'
+                            ? 'bg-emerald-100/90 hover:bg-emerald-200/90 border-emerald-400/90 shadow-xs ring-1 ring-emerald-500/20'
                             : 'bg-slate-100/90 hover:bg-slate-200/80 text-slate-900 border-slate-200/90 shadow-2xs'
                         }`}
                       >
@@ -1800,7 +1800,7 @@ export function FechamentoView({
                             type="button"
                             className={`w-7 h-7 rounded-lg border flex items-center justify-center flex-shrink-0 shadow-2xs transition-colors ${
                               isEmpresaConciliada
-                                ? 'bg-emerald-100/80 text-emerald-800 border-emerald-300'
+                                ? 'bg-white text-emerald-900 border-emerald-400 hover:bg-emerald-50'
                                 : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'
                             }`}
                           >
@@ -1813,7 +1813,7 @@ export function FechamentoView({
 
                           <Building2
                             className={`w-4 h-4 flex-shrink-0 transition-colors ${
-                              isEmpresaConciliada ? 'text-emerald-600' : 'text-slate-500'
+                              isEmpresaConciliada ? 'text-emerald-800' : 'text-slate-500'
                             }`}
                           />
 
@@ -1831,7 +1831,7 @@ export function FechamentoView({
                               <span
                                 className={`text-[10px] border px-2 py-0.5 rounded-full font-semibold whitespace-nowrap flex-shrink-0 transition-colors ${
                                   isEmpresaConciliada
-                                    ? 'bg-emerald-100/90 text-emerald-900 border-emerald-300'
+                                    ? 'bg-emerald-200 text-emerald-950 border-emerald-400 font-bold'
                                     : 'bg-slate-200/80 text-slate-700 border-slate-300'
                                 }`}
                               >
@@ -1839,7 +1839,7 @@ export function FechamentoView({
                               </span>
 
                               {isEmpresaConciliada && (
-                                <span className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-600 text-white shadow-2xs whitespace-nowrap flex-shrink-0">
+                                <span className="hidden sm:inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-700 text-white shadow-2xs whitespace-nowrap flex-shrink-0">
                                   <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
                                   Conciliado
                                 </span>
@@ -1848,8 +1848,8 @@ export function FechamentoView({
 
                             {/* Departamentos / Contas Gerenciais vinculados a esta empresa */}
                             <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
-                              <span className="text-[10px] text-slate-500 font-semibold flex items-center gap-1 mr-0.5">
-                                <FolderTree className="w-3 h-3 text-blue-600 flex-shrink-0" />
+                              <span className={`text-[10px] font-semibold flex items-center gap-1 mr-0.5 ${isEmpresaConciliada ? 'text-emerald-900' : 'text-slate-500'}`}>
+                                <FolderTree className={`w-3 h-3 flex-shrink-0 ${isEmpresaConciliada ? 'text-emerald-800' : 'text-blue-600'}`} />
                                 <span>Departamentos ({Object.keys(empData.departamentos).length}):</span>
                               </span>
                               {Object.entries(empData.departamentos).map(([depTitle, dData]) => (
@@ -1859,7 +1859,7 @@ export function FechamentoView({
                                     dData.diferencaTotal !== 0
                                       ? 'bg-amber-50 text-amber-950 border-amber-300 font-semibold ring-1 ring-amber-400/30'
                                       : isEmpresaConciliada
-                                      ? 'bg-white text-emerald-950 border-emerald-300'
+                                      ? 'bg-white text-emerald-950 border-emerald-400 shadow-2xs'
                                       : 'bg-white/95 text-slate-800 border-slate-300 hover:border-slate-400'
                                   }`}
                                   title={`${depTitle}: ${dData.items.length} lançamentos | Dealer: ${formatBRL(dData.totalDealer)} | Sitef: ${formatBRL(dData.totalSitef)} | Dif: ${formatBRL(dData.diferencaTotal)}`}
@@ -1881,10 +1881,10 @@ export function FechamentoView({
 
                             {/* Reconciler user and timestamp info displayed below status */}
                             {isEmpresaConciliada && empConciliation.reconciledBy && (
-                              <div className="text-[10px] text-emerald-800 font-semibold flex items-center gap-1 mt-0.5">
-                                <span>Conciliado por: <strong className="text-emerald-950 font-extrabold">{empConciliation.reconciledBy}</strong></span>
+                              <div className="text-[10px] text-emerald-900 font-semibold flex items-center gap-1 mt-0.5">
+                                <span>Conciliado por: <strong className="text-emerald-950 font-black">{empConciliation.reconciledBy}</strong></span>
                                 {empConciliation.reconciledAt && (
-                                  <span className="text-emerald-700/80 font-normal">às {empConciliation.reconciledAt}</span>
+                                  <span className="text-emerald-800 font-medium">às {empConciliation.reconciledAt}</span>
                                 )}
                               </div>
                             )}
@@ -1905,7 +1905,7 @@ export function FechamentoView({
                               }
                               className={`w-44 h-8 px-3 rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 transition-all duration-200 cursor-pointer whitespace-nowrap ${
                                 isEmpresaConciliada
-                                  ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs border border-emerald-500 active:scale-95'
+                                  ? 'bg-emerald-700 hover:bg-emerald-800 text-white shadow-xs border border-emerald-600 active:scale-95'
                                   : 'bg-white hover:bg-slate-50 text-slate-700 hover:text-slate-900 border border-slate-300 shadow-2xs active:scale-95'
                               }`}
                             >
@@ -1923,7 +1923,7 @@ export function FechamentoView({
                               </span>
                             </button>
                             {isEmpresaConciliada && empConciliation.reconciledBy && (
-                              <span className="text-[9px] text-emerald-800 font-medium truncate max-w-[170px] mt-0.5">
+                              <span className="text-[9px] text-emerald-900 font-bold truncate max-w-[170px] mt-0.5">
                                 por {empConciliation.reconciledBy}
                               </span>
                             )}
@@ -1933,7 +1933,7 @@ export function FechamentoView({
                           <div
                             className={`w-28 text-center px-2 py-1 rounded-lg border shadow-2xs transition-colors flex-shrink-0 ${
                               isEmpresaConciliada
-                                ? 'bg-white/90 border-emerald-300'
+                                ? 'bg-white/95 border-emerald-400'
                                 : 'bg-white border-emerald-200'
                             }`}
                           >
@@ -1949,7 +1949,7 @@ export function FechamentoView({
                           <div
                             className={`w-28 text-center px-2 py-1 rounded-lg border shadow-2xs transition-colors flex-shrink-0 ${
                               isEmpresaConciliada
-                                ? 'bg-white/90 border-blue-300'
+                                ? 'bg-white/95 border-blue-400'
                                 : 'bg-white border-blue-200'
                             }`}
                           >
@@ -1965,7 +1965,7 @@ export function FechamentoView({
                           <div
                             className={`w-24 text-center px-2 py-1 rounded-lg border shadow-2xs transition-colors flex-shrink-0 ${
                               isEmpresaConciliada
-                                ? 'bg-white/90 border-slate-300'
+                                ? 'bg-white/95 border-emerald-400'
                                 : 'bg-white border-slate-200'
                             }`}
                           >
