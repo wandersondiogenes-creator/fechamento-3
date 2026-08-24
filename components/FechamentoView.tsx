@@ -335,7 +335,6 @@ export function FechamentoView({
           setSharedSession(null);
           saveActiveRoomIdLocally(null);
           onGuestLeaveOrKicked?.('kicked');
-          alert('Você foi removido desta sala pelo administrador.');
           return;
         }
         if (res.deleted) {
@@ -343,7 +342,6 @@ export function FechamentoView({
           saveActiveRoomIdLocally(null);
           if (!isHost) {
             onGuestLeaveOrKicked?.('deleted');
-            alert('Esta sala foi encerrada e excluída pelo administrador.');
           }
           return;
         }
@@ -354,7 +352,6 @@ export function FechamentoView({
           saveActiveRoomIdLocally(null);
           if (!isHost) {
             onGuestLeaveOrKicked?.('deleted');
-            alert('Esta sala foi encerrada e excluída pelo administrador.');
           }
           return;
         }
@@ -587,7 +584,7 @@ export function FechamentoView({
 
     filteredItems.forEach((item) => {
       const emp = item.empresa || 'Empresa 01';
-      const dep = item.departamento || item.contaGerencial || 'Geral';
+      const dep = item.contaGerencial || item.departamento || 'Geral';
 
       if (!map[emp]) {
         map[emp] = {
@@ -635,6 +632,15 @@ export function FechamentoView({
         dep.totalSitef = Math.round(dep.totalSitef * 100) / 100;
         dep.diferencaTotal = Math.round((dep.totalDealer - dep.totalSitef) * 100) / 100;
       });
+
+      // Sort departamentos alphabetically
+      const sortedDeps: typeof emp.departamentos = {};
+      Object.keys(emp.departamentos)
+        .sort((a, b) => a.localeCompare(b, 'pt-BR'))
+        .forEach((k) => {
+          sortedDeps[k] = emp.departamentos[k];
+        });
+      emp.departamentos = sortedDeps;
     });
 
     // Sort keys based on empresaSortOrder
@@ -798,7 +804,7 @@ export function FechamentoView({
   // Collapse / Expand handlers
   const toggleEmpresaCollapse = (empName: string) => {
     setCollapsedEmpresas((prev) => {
-      const isCurrentlyCollapsed = prev[empName] ?? true;
+      const isCurrentlyCollapsed = prev[empName] ?? false;
       return {
         ...prev,
         [empName]: !isCurrentlyCollapsed,
@@ -808,7 +814,7 @@ export function FechamentoView({
 
   const toggleDepartamentoCollapse = (key: string) => {
     setCollapsedDepartamentos((prev) => {
-      const isCurrentlyCollapsed = prev[key] ?? true;
+      const isCurrentlyCollapsed = prev[key] ?? false;
       return {
         ...prev,
         [key]: !isCurrentlyCollapsed,
@@ -912,40 +918,8 @@ export function FechamentoView({
   };
 
   // Handler for leaving or deleting the room
-  const handleLeaveOrDeleteRoom = async () => {
-    if (!activeSharedSession?.id) return;
-    if (isHost) {
-      if (
-        !confirm(
-          'Deseja realmente EXCLUIR e encerrar esta sala compartilhada para todos os participantes? Os seus dados continuarão na sua tela, mas os convidados serão desconectados.'
-        )
-      ) {
-        return;
-      }
-      try {
-        await deleteSharedSession(activeSharedSession.id, currentUser);
-      } catch (err) {
-        console.warn('Erro ao excluir sala:', err);
-      }
-      setSharedSession(null);
-      saveActiveRoomIdLocally(null);
-    } else {
-      if (
-        !confirm(
-          'Deseja realmente SAIR desta sala compartilhada? Ao sair, os dados compartilhados serão limpos da sua tela.'
-        )
-      ) {
-        return;
-      }
-      try {
-        await leaveSharedSession(activeSharedSession.id, currentUser);
-      } catch (err) {
-        console.warn('Erro ao sair da sala:', err);
-      }
-      setSharedSession(null);
-      saveActiveRoomIdLocally(null);
-      onGuestLeaveOrKicked?.('left');
-    }
+  const handleLeaveOrDeleteRoom = () => {
+    setIsSharedModalOpen(true);
   };
 
   // Export Fechamento to Excel
@@ -1769,7 +1743,7 @@ export function FechamentoView({
           /* Grouped Accordion View: Empresa -> Departamento */
           <div className="divide-y divide-slate-200">
             {Object.entries(groupedByEmpresa).map(([empName, empData]) => {
-              const isEmpCollapsed = collapsedEmpresas[empName] ?? true;
+              const isEmpCollapsed = collapsedEmpresas[empName] ?? false;
 
               return (
                 <div key={empName} className="bg-slate-50/40">
@@ -1835,7 +1809,7 @@ export function FechamentoView({
                           />
 
                           <div className="flex flex-col min-w-0">
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
                               <span
                                 className={`font-bold text-xs md:text-sm tracking-tight truncate transition-colors ${
                                   isEmpresaConciliada ? 'text-emerald-950 font-black' : 'text-slate-800'
@@ -1861,6 +1835,37 @@ export function FechamentoView({
                                   Conciliado
                                 </span>
                               )}
+                            </div>
+
+                            {/* Departamentos / Contas Gerenciais vinculados a esta empresa */}
+                            <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                              <span className="text-[10px] text-slate-500 font-semibold flex items-center gap-1">
+                                <FolderTree className="w-3 h-3 text-amber-600 flex-shrink-0" />
+                                <span>Departamentos ({Object.keys(empData.departamentos).length}):</span>
+                              </span>
+                              {Object.entries(empData.departamentos).map(([depTitle, dData]) => (
+                                <span
+                                  key={depTitle}
+                                  className={`inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-md border font-medium transition-colors ${
+                                    dData.diferencaTotal !== 0
+                                      ? 'bg-amber-50 text-amber-900 border-amber-300 shadow-2xs font-semibold'
+                                      : isEmpresaConciliada
+                                      ? 'bg-white/90 text-emerald-900 border-emerald-300'
+                                      : 'bg-white text-slate-700 border-slate-200 shadow-2xs'
+                                  }`}
+                                  title={`${depTitle}: ${dData.items.length} lançamentos | Dealer: ${formatBRL(dData.totalDealer)} | Sitef: ${formatBRL(dData.totalSitef)} | Dif: ${formatBRL(dData.diferencaTotal)}`}
+                                >
+                                  <span className="font-semibold">{depTitle}</span>
+                                  <span className="text-[9px] text-slate-500 font-mono">({dData.items.length})</span>
+                                  {dData.diferencaTotal !== 0 ? (
+                                    <span className="text-[9px] font-bold text-amber-700 font-mono">
+                                      {formatBRL(dData.diferencaTotal)}
+                                    </span>
+                                  ) : (
+                                    <Check className="w-2.5 h-2.5 text-emerald-600 stroke-[3]" />
+                                  )}
+                                </span>
+                              ))}
                             </div>
 
                             {/* Reconciler user and timestamp info displayed below status */}
@@ -1991,7 +1996,7 @@ export function FechamentoView({
                     <div className="divide-y divide-slate-200 bg-white">
                       {Object.entries(empData.departamentos).map(([depName, depData]) => {
                         const depKey = `${empName}_${depName}`;
-                        const isDepCollapsed = collapsedDepartamentos[depKey] ?? true;
+                        const isDepCollapsed = collapsedDepartamentos[depKey] ?? false;
 
                         return (
                           <div key={depKey} className="border-t border-slate-200">

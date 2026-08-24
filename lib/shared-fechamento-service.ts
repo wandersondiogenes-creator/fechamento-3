@@ -156,10 +156,31 @@ export function extractRoomCode(raw: string | null | undefined): string {
   return cleanAlphaNum;
 }
 
+export function clearRoomUrlParam(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const url = new URL(window.location.href);
+    let modified = false;
+    ['sala', 'shared', 'fechamento', 'code', 'room', 'id'].forEach((param) => {
+      if (url.searchParams.has(param)) {
+        url.searchParams.delete(param);
+        modified = true;
+      }
+    });
+    if (modified) {
+      const newUrl = url.pathname + (url.searchParams.toString() ? `?${url.searchParams.toString()}` : '') + url.hash;
+      window.history.replaceState({}, '', newUrl);
+    }
+  } catch {
+    // ignore
+  }
+}
+
 export function saveActiveRoomIdLocally(roomId: string | null): void {
   if (typeof window === 'undefined') return;
   if (!roomId) {
     localStorage.removeItem(ACTIVE_SHARED_ROOM_STORAGE_KEY);
+    clearRoomUrlParam();
   } else {
     localStorage.setItem(ACTIVE_SHARED_ROOM_STORAGE_KEY, extractRoomCode(roomId));
   }

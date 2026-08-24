@@ -153,11 +153,19 @@ export function generateAutoFechamento(
   const dealerEmpresaCol = findColumnId(dealerCols, (h) =>
     h.includes('empresa') || h.includes('filial') || h.includes('loja') || h.includes('concessionaria')
   );
-  const dealerDeptoCol = findColumnId(dealerCols, (h) =>
-    h.includes('departamento') || h.includes('depto') || h.includes('setor') || h.includes('dep.')
-  );
   const dealerContaCol = findColumnId(dealerCols, (h) =>
-    h.includes('conta') || h.includes('cta') || h.includes('gerencial')
+    h.includes('conta gerencial') ||
+    h.includes('cta gerencial') ||
+    h.includes('cta. gerencial') ||
+    h.includes('conta_gerencial') ||
+    h.includes('cta_gerencial') ||
+    h.includes('gerencial') ||
+    h.includes('plano de contas') ||
+    (h.includes('conta') && !h.includes('contato')) ||
+    h.includes('cta')
+  );
+  const dealerDeptoCol = findColumnId(dealerCols, (h) =>
+    h.includes('departamento') || h.includes('depto') || h.includes('setor') || h.includes('dep.') || h.includes('centro')
   );
   const dealerCaixaCol = findColumnId(dealerCols, (h) =>
     h.includes('caixa') || h.includes('cx')
@@ -317,8 +325,41 @@ export function generateAutoFechamento(
     const rawEmpresa = dealerEmpresaCol ? row[dealerEmpresaCol] : row.col_0 || '';
     // Dealer company is canonical
     const empresa = mapSitefEmpresa(String(rawEmpresa || 'Empresa 01'), activeDealerEmpresas);
-    const departamento = dealerDeptoCol ? String(row[dealerDeptoCol] || '').trim() : '';
-    const contaGerencial = dealerContaCol ? String(row[dealerContaCol] || '').trim() : departamento;
+
+    // Extract Conta Gerencial / Departamento from Dealer row
+    let rawConta = '';
+    if (dealerContaCol && row[dealerContaCol] !== undefined && row[dealerContaCol] !== null && String(row[dealerContaCol]).trim() !== '') {
+      rawConta = String(row[dealerContaCol]).trim();
+    }
+    let rawDepto = '';
+    if (dealerDeptoCol && row[dealerDeptoCol] !== undefined && row[dealerDeptoCol] !== null && String(row[dealerDeptoCol]).trim() !== '') {
+      rawDepto = String(row[dealerDeptoCol]).trim();
+    }
+
+    // Dynamic scan fallback if column ID didn't catch the header
+    if (!rawConta && !rawDepto) {
+      for (const [k, v] of Object.entries(row)) {
+        if (v === undefined || v === null || String(v).trim() === '') continue;
+        const kNorm = k.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+        if (
+          (kNorm.includes('conta') || kNorm.includes('cta') || kNorm.includes('gerencial') || kNorm.includes('plano')) &&
+          !kNorm.includes('contato')
+        ) {
+          rawConta = String(v).trim();
+          break;
+        } else if (
+          kNorm.includes('departamento') || kNorm.includes('depto') || kNorm.includes('setor') || kNorm.includes('centro')
+        ) {
+          rawDepto = String(v).trim();
+          break;
+        }
+      }
+    }
+
+    // The user requirement: "essa conta gerencial é o departamento que tem que considerar no fechamento"
+    const departamento = rawConta || rawDepto || 'Geral';
+    const contaGerencial = rawConta || rawDepto || 'Geral';
+
     const caixaLoja = dealerCaixaCol ? String(row[dealerCaixaCol] || '').trim() : '';
     const dataRaw = dealerDataCol ? row[dealerDataCol] : row.col_1 || '';
     const data = parseAndFormatDate(dataRaw, 'DD/MM/YYYY');
@@ -605,10 +646,10 @@ export function generateAutoFechamento(
         : (nsu || matchedSitef.nsuHost || matchedSitef.nsuSitef || matchedSitef.nsu || `NSU-${1000 + idx}`);
 
       resultItems.push({
-        id: `fech_d_${idx}_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        id: `fech_d_${idx}_${empresa.replace(/[^a-zA-Z0-9]/g, '_')}_${String(displayNsu).replace(/[^a-zA-Z0-9]/g, '_')}_${roundedValorDealer.toFixed(2)}`,
         empresa,
-        departamento: departamento || '30133-CAIXA LOJA - DEPTO. V. NOVOS',
-        contaGerencial: contaGerencial || departamento || '30133-CAIXA LOJA - DEPTO. V. NOVOS',
+        departamento,
+        contaGerencial,
         caixaLoja: caixaLoja || '01',
         nsu: displayNsu,
         data: data || matchedSitef.data || new Date().toLocaleDateString('pt-BR'),
@@ -640,10 +681,10 @@ export function generateAutoFechamento(
         : 'Lançamento no Dealer sem correspondente localizado no SiTef';
 
       resultItems.push({
-        id: `fech_d_unmatched_${idx}_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        id: `fech_d_unmatched_${idx}_${empresa.replace(/[^a-zA-Z0-9]/g, '_')}_${String(nsu || 'unmatched').replace(/[^a-zA-Z0-9]/g, '_')}_${roundedValorDealer.toFixed(2)}`,
         empresa,
-        departamento: departamento || '30133-CAIXA LOJA - DEPTO. V. NOVOS',
-        contaGerencial: contaGerencial || departamento || '30133-CAIXA LOJA - DEPTO. V. NOVOS',
+        departamento,
+        contaGerencial,
         caixaLoja: caixaLoja || '01',
         nsu: nsu || (isDealerPix ? 'PIX' : `NSU-${1000 + idx}`),
         data: data || new Date().toLocaleDateString('pt-BR'),
@@ -676,10 +717,10 @@ export function generateAutoFechamento(
         : (s.nsuHost || s.nsuSitef || s.nsu || `NSU-S-${2000 + idx}`);
 
       resultItems.push({
-        id: `fech_s_unmatched_${s.index}_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        id: `fech_s_unmatched_${s.index}_${s.empresa.replace(/[^a-zA-Z0-9]/g, '_')}_${String(displayNsu).replace(/[^a-zA-Z0-9]/g, '_')}_${s.valor.toFixed(2)}`,
         empresa: s.empresa,
-        departamento: '30133-CAIXA LOJA - DEPTO. V. NOVOS',
-        contaGerencial: '30133-CAIXA LOJA - DEPTO. V. NOVOS',
+        departamento: 'SiTef (Sem Lançamento Dealer)',
+        contaGerencial: 'SiTef (Sem Lançamento Dealer)',
         caixaLoja: '01',
         nsu: displayNsu,
         data: s.data || new Date().toLocaleDateString('pt-BR'),

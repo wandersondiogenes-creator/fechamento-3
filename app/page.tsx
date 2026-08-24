@@ -1203,6 +1203,9 @@ export default function Home() {
         // ignore
       }
     }
+    setTimeout(() => {
+      isReceivingRemoteUpdateRef.current = false;
+    }, 1500);
   }, []);
 
   const handleClearAllData = useCallback(() => {
@@ -1270,6 +1273,9 @@ export default function Home() {
       if (sharedPendenteCdc) {
         setPendenteCdcState(sharedPendenteCdc);
       }
+      setTimeout(() => {
+        isReceivingRemoteUpdateRef.current = false;
+      }, 1500);
     },
     []
   );
@@ -1297,15 +1303,24 @@ export default function Home() {
     [handleClearAllData]
   );
 
-  // Real-time synchronization of spreadsheet edits to active shared room (without loop / flickering)
+  // Real-time synchronization of spreadsheet edits to active shared room (HOST only, without loop / flickering)
   useEffect(() => {
     const activeSession = activeSharedSessionRef.current;
     if (!activeSession?.id || !mounted) return;
 
     if (isReceivingRemoteUpdateRef.current) {
-      isReceivingRemoteUpdateRef.current = false;
       return;
     }
+
+    const isHost =
+      activeSession.createdBy?.id === currentUser.id ||
+      activeSession.createdBy?.email === currentUser.email ||
+      activeSession.createdBy?.name === currentUser.name ||
+      currentUser.role === 'admin' ||
+      currentUser.role === 'administrador';
+
+    // Non-hosts do not auto-broadcast background spreadsheet updates
+    if (!isHost) return;
 
     const currentSig = `${dealerState.rawData.length}_${dealerState.processedData.length}_${sitefState.rawData.length}_${sitefState.processedData.length}_${pendenteCdcState.rawData.length}_${manualFechamentoItems.length}_${deletedFechamentoIds.size}`;
     if (lastSyncedSignatureRef.current === currentSig) {
@@ -1313,6 +1328,7 @@ export default function Home() {
     }
 
     const timer = setTimeout(async () => {
+      if (isReceivingRemoteUpdateRef.current) return;
       lastSyncedSignatureRef.current = currentSig;
       try {
         const autoItems = generateAutoFechamento(

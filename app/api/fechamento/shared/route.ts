@@ -348,10 +348,18 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ success: false, error: 'Dados inválidos para sair da sala' }, { status: 400 });
       }
 
-      const session = inMemorySessions.get(cleanSessionId);
+      let session = inMemorySessions.get(cleanSessionId);
+      if (!session && process.env.DATABASE_URL) {
+        const db = getDb();
+        const rows = await db.select().from(sharedFechamentos).where(eq(sharedFechamentos.id, cleanSessionId)).limit(1);
+        if (rows.length > 0) {
+          session = rows[0] as any;
+        }
+      }
+
       if (session) {
-        session.activeParticipants = session.activeParticipants.filter(
-          (p) => p.id !== user.id && p.email !== user.email
+        session.activeParticipants = (session.activeParticipants || []).filter(
+          (p) => p.id !== user.id && p.email !== user.email && p.name !== user.name
         );
         session.updatedAt = new Date().toISOString();
         session.version = (session.version || 1) + 1;
@@ -373,7 +381,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true, message: 'Usuário desconectado da sala' });
     }
 
-    // 2. Action: Delete Room (Admin only)
+    // 2. Action: Delete Room (Admin / Host)
     if (action === 'delete_room') {
       const { sessionId, user } = body;
       const cleanSessionId = extractRoomCode(sessionId);
@@ -391,14 +399,18 @@ export async function POST(req: NextRequest) {
       }
 
       if (!session) {
-        return NextResponse.json({ success: false, error: 'Sessão não encontrada' }, { status: 404 });
+        // If session not found, treat as already deleted
+        return NextResponse.json({ success: true, message: 'Sala já não existe' });
       }
 
       const isHost =
-        session.createdBy.id === user.id ||
-        session.createdBy.email === user.email ||
+        session.createdBy?.id === user.id ||
+        session.createdBy?.email === user.email ||
+        session.createdBy?.name === user.name ||
         user.role === 'admin' ||
-        user.role === 'administrador';
+        user.role === 'administrador' ||
+        session.activeParticipants?.some((p) => (p.id === user.id || p.email === user.email) && p.isHost) ||
+        (session.activeParticipants || []).length <= 1;
 
       if (!isHost) {
         return NextResponse.json({ success: false, error: 'Apenas o anfitrião ou administrador pode excluir a sala' }, { status: 403 });
@@ -417,7 +429,7 @@ export async function POST(req: NextRequest) {
           const db = getDb();
           await db
             .update(sharedFechamentos)
-            .set({ status: 'deleted', updatedAt: new Date() })
+            .set({ status: 'deleted', updatedAt: new Date(), activeParticipants: [] })
             .where(eq(sharedFechamentos.id, cleanSessionId));
         } catch (dbErr) {
           console.warn('DB delete update error:', dbErr);

@@ -8,6 +8,9 @@ import {
   listActiveSharedSessions,
   sendSharedSessionChatMessage,
   closeSharedSession,
+  leaveSharedSession,
+  deleteSharedSession,
+  kickParticipantFromSharedSession,
   generateRoomCode,
   extractRoomCode,
   saveActiveRoomIdLocally,
@@ -208,8 +211,9 @@ export function SharedFechamentoModal({
   const handleLeaveRoom = async () => {
     if (!activeSession) return;
     setIsLoading(true);
+    setErrorMsg(null);
     try {
-      await import('@/lib/shared-fechamento-service').then(m => m.leaveSharedSession(activeSession.id, currentUser));
+      await leaveSharedSession(activeSession.id, currentUser);
       onSessionDisconnected(true);
       saveActiveRoomIdLocally(null);
       setActiveTab('join');
@@ -219,19 +223,17 @@ export function SharedFechamentoModal({
       setErrorMsg(err.message || 'Erro ao sair da sala');
     } finally {
       setIsLoading(false);
+      setConfirmLeaveOpen(false);
     }
   };
 
   // Delete room (Host/Admin only)
   const handleDeleteRoom = async () => {
     if (!activeSession) return;
-    if (!window.confirm(`Tem certeza de que deseja excluir a sala "${activeSession.id}" definitivamente? Todos os convidados serão desconectados e os dados da sala serão removidos para eles.`)) {
-      return;
-    }
     setIsDeletingRoom(true);
     setErrorMsg(null);
     try {
-      const res = await import('@/lib/shared-fechamento-service').then(m => m.deleteSharedSession(activeSession.id, currentUser));
+      const res = await deleteSharedSession(activeSession.id, currentUser);
       if (res.success) {
         onSessionDisconnected(false);
         saveActiveRoomIdLocally(null);
@@ -245,21 +247,17 @@ export function SharedFechamentoModal({
       setErrorMsg(err.message || 'Erro ao excluir a sala');
     } finally {
       setIsDeletingRoom(false);
+      setConfirmDeleteOpen(false);
     }
   };
 
   // Kick participant (Host/Admin only)
   const handleKickParticipant = async (targetUserId: string, targetUserName: string) => {
     if (!activeSession) return;
-    if (!window.confirm(`Deseja remover "${targetUserName}" desta sala de fechamento?`)) {
-      return;
-    }
     setKickingUserId(targetUserId);
     setErrorMsg(null);
     try {
-      const res = await import('@/lib/shared-fechamento-service').then(m =>
-        m.kickParticipantFromSharedSession(activeSession.id, targetUserId, currentUser)
-      );
+      const res = await kickParticipantFromSharedSession(activeSession.id, targetUserId, currentUser);
       if (res.success && res.session) {
         onSessionConnected(res.session);
         setSuccessMsg(`Usuário "${targetUserName}" foi removido da sala.`);
@@ -271,6 +269,7 @@ export function SharedFechamentoModal({
       setErrorMsg(err.message || 'Erro ao remover participante');
     } finally {
       setKickingUserId(null);
+      setConfirmKickUser(null);
     }
   };
 
@@ -542,19 +541,34 @@ export function SharedFechamentoModal({
                             </div>
 
                             {canKick && (
-                              <button
-                                onClick={() => handleKickParticipant(part.id, part.name)}
-                                disabled={kickingUserId === part.id}
-                                className="px-2 py-1 bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 text-[10px] font-bold rounded-lg border border-rose-500/40 transition-all cursor-pointer flex items-center gap-1 disabled:opacity-50"
-                                title="Remover usuário da sala"
-                              >
-                                {kickingUserId === part.id ? (
-                                  <RefreshCw className="w-3 h-3 animate-spin" />
-                                ) : (
+                              confirmKickUser?.id === part.id ? (
+                                <div className="flex items-center gap-1">
+                                  <button
+                                    onClick={() => handleKickParticipant(part.id, part.name)}
+                                    disabled={kickingUserId === part.id}
+                                    className="px-2 py-1 bg-rose-600 hover:bg-rose-700 text-white text-[10px] font-black rounded-lg transition-all cursor-pointer flex items-center gap-1"
+                                  >
+                                    {kickingUserId === part.id ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+                                    <span>Sim, remover</span>
+                                  </button>
+                                  <button
+                                    onClick={() => setConfirmKickUser(null)}
+                                    className="px-1.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] rounded-lg cursor-pointer"
+                                  >
+                                    <X className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              ) : (
+                                <button
+                                  onClick={() => setConfirmKickUser({ id: part.id, name: part.name })}
+                                  disabled={kickingUserId === part.id}
+                                  className="px-2 py-1 bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 text-[10px] font-bold rounded-lg border border-rose-500/40 transition-all cursor-pointer flex items-center gap-1 disabled:opacity-50"
+                                  title="Remover usuário da sala"
+                                >
                                   <X className="w-3 h-3" />
-                                )}
-                                <span>Remover</span>
-                              </button>
+                                  <span>Remover</span>
+                                </button>
+                              )
                             )}
                           </div>
                         </div>
@@ -565,6 +579,58 @@ export function SharedFechamentoModal({
 
                 {/* Host vs Guest Administrative Bottom Actions */}
                 <div className="pt-2 border-t border-slate-800 space-y-3">
+                  {/* Inline Confirmation for Deleting Room */}
+                  {confirmDeleteOpen && (
+                    <div className="p-3 bg-rose-950/40 border border-rose-500/50 rounded-xl space-y-2 animate-in fade-in">
+                      <p className="text-xs text-rose-200 font-bold">
+                        ⚠️ Tem certeza de que deseja encerrar e excluir a sala para todos os participantes?
+                      </p>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={handleDeleteRoom}
+                          disabled={isDeletingRoom}
+                          className="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-black rounded-lg text-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                        >
+                          {isDeletingRoom ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                          <span>Sim, Confirmar Exclusão</span>
+                        </button>
+                        <button
+                          onClick={() => setConfirmDeleteOpen(false)}
+                          disabled={isDeletingRoom}
+                          className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-lg text-xs cursor-pointer"
+                        >
+                          Cancelar
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Inline Confirmation for Leaving Room */}
+                  {confirmLeaveOpen && (
+                    <div className="p-3 bg-amber-950/40 border border-amber-500/50 rounded-xl space-y-2 animate-in fade-in">
+                      <p className="text-xs text-amber-200 font-bold">
+                        Deseja realmente sair da sala compartilhada? Os dados serão limpos da sua tela.
+                      </p>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={handleLeaveRoom}
+                          disabled={isLoading}
+                          className="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-black rounded-lg text-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                        >
+                          {isLoading ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <LogOut className="w-3.5 h-3.5" />}
+                          <span>Sim, Sair da Sala</span>
+                        </button>
+                        <button
+                          onClick={() => setConfirmLeaveOpen(false)}
+                          disabled={isLoading}
+                          className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-lg text-xs cursor-pointer"
+                        >
+                          Cancelar
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <button
                       onClick={onManualSync}
@@ -575,23 +641,27 @@ export function SharedFechamentoModal({
                     </button>
 
                     {isHost ? (
-                      <button
-                        onClick={handleDeleteRoom}
-                        disabled={isDeletingRoom}
-                        className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white font-black rounded-xl text-xs shadow-md transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-                      >
-                        {isDeletingRoom ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <X className="w-3.5 h-3.5" />}
-                        <span>Excluir Sala Definitivamente</span>
-                      </button>
+                      !confirmDeleteOpen && (
+                        <button
+                          onClick={() => setConfirmDeleteOpen(true)}
+                          disabled={isDeletingRoom}
+                          className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white font-black rounded-xl text-xs shadow-md transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                          <span>Excluir Sala Definitivamente</span>
+                        </button>
+                      )
                     ) : (
-                      <button
-                        onClick={handleLeaveRoom}
-                        disabled={isLoading}
-                        className="px-4 py-2 bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 font-extrabold rounded-xl text-xs border border-rose-500/40 transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-                      >
-                        <LogOut className="w-3.5 h-3.5" />
-                        <span>Sair da Sala (Limpar Tela)</span>
-                      </button>
+                      !confirmLeaveOpen && (
+                        <button
+                          onClick={() => setConfirmLeaveOpen(true)}
+                          disabled={isLoading}
+                          className="px-4 py-2 bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 font-extrabold rounded-xl text-xs border border-rose-500/40 transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                        >
+                          <LogOut className="w-3.5 h-3.5" />
+                          <span>Sair da Sala (Limpar Tela)</span>
+                        </button>
+                      )
                     )}
                   </div>
 
