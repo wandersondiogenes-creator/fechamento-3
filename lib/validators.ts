@@ -1,4 +1,4 @@
-import { CADASTRO_EMPRESAS } from './cadastros';
+import { CADASTRO_EMPRESAS, EMPRESAS_ALIASES_MAP } from './cadastros';
 
 export function removeAccents(str: string): string {
   if (!str || typeof str !== 'string') return '';
@@ -188,28 +188,162 @@ export function parseAndFormatDate(val: any, targetFormat: string = 'DD/MM/YYYY'
   return `${day}/${month}/${year}`;
 }
 
-export function mapSitefEmpresa(sitefValue: string): string {
+/**
+ * Standardizes tokens for automotive dealership company matching:
+ * Strips accents, punctuation, expands known abbreviations (W -> WASHINGTON, C -> CAMINHO, etc.)
+ */
+export function normalizeCompanyTokens(str: string): string[] {
+  if (!str) return [];
+  const s = removeAccents(str.toUpperCase())
+    .replace(/[.\-_/,()]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  const rawTokens = s.split(' ').filter(Boolean);
+  const expanded: string[] = [];
+
+  for (const t of rawTokens) {
+    if (t === 'W' || t === 'WASH' || t === 'WASHING' || t === 'WASHINGTON') {
+      expanded.push('WASHINGTON');
+    } else if (t === 'C' || t === 'CAM' || t === 'CAMINHO') {
+      expanded.push('CAMINHO');
+    } else if (t === 'ANTO' || t === 'ANT' || t === 'ANTONIO') {
+      expanded.push('ANTONIO');
+    } else if (t === 'AV' || t === 'AVE' || t === 'AVENIDA') {
+      expanded.push('AVENIDA');
+    } else if (t === 'EP' || t === 'EPIT' || t === 'EPITACIO') {
+      expanded.push('EPITACIO');
+    } else if (t === 'SEMI' || t === 'SEMINOVOS' || t === 'SEMINOVO') {
+      expanded.push('SEMINOVOS');
+    } else if (
+      [
+        'LTDA',
+        'SA',
+        'S/A',
+        'COMERCIO',
+        'VEICULOS',
+        'AUTO',
+        'EIRELI',
+        'ME',
+        'CONCESSIONARIA',
+        'LOJA',
+        'FILIAL',
+        'UNIDADE',
+        'ESTABELECIMENTO',
+      ].includes(t)
+    ) {
+      // Exclude noise words in scoring
+      continue;
+    } else {
+      expanded.push(t);
+    }
+  }
+
+  return expanded;
+}
+
+/**
+ * Maps SiTef company/store names to the official canonical Dealer company names.
+ * Ensures the Dealer nomenclature is ALWAYS authoritative and prioritized.
+ */
+export function mapSitefEmpresa(
+  sitefValue: string,
+  availableDealerEmpresas?: string[]
+): string {
   if (!sitefValue || typeof sitefValue !== 'string') return sitefValue || '';
-  const cleanInput = removeAccents(sitefValue.trim().toUpperCase());
+  const trimmed = sitefValue.trim();
+  if (!trimmed) return trimmed;
 
-  // Direct match in CADASTRO_EMPRESAS
-  for (const emp of CADASTRO_EMPRESAS) {
-    const normEmp = removeAccents(emp.toUpperCase());
-    if (normEmp === cleanInput) return emp;
+  const cleanUpper = removeAccents(trimmed.toUpperCase()).replace(/\s+/g, ' ');
+
+  // 1. Direct match in EMPRESAS_ALIASES_MAP
+  if (EMPRESAS_ALIASES_MAP[cleanUpper]) {
+    return EMPRESAS_ALIASES_MAP[cleanUpper];
+  }
+  const cleanNoPunct = cleanUpper.replace(/[.\-_/,()]/g, ' ').replace(/\s+/g, ' ').trim();
+  if (EMPRESAS_ALIASES_MAP[cleanNoPunct]) {
+    return EMPRESAS_ALIASES_MAP[cleanNoPunct];
   }
 
-  // Substring match
+  // 2. Direct exact match in CADASTRO_EMPRESAS
   for (const emp of CADASTRO_EMPRESAS) {
     const normEmp = removeAccents(emp.toUpperCase());
-    const words = normEmp.split(/[\s-]+/).filter((w) => w.length > 2);
-    const matchesAll = words.length > 0 && words.every((w) => cleanInput.includes(w));
-    if (matchesAll) return emp;
+    if (normEmp === cleanUpper || normEmp === cleanNoPunct) return emp;
   }
 
-  // Partial match
+  // Candidate pool: availableDealerEmpresas if passed, then CADASTRO_EMPRESAS
+  const candidates =
+    availableDealerEmpresas && availableDealerEmpresas.length > 0
+      ? Array.from(new Set([...availableDealerEmpresas, ...CADASTRO_EMPRESAS]))
+      : CADASTRO_EMPRESAS;
+
+  // 3. Match against candidates using normalized expanded tokens
+  const inputTokens = normalizeCompanyTokens(trimmed);
+  if (inputTokens.length === 0) return sitefValue;
+
+  let bestMatch: string | null = null;
+  let bestScore = 0;
+
+  for (const cand of candidates) {
+    const candTokens = normalizeCompanyTokens(cand);
+    if (candTokens.length === 0) continue;
+
+    // Calculate token overlap
+    const matchedInputTokens = inputTokens.filter((it) =>
+      candTokens.some((ct) => ct === it || ct.startsWith(it) || it.startsWith(ct))
+    );
+
+    const matchedCandTokens = candTokens.filter((ct) =>
+      inputTokens.some((it) => ct === it || ct.startsWith(it) || it.startsWith(ct))
+    );
+
+    let score = matchedInputTokens.length + matchedCandTokens.length;
+
+    // Brand matching weighting
+    const brandTokens = [
+      'BYD',
+      'GEELY',
+      'RENAULT',
+      'NISSAN',
+      'FORD',
+      'KIA',
+      'JEEP',
+      'NEWVIA',
+      'OMODA',
+      'LEAP',
+      'VIA',
+      'SUL',
+      'CJDR',
+      'EUROVIA',
+    ];
+    const brandInInput = inputTokens.find((t) => brandTokens.includes(t));
+    const brandInCand = candTokens.find((t) => brandTokens.includes(t));
+
+    if (brandInInput && brandInCand) {
+      if (
+        brandInInput === brandInCand ||
+        (brandInInput === 'EUROVIA' && (brandInCand === 'CJDR' || cand.includes('ACM')))
+      ) {
+        score += 6;
+      } else {
+        score -= 6;
+      }
+    }
+
+    if (score > bestScore && score >= 3) {
+      bestScore = score;
+      bestMatch = cand;
+    }
+  }
+
+  if (bestMatch) {
+    return bestMatch;
+  }
+
+  // 4. Substring containment match
   for (const emp of CADASTRO_EMPRESAS) {
-    const normEmp = removeAccents(emp.toUpperCase());
-    if (cleanInput.includes(normEmp) || normEmp.includes(cleanInput)) {
+    const normEmp = removeAccents(emp.toUpperCase()).replace(/[.\-_/,()]/g, ' ').replace(/\s+/g, ' ');
+    if (cleanNoPunct.includes(normEmp) || normEmp.includes(cleanNoPunct)) {
       return emp;
     }
   }

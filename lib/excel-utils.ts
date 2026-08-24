@@ -870,11 +870,12 @@ export function createSmartColumnConfigs(
 }
 
 /**
- * Automatically normalizes SiTef company/store names according to the official mapping table
+ * Automatically normalizes SiTef company/store names according to the official Dealer mapping
  */
 export function normalizeSitefRawData(
   rawData: Record<string, any>[],
-  headersOrCols: string[] | ColumnConfig[]
+  headersOrCols: string[] | ColumnConfig[],
+  dealerEmpresas?: string[]
 ): Record<string, any>[] {
   if (!rawData || rawData.length === 0) return rawData;
 
@@ -888,7 +889,8 @@ export function normalizeSitefRawData(
         lower.includes('loja') ||
         lower.includes('filial') ||
         lower.includes('comp') ||
-        lower.includes('estabelecimento')
+        lower.includes('estabelecimento') ||
+        lower.includes('rede')
       ) {
         matchingColKeys.push(`col_${idx}`);
       }
@@ -904,7 +906,8 @@ export function normalizeSitefRawData(
         h.includes('loja') ||
         h.includes('filial') ||
         h.includes('comp') ||
-        h.includes('estabelecimento')
+        h.includes('estabelecimento') ||
+        h.includes('rede')
       ) {
         matchingColKeys.push(c.id);
       }
@@ -915,21 +918,21 @@ export function normalizeSitefRawData(
   if (matchingColKeys.length === 0 && rawData[0]) {
     Object.keys(rawData[0]).forEach((k) => {
       const sampleVal = String(rawData[0][k] || '').trim();
-      if (sampleVal && mapSitefEmpresa(sampleVal) !== sampleVal) {
+      if (sampleVal && mapSitefEmpresa(sampleVal, dealerEmpresas) !== sampleVal) {
         matchingColKeys.push(k);
       }
     });
   }
 
   if (matchingColKeys.length === 0) {
-    matchingColKeys.push('col_0', 'col_1', 'col_2');
+    matchingColKeys.push('col_0');
   }
 
   return rawData.map((row) => {
     const newRow = { ...row };
     matchingColKeys.forEach((key) => {
       if (newRow[key] !== undefined && newRow[key] !== null) {
-        const mapped = mapSitefEmpresa(newRow[key]);
+        const mapped = mapSitefEmpresa(newRow[key], dealerEmpresas);
         if (mapped && mapped !== String(newRow[key]).trim()) {
           newRow[key] = mapped;
         }

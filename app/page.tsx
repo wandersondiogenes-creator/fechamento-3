@@ -668,8 +668,15 @@ export default function Home() {
   // Handler: Automatic Organization
   const handleAutoOrganize = useCallback(() => {
     if (activeTab === 'sitef') {
+      const activeDealerEmpresas = Array.from(
+        new Set(
+          (dealerState.rawData || [])
+            .map((r) => String(r.col_0 || r.empresa || '').trim())
+            .filter(Boolean)
+        )
+      );
       const report = cleanAndOrganizeRawData(sitefState.headers, sitefState.rawData);
-      const normalizedRaw = normalizeSitefRawData(report.cleanedRawData, report.cleanedHeaders);
+      const normalizedRaw = normalizeSitefRawData(report.cleanedRawData, report.cleanedHeaders, activeDealerEmpresas);
       const columns = createSmartColumnConfigs(report.cleanedHeaders, normalizedRaw);
       const processedData = processSpreadsheetData(normalizedRaw, columns);
 
@@ -728,7 +735,14 @@ export default function Home() {
       setDeletedFechamentoIds(new Set());
 
       if (activeTab === 'sitef') {
-        const normalizedRaw = normalizeSitefRawData(report.cleanedRawData, report.cleanedHeaders);
+        const activeDealerEmpresas = Array.from(
+          new Set(
+            (dealerState.rawData || [])
+              .map((r) => String(r.col_0 || r.empresa || '').trim())
+              .filter(Boolean)
+          )
+        );
+        const normalizedRaw = normalizeSitefRawData(report.cleanedRawData, report.cleanedHeaders, activeDealerEmpresas);
         const columns = createSmartColumnConfigs(report.cleanedHeaders, normalizedRaw);
         const processedData = processSpreadsheetData(normalizedRaw, columns);
 

@@ -159,10 +159,23 @@ export function generateAutoFechamento(
     h.includes('bruto') || h.includes('liquido') || h.includes('valor') || type === 'currency'
   );
 
-  // Parse Sitef rows
+  // Extract unique active Dealer companies directly from Dealer rows (The absolute source of truth)
+  const activeDealerEmpresas = Array.from(
+    new Set(
+      (dealerRows || [])
+        .map((row) => {
+          const val = dealerEmpresaCol ? row[dealerEmpresaCol] : row.col_0;
+          return val ? String(val).trim() : '';
+        })
+        .filter(Boolean)
+    )
+  );
+
+  // Parse Sitef rows with Dealer company priority
   const parsedSitef = (sitefRows || []).map((row, idx) => {
     const rawEmpresa = sitefEmpresaCol ? row[sitefEmpresaCol] : row.col_0 || '';
-    const empresa = mapSitefEmpresa(String(rawEmpresa || 'Empresa 01'));
+    // Map SiTef company name using Dealer companies priority
+    const empresa = mapSitefEmpresa(String(rawEmpresa || 'Empresa 01'), activeDealerEmpresas);
     const dataRaw = sitefDataCol ? row[sitefDataCol] : row.col_1 || '';
     const data = parseAndFormatDate(dataRaw, 'DD/MM/YYYY');
     const nsu = sitefNsuCol ? String(row[sitefNsuCol] || '').trim() : '';
@@ -173,6 +186,7 @@ export function generateAutoFechamento(
     return {
       index: idx,
       empresa,
+      rawEmpresa: String(rawEmpresa || ''),
       data,
       nsu,
       bandeira,
@@ -187,7 +201,8 @@ export function generateAutoFechamento(
   // Reconcile Dealer rows against parsed Sitef
   (dealerRows || []).forEach((row, idx) => {
     const rawEmpresa = dealerEmpresaCol ? row[dealerEmpresaCol] : row.col_0 || '';
-    const empresa = mapSitefEmpresa(String(rawEmpresa || 'Empresa 01'));
+    // Dealer company is canonical
+    const empresa = mapSitefEmpresa(String(rawEmpresa || 'Empresa 01'), activeDealerEmpresas);
     const departamento = dealerDeptoCol ? String(row[dealerDeptoCol] || '').trim() : '';
     const contaGerencial = dealerContaCol ? String(row[dealerContaCol] || '').trim() : departamento;
     const caixaLoja = dealerCaixaCol ? String(row[dealerCaixaCol] || '').trim() : '';
@@ -199,42 +214,87 @@ export function generateAutoFechamento(
     const valorDealer = typeof rawValor === 'number' ? rawValor : (parseCurrencyToNumber(rawValor) || 0);
     const roundedValorDealer = Math.round(valorDealer * 100) / 100;
 
-    const isPix = bandeiraDealer.includes('PIX') || contaGerencial.toUpperCase().includes('PIX') || departamento.toUpperCase().includes('PIX');
+    const isPix =
+      bandeiraDealer.includes('PIX') ||
+      contaGerencial.toUpperCase().includes('PIX') ||
+      departamento.toUpperCase().includes('PIX');
     const tipoPagamento = isPix ? 'PIX' : (bandeiraDealer.includes('DEB') ? 'DEBITO' : 'CREDITO');
 
-    // Find best match in SiTef
+    // Multi-tier matching algorithm
     let matchedSitef: (typeof parsedSitef)[0] | null = null;
     let matchType = '';
 
-    // Match 1: Same NSU (if non-empty) + same empresa
+    // Tier 1: Exact NSU match (if NSU has at least 3 digits) + same Empresa
     if (nsu && nsu.length >= 3) {
-      matchedSitef = parsedSitef.find(
-        (s) => !s.matched && s.nsu && (s.nsu === nsu || s.nsu.endsWith(nsu) || nsu.endsWith(s.nsu)) && (s.empresa === empresa || !empresa)
-      ) || null;
-      if (matchedSitef) matchType = 'NSU / Autorização';
+      matchedSitef =
+        parsedSitef.find(
+          (s) =>
+            !s.matched &&
+            s.nsu &&
+            (s.nsu === nsu || s.nsu.endsWith(nsu) || nsu.endsWith(s.nsu)) &&
+            (s.empresa === empresa || !empresa)
+        ) || null;
+      if (matchedSitef) matchType = 'NSU / Autorização + Empresa';
     }
 
-    // Match 2: Same Empresa + same data + same exact value
+    // Tier 2: Same Empresa + same data + same exact value
     if (!matchedSitef) {
-      matchedSitef = parsedSitef.find(
-        (s) => !s.matched && s.empresa === empresa && (s.data === data || !data) && Math.abs(s.valor - roundedValorDealer) < 0.01
-      ) || null;
+      matchedSitef =
+        parsedSitef.find(
+          (s) =>
+            !s.matched &&
+            s.empresa === empresa &&
+            (s.data === data || !data) &&
+            Math.abs(s.valor - roundedValorDealer) < 0.01
+        ) || null;
       if (matchedSitef) matchType = 'Empresa, Data e Valor Exato';
     }
 
-    // Match 3: Same Empresa + same exact value (tolerance +/- 0.05)
+    // Tier 3: Same Empresa + same exact value (independent of date difference)
     if (!matchedSitef) {
-      matchedSitef = parsedSitef.find(
-        (s) => !s.matched && s.empresa === empresa && Math.abs(s.valor - roundedValorDealer) <= 0.05
-      ) || null;
+      matchedSitef =
+        parsedSitef.find(
+          (s) =>
+            !s.matched &&
+            s.empresa === empresa &&
+            Math.abs(s.valor - roundedValorDealer) < 0.01
+        ) || null;
+      if (matchedSitef) matchType = 'Empresa e Valor Exato';
+    }
+
+    // Tier 4: Same Empresa + value within 5 centavos tolerance
+    if (!matchedSitef) {
+      matchedSitef =
+        parsedSitef.find(
+          (s) =>
+            !s.matched &&
+            s.empresa === empresa &&
+            Math.abs(s.valor - roundedValorDealer) <= 0.05
+        ) || null;
       if (matchedSitef) matchType = 'Empresa e Valor Próximo';
     }
 
-    // Match 4: Same Data + exact value
+    // Tier 5: Global NSU match (if NSU length >= 4)
+    if (!matchedSitef && nsu && nsu.length >= 4) {
+      matchedSitef =
+        parsedSitef.find(
+          (s) =>
+            !s.matched &&
+            s.nsu &&
+            (s.nsu === nsu || s.nsu.endsWith(nsu) || nsu.endsWith(s.nsu))
+        ) || null;
+      if (matchedSitef) matchType = 'NSU / Autorização Global';
+    }
+
+    // Tier 6: Same Data + exact value
     if (!matchedSitef && parsedSitef.length > 0) {
-      matchedSitef = parsedSitef.find(
-        (s) => !s.matched && (s.data === data || !data) && Math.abs(s.valor - roundedValorDealer) < 0.01
-      ) || null;
+      matchedSitef =
+        parsedSitef.find(
+          (s) =>
+            !s.matched &&
+            (s.data === data || !data) &&
+            Math.abs(s.valor - roundedValorDealer) < 0.01
+        ) || null;
       if (matchedSitef) matchType = 'Data e Valor';
     }
 
@@ -254,7 +314,7 @@ export function generateAutoFechamento(
       }
 
       resultItems.push({
-        id: `fech_d_${idx}_${Date.now()}`,
+        id: `fech_d_${idx}_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
         empresa,
         departamento: departamento || '30133-CAIXA LOJA - DEPTO. V. NOVOS',
         contaGerencial: contaGerencial || departamento || '30133-CAIXA LOJA - DEPTO. V. NOVOS',
@@ -282,13 +342,13 @@ export function generateAutoFechamento(
     } else {
       // Unmatched Dealer entry
       const temDivergencia = true;
-      let status = isPix ? 'VALIDAÇÃO NECESSÁRIA (PIX)' : 'DIVERGENTE';
-      let motivo = isPix
+      const status = isPix ? 'VALIDAÇÃO NECESSÁRIA (PIX)' : 'DIVERGENTE';
+      const motivo = isPix
         ? 'Lançamento PIX no Dealer aguardando confirmação bancária / extrato'
         : 'Lançamento no Dealer sem correspondente localizado no SiTef';
 
       resultItems.push({
-        id: `fech_d_unmatched_${idx}_${Date.now()}`,
+        id: `fech_d_unmatched_${idx}_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
         empresa,
         departamento: departamento || '30133-CAIXA LOJA - DEPTO. V. NOVOS',
         contaGerencial: contaGerencial || departamento || '30133-CAIXA LOJA - DEPTO. V. NOVOS',
@@ -313,13 +373,13 @@ export function generateAutoFechamento(
     }
   });
 
-  // Remaining unmatched SiTef entries
+  // Remaining unmatched SiTef entries (adopting the normalized Dealer company name)
   parsedSitef
     .filter((s) => !s.matched)
     .forEach((s, idx) => {
       const diferenca = -s.valor;
       resultItems.push({
-        id: `fech_s_unmatched_${s.index}_${Date.now()}`,
+        id: `fech_s_unmatched_${s.index}_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
         empresa: s.empresa,
         departamento: '30133-CAIXA LOJA - DEPTO. V. NOVOS',
         contaGerencial: '30133-CAIXA LOJA - DEPTO. V. NOVOS',
