@@ -804,7 +804,7 @@ export function FechamentoView({
   // Collapse / Expand handlers
   const toggleEmpresaCollapse = (empName: string) => {
     setCollapsedEmpresas((prev) => {
-      const isCurrentlyCollapsed = prev[empName] ?? false;
+      const isCurrentlyCollapsed = prev[empName] ?? true;
       return {
         ...prev,
         [empName]: !isCurrentlyCollapsed,
@@ -814,7 +814,7 @@ export function FechamentoView({
 
   const toggleDepartamentoCollapse = (key: string) => {
     setCollapsedDepartamentos((prev) => {
-      const isCurrentlyCollapsed = prev[key] ?? false;
+      const isCurrentlyCollapsed = prev[key] ?? true;
       return {
         ...prev,
         [key]: !isCurrentlyCollapsed,
@@ -824,19 +824,28 @@ export function FechamentoView({
 
   const handleExpandAll = () => {
     const newEmpState: Record<string, boolean> = {};
-    Object.keys(groupedByEmpresa).forEach((emp) => {
+    const newDepState: Record<string, boolean> = {};
+    Object.entries(groupedByEmpresa).forEach(([emp, empData]) => {
       newEmpState[emp] = false;
+      Object.keys(empData.departamentos).forEach((dep) => {
+        newDepState[`${emp}_${dep}`] = false;
+      });
     });
     setCollapsedEmpresas(newEmpState);
-    setCollapsedDepartamentos({});
+    setCollapsedDepartamentos(newDepState);
   };
 
   const handleCollapseAll = () => {
     const newEmpState: Record<string, boolean> = {};
-    Object.keys(groupedByEmpresa).forEach((emp) => {
+    const newDepState: Record<string, boolean> = {};
+    Object.entries(groupedByEmpresa).forEach(([emp, empData]) => {
       newEmpState[emp] = true;
+      Object.keys(empData.departamentos).forEach((dep) => {
+        newDepState[`${emp}_${dep}`] = true;
+      });
     });
     setCollapsedEmpresas(newEmpState);
+    setCollapsedDepartamentos(newDepState);
   };
 
   // Selection handlers
@@ -1743,7 +1752,7 @@ export function FechamentoView({
           /* Grouped Accordion View: Empresa -> Departamento */
           <div className="divide-y divide-slate-200">
             {Object.entries(groupedByEmpresa).map(([empName, empData]) => {
-              const isEmpCollapsed = collapsedEmpresas[empName] ?? false;
+              const isEmpCollapsed = collapsedEmpresas[empName] ?? true;
 
               return (
                 <div key={empName} className="bg-slate-50/40">
@@ -1996,7 +2005,7 @@ export function FechamentoView({
                     <div className="divide-y divide-slate-200 bg-white">
                       {Object.entries(empData.departamentos).map(([depName, depData]) => {
                         const depKey = `${empName}_${depName}`;
-                        const isDepCollapsed = collapsedDepartamentos[depKey] ?? false;
+                        const isDepCollapsed = collapsedDepartamentos[depKey] ?? true;
 
                         return (
                           <div key={depKey} className="border-t border-slate-200">
