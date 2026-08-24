@@ -2011,15 +2011,15 @@ export function FechamentoView({
 
                         return (
                           <div key={depKey} className="border-t border-slate-200">
-                            {/* Departamento Header - Apple Inspired Design */}
+                            {/* Departamento Header - Apple Inspired Dark Navy Design */}
                             <div
                               onClick={() => toggleDepartamentoCollapse(depKey)}
-                              className="px-4 py-2.5 bg-gradient-to-r from-slate-100/95 via-slate-50/90 to-slate-100/80 hover:from-slate-200/80 hover:via-slate-100/80 hover:to-slate-200/70 text-slate-900 flex items-center justify-between gap-3 cursor-pointer text-xs select-none border-b border-slate-200/90 transition-all duration-150 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)]"
+                              className="px-4 py-2.5 bg-gradient-to-r from-[#0d1b2a] via-[#1b263b] to-[#0d1b2a] hover:from-[#112238] hover:via-[#223049] hover:to-[#112238] text-white flex items-center justify-between gap-3 cursor-pointer text-xs select-none border-b border-slate-800/90 transition-all duration-150 shadow-[inset_0_1px_0_rgba(255,255,255,0.1)]"
                             >
                               <div className="flex items-center gap-2.5 min-w-0 flex-1">
                                 <button
                                   type="button"
-                                  className="w-6 h-6 rounded-md bg-white/80 border border-slate-200/80 flex items-center justify-center text-slate-500 hover:text-slate-800 hover:bg-white shadow-2xs flex-shrink-0 transition-colors"
+                                  className="w-6 h-6 rounded-md bg-white/10 border border-white/15 flex items-center justify-center text-slate-300 hover:text-white hover:bg-white/20 shadow-2xs flex-shrink-0 transition-colors"
                                 >
                                   {isDepCollapsed ? (
                                     <ChevronRight className="w-3.5 h-3.5" />
@@ -2028,31 +2028,31 @@ export function FechamentoView({
                                   )}
                                 </button>
                                 
-                                <div className="w-6 h-6 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-600 flex items-center justify-center flex-shrink-0 shadow-2xs">
+                                <div className="w-6 h-6 rounded-lg bg-blue-500/20 border border-blue-400/40 text-blue-300 flex items-center justify-center flex-shrink-0 shadow-2xs">
                                   <FolderTree className="w-3.5 h-3.5" />
                                 </div>
 
-                                <span className="font-bold text-[13px] text-slate-900 tracking-tight truncate">
+                                <span className="font-bold text-[13px] text-white tracking-tight truncate drop-shadow-xs">
                                   {depName}
                                 </span>
 
-                                <span className="text-[10px] font-semibold bg-white text-slate-600 border border-slate-200/90 px-2 py-0.5 rounded-full shadow-2xs whitespace-nowrap flex-shrink-0">
+                                <span className="text-[10px] font-semibold bg-white/10 text-slate-200 border border-white/20 px-2 py-0.5 rounded-full shadow-2xs whitespace-nowrap flex-shrink-0">
                                   {depData.items.length} {depData.items.length === 1 ? 'lançamento' : 'lançamentos'}
                                 </span>
                               </div>
 
-                              {/* Department Totals - Apple Style Pills */}
+                              {/* Department Totals - Apple Dark Style Pills */}
                               <div className="flex items-center gap-2 text-xs flex-shrink-0">
-                                <div className="px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-950 flex items-center gap-1.5 shadow-2xs">
-                                  <span className="text-[9px] uppercase font-bold tracking-wider text-emerald-700/90">Dealer</span>
-                                  <span className="font-bold text-xs font-mono text-emerald-950">
+                                <div className="px-2.5 py-1 rounded-lg bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 flex items-center gap-1.5 shadow-2xs">
+                                  <span className="text-[9px] uppercase font-bold tracking-wider text-emerald-400">Dealer</span>
+                                  <span className="font-bold text-xs font-mono text-emerald-100">
                                     {formatBRL(depData.totalDealer)}
                                   </span>
                                 </div>
 
-                                <div className="px-2.5 py-1 rounded-lg bg-sky-500/10 border border-sky-500/20 text-sky-950 flex items-center gap-1.5 shadow-2xs">
-                                  <span className="text-[9px] uppercase font-bold tracking-wider text-sky-700/90">Sitef</span>
-                                  <span className="font-bold text-xs font-mono text-sky-950">
+                                <div className="px-2.5 py-1 rounded-lg bg-sky-950/80 border border-sky-500/40 text-sky-300 flex items-center gap-1.5 shadow-2xs">
+                                  <span className="text-[9px] uppercase font-bold tracking-wider text-sky-400">Sitef</span>
+                                  <span className="font-bold text-xs font-mono text-sky-100">
                                     {formatBRL(depData.totalSitef)}
                                   </span>
                                 </div>
@@ -2060,13 +2060,13 @@ export function FechamentoView({
                                 <div
                                   className={`px-2.5 py-1 rounded-lg border flex items-center gap-1.5 shadow-2xs ${
                                     depData.diferencaTotal !== 0
-                                      ? 'bg-amber-500/15 border-amber-500/30 text-amber-950 font-bold'
-                                      : 'bg-white/90 border-slate-200 text-slate-700'
+                                      ? 'bg-amber-950/90 border-amber-500/60 text-amber-200 font-bold ring-1 ring-amber-400/40'
+                                      : 'bg-white/10 border-white/15 text-slate-200'
                                   }`}
                                 >
                                   <span
                                     className={`text-[9px] uppercase font-bold tracking-wider ${
-                                      depData.diferencaTotal !== 0 ? 'text-amber-800' : 'text-slate-500'
+                                      depData.diferencaTotal !== 0 ? 'text-amber-400' : 'text-slate-400'
                                     }`}
                                   >
                                     Dif
@@ -2074,14 +2074,14 @@ export function FechamentoView({
                                   <span
                                     className={`font-mono text-xs ${
                                       depData.diferencaTotal !== 0
-                                        ? 'font-extrabold text-amber-950'
-                                        : 'font-semibold text-slate-700'
+                                        ? 'font-extrabold text-amber-300'
+                                        : 'font-semibold text-white'
                                     }`}
                                   >
                                     {formatBRL(depData.diferencaTotal)}
                                   </span>
                                   {depData.diferencaTotal === 0 && (
-                                    <Check className="w-3 h-3 text-emerald-600 stroke-[3]" />
+                                    <Check className="w-3 h-3 text-emerald-400 stroke-[3]" />
                                   )}
                                 </div>
                               </div>
