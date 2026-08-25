@@ -131,6 +131,17 @@ export default function Home() {
   // Manual & deleted Fechamento state
   const [manualFechamentoItems, setManualFechamentoItems] = useState<FechamentoItem[]>([]);
   const [deletedFechamentoIds, setDeletedFechamentoIds] = useState<Set<string>>(new Set());
+  const [conciliatedEmpresas, setConciliatedEmpresas] = useState<Record<string, any>>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('wanfinance_conciliated_empresas_v1');
+        return saved ? JSON.parse(saved) : {};
+      } catch {
+        return {};
+      }
+    }
+    return {};
+  });
   const [activeSharedSession, setActiveSharedSession] = useState<SharedFechamentoSession | null>(null);
   const [isSharedModalOpen, setIsSharedModalOpen] = useState(false);
 
@@ -182,10 +193,26 @@ export default function Home() {
 
   // Combined Fechamento items list (strictly synchronized with DEALER and SITEF spreadsheets)
   const allFechamentoItems = useMemo(() => {
+    // 1. If user imported or restored items from Excel or history:
+    const hasImportedOrRestoredItems =
+      manualFechamentoItems.length > 0 &&
+      manualFechamentoItems.some(
+        (i) =>
+          i.origem === 'import_excel' ||
+          i.origem === 'backup_excel' ||
+          i.id?.startsWith('imp_') ||
+          i.id?.startsWith('fech_imp_') ||
+          i.id?.startsWith('restored_')
+      );
+
+    if (hasImportedOrRestoredItems) {
+      return manualFechamentoItems.filter((item) => item && item.id && !deletedFechamentoIds.has(item.id));
+    }
+
     const hasDealerData = (dealerState.rawData && dealerState.rawData.length > 0) || (dealerState.processedData && dealerState.processedData.length > 0);
     const hasSitefData = (sitefState.rawData && sitefState.rawData.length > 0) || (sitefState.processedData && sitefState.processedData.length > 0);
 
-    // 1. Live calculation from Dealer and SiTef (autoFechamentoItems) is the primary authoritative ground truth
+    // 2. Live calculation from Dealer and SiTef (autoFechamentoItems) is the primary authoritative ground truth
     if (hasDealerData || hasSitefData) {
       const map = new Map<string, FechamentoItem>();
       autoFechamentoItems.forEach((item) => {
@@ -206,7 +233,7 @@ export default function Home() {
       return Array.from(map.values());
     }
 
-    // 2. If local spreadsheets are not yet loaded but connected to a shared session with items:
+    // 3. If local spreadsheets are not yet loaded but connected to a shared session with items:
     if (activeSharedSession?.items && activeSharedSession.items.length > 0) {
       const map = new Map<string, FechamentoItem>();
       activeSharedSession.items.forEach((item) => {
@@ -222,9 +249,9 @@ export default function Home() {
       return Array.from(map.values());
     }
 
-    // 3. If user explicitly restored a historic record into manualFechamentoItems:
-    if (manualFechamentoItems.length > 0 && manualFechamentoItems.some(i => i.id?.startsWith('restored_') || !i.id?.startsWith('manual_'))) {
-      return manualFechamentoItems.filter(item => !deletedFechamentoIds.has(item.id));
+    // 4. If user explicitly has manual items:
+    if (manualFechamentoItems.length > 0) {
+      return manualFechamentoItems.filter((item) => !deletedFechamentoIds.has(item.id));
     }
 
     return [];
@@ -1411,13 +1438,16 @@ export default function Home() {
       setManualFechamentoItems(importedData.items);
     }
 
-    if (importedData.conciliatedEmpresas && typeof window !== 'undefined') {
-      try {
-        localStorage.setItem(
-          'wanfinance_conciliated_empresas_v1',
-          JSON.stringify(importedData.conciliatedEmpresas)
-        );
-      } catch {}
+    if (importedData.conciliatedEmpresas) {
+      setConciliatedEmpresas(importedData.conciliatedEmpresas);
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem(
+            'wanfinance_conciliated_empresas_v1',
+            JSON.stringify(importedData.conciliatedEmpresas)
+          );
+        } catch {}
+      }
     }
 
     setDeletedFechamentoIds(new Set());
@@ -1668,6 +1698,8 @@ export default function Home() {
                 isSharedModalOpen={isSharedModalOpen}
                 onSharedModalOpenChange={setIsSharedModalOpen}
                 onImportExcelData={handleImportExcelData}
+                conciliatedEmpresas={conciliatedEmpresas}
+                onConciliatedEmpresasChange={setConciliatedEmpresas}
               />
             ) : (
               <>

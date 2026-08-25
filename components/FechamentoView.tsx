@@ -114,6 +114,8 @@ interface FechamentoViewProps {
   isSharedModalOpen?: boolean;
   onSharedModalOpenChange?: (open: boolean) => void;
   onImportExcelData?: (importedData: any) => void;
+  conciliatedEmpresas?: Record<string, any>;
+  onConciliatedEmpresasChange?: (conciliated: Record<string, any>) => void;
 }
 
 export function FechamentoView({
@@ -148,6 +150,8 @@ export function FechamentoView({
   isSharedModalOpen: externalIsSharedModalOpen,
   onSharedModalOpenChange,
   onImportExcelData,
+  conciliatedEmpresas: externalConciliatedEmpresas,
+  onConciliatedEmpresasChange,
 }: FechamentoViewProps) {
   const fechamentoItems = useMemo(
     () => fechamentoItemsProp || itemsProp || [],
@@ -231,7 +235,10 @@ export function FechamentoView({
   }, [onRecalculateAuto]);
 
   // State to track empresas marked as reconciled in the system by the user
-  const [conciliatedEmpresas, setConciliatedEmpresas] = useState<Record<string, any>>(() => {
+  const [internalConciliatedEmpresas, setInternalConciliatedEmpresas] = useState<Record<string, any>>(() => {
+    if (externalConciliatedEmpresas && Object.keys(externalConciliatedEmpresas).length > 0) {
+      return externalConciliatedEmpresas;
+    }
     if (activeSharedSession?.conciliatedEmpresas && Object.keys(activeSharedSession.conciliatedEmpresas).length > 0) {
       return activeSharedSession.conciliatedEmpresas;
     }
@@ -246,10 +253,45 @@ export function FechamentoView({
     return {};
   });
 
+  const conciliatedEmpresas = externalConciliatedEmpresas !== undefined ? externalConciliatedEmpresas : internalConciliatedEmpresas;
+
+  const setConciliatedEmpresas = useCallback(
+    (updater: React.SetStateAction<Record<string, any>>) => {
+      if (typeof updater === 'function') {
+        setInternalConciliatedEmpresas((prev) => {
+          const next = updater(prev);
+          if (onConciliatedEmpresasChange) onConciliatedEmpresasChange(next);
+          if (typeof window !== 'undefined') {
+            try {
+              localStorage.setItem('wanfinance_conciliated_empresas_v1', JSON.stringify(next));
+            } catch {}
+          }
+          return next;
+        });
+      } else {
+        setInternalConciliatedEmpresas(updater);
+        if (onConciliatedEmpresasChange) onConciliatedEmpresasChange(updater);
+        if (typeof window !== 'undefined') {
+          try {
+            localStorage.setItem('wanfinance_conciliated_empresas_v1', JSON.stringify(updater));
+          } catch {}
+        }
+      }
+    },
+    [onConciliatedEmpresasChange]
+  );
+
   const conciliatedEmpresasRef = useRef<Record<string, any>>(conciliatedEmpresas);
   useEffect(() => {
     conciliatedEmpresasRef.current = conciliatedEmpresas;
   }, [conciliatedEmpresas]);
+
+  useEffect(() => {
+    if (externalConciliatedEmpresas && Object.keys(externalConciliatedEmpresas).length > 0) {
+      setInternalConciliatedEmpresas(externalConciliatedEmpresas);
+      conciliatedEmpresasRef.current = externalConciliatedEmpresas;
+    }
+  }, [externalConciliatedEmpresas]);
 
   // When fechamentoItems is cleared / empty, reset conciliated status and selections
   useEffect(() => {
@@ -263,7 +305,7 @@ export function FechamentoView({
         } catch {}
       }
     }
-  }, [fechamentoItems.length]);
+  }, [fechamentoItems.length, setConciliatedEmpresas]);
 
   // Keep local conciliatedEmpresas in sync when external activeSharedSession changes
   useEffect(() => {
@@ -271,15 +313,10 @@ export function FechamentoView({
       setConciliatedEmpresas((prev) => {
         const merged = { ...prev, ...activeSharedSession.conciliatedEmpresas };
         conciliatedEmpresasRef.current = merged;
-        if (typeof window !== 'undefined') {
-          try {
-            localStorage.setItem('wanfinance_conciliated_empresas_v1', JSON.stringify(merged));
-          } catch {}
-        }
         return merged;
       });
     }
-  }, [activeSharedSession?.id, activeSharedSession?.version, activeSharedSession?.conciliatedEmpresas]);
+  }, [activeSharedSession?.id, activeSharedSession?.version, activeSharedSession?.conciliatedEmpresas, setConciliatedEmpresas]);
 
   // Helper to extract boolean status and reconciler details for an empresa
   const getEmpresaConciliation = useCallback((empName: string) => {
@@ -422,6 +459,7 @@ export function FechamentoView({
     onApplySharedSpreadsheets,
     onGuestLeaveOrKicked,
     setSharedSession,
+    setConciliatedEmpresas,
   ]);
 
   useEffect(() => {
@@ -481,6 +519,7 @@ export function FechamentoView({
       sitefState,
       pendenteCdcState,
       setSharedSession,
+      setConciliatedEmpresas,
     ]
   );
 
