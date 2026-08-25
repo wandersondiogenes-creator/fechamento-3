@@ -1963,31 +1963,39 @@ export function FechamentoView({
                                 <FolderTree className={`w-3 h-3 flex-shrink-0 ${isEmpresaConciliada ? 'text-emerald-800' : 'text-blue-600'}`} />
                                 <span>Departamentos ({Object.keys(empData.departamentos).length}):</span>
                               </span>
-                              {Object.entries(empData.departamentos).map(([depTitle, dData]) => (
-                                <span
-                                  key={depTitle}
-                                  className={`inline-flex items-center gap-1.5 text-[10px] px-2.5 py-0.5 rounded-full border font-medium transition-all duration-150 shadow-2xs ${
-                                    dData.diferencaTotal !== 0
-                                      ? 'bg-amber-50 text-amber-950 border-amber-300 font-semibold ring-1 ring-amber-400/30'
-                                      : isEmpresaConciliada
-                                      ? 'bg-white text-emerald-950 border-emerald-400 shadow-2xs'
-                                      : 'bg-white/95 text-slate-800 border-slate-300 hover:border-slate-400'
-                                  }`}
-                                  title={`${depTitle}: ${dData.items.length} lançamentos | Dealer: ${formatBRL(dData.totalDealer)} | Sitef: ${formatBRL(dData.totalSitef)} | Dif: ${formatBRL(dData.diferencaTotal)}`}
-                                >
-                                  <span className="font-bold tracking-tight">{depTitle}</span>
-                                  <span className="text-[9px] px-1 py-0.2 rounded-full bg-slate-100 text-slate-600 font-mono font-medium">
-                                    {dData.items.length}
-                                  </span>
-                                  {dData.diferencaTotal !== 0 ? (
-                                    <span className="text-[9px] font-bold text-amber-700 font-mono">
-                                      {formatBRL(dData.diferencaTotal)}
+                              {Object.entries(empData.departamentos).map(([depTitle, dData]) => {
+                                const depNumber =
+                                  depTitle.match(/\b\d{3,6}\b/)?.[0] ||
+                                  depTitle.match(/^\d+/)?.[0] ||
+                                  depTitle.split(/[-–—:]/)[0]?.trim() ||
+                                  depTitle;
+
+                                return (
+                                  <span
+                                    key={depTitle}
+                                    className={`inline-flex items-center gap-1.5 text-[10px] px-2 py-0.5 rounded-full border font-medium transition-all duration-150 shadow-2xs ${
+                                      dData.diferencaTotal !== 0
+                                        ? 'bg-amber-50 text-amber-950 border-amber-300 font-semibold ring-1 ring-amber-400/30'
+                                        : isEmpresaConciliada
+                                        ? 'bg-white text-emerald-950 border-emerald-400 shadow-2xs'
+                                        : 'bg-white/95 text-slate-800 border-slate-300 hover:border-slate-400'
+                                    }`}
+                                    title={`${depTitle}: ${dData.items.length} lançamentos | Dealer: ${formatBRL(dData.totalDealer)} | Sitef: ${formatBRL(dData.totalSitef)} | Dif: ${formatBRL(dData.diferencaTotal)}`}
+                                  >
+                                    <span className="font-bold tracking-tight font-mono">{depNumber}</span>
+                                    <span className="text-[9px] px-1 py-0.2 rounded-full bg-slate-100 text-slate-600 font-mono font-medium">
+                                      {dData.items.length}
                                     </span>
-                                  ) : (
-                                    <Check className="w-2.5 h-2.5 text-emerald-600 stroke-[3]" />
-                                  )}
-                                </span>
-                              ))}
+                                    {dData.diferencaTotal !== 0 ? (
+                                      <span className="text-[9px] font-bold text-amber-700 font-mono">
+                                        {formatBRL(dData.diferencaTotal)}
+                                      </span>
+                                    ) : (
+                                      <Check className="w-2.5 h-2.5 text-emerald-600 stroke-[3]" />
+                                    )}
+                                  </span>
+                                );
+                              })}
                             </div>
 
                             {/* Reconciler user and timestamp info displayed below status */}
