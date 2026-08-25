@@ -132,6 +132,7 @@ export default function Home() {
   const [manualFechamentoItems, setManualFechamentoItems] = useState<FechamentoItem[]>([]);
   const [deletedFechamentoIds, setDeletedFechamentoIds] = useState<Set<string>>(new Set());
   const [activeSharedSession, setActiveSharedSession] = useState<SharedFechamentoSession | null>(null);
+  const [isSharedModalOpen, setIsSharedModalOpen] = useState(false);
 
   // Automatic check for shared session room code from URL query (?sala=... or ?shared=...) ONLY when explicitly passed in URL
   // References to prevent infinite ping-pong loops and stabilize collaborative room sync
@@ -1462,6 +1463,11 @@ export default function Home() {
           onOpenDiagnostics={() => setIsDiagnosticsModalOpen(true)}
           onOpenPendingFilesModal={() => setIsPendingFilesModalOpen(true)}
           pendingFilesCount={pendingFilesCount}
+          onOpenSharedModal={() => {
+            setActiveTab('fechamento');
+            setIsSharedModalOpen(true);
+          }}
+          activeSharedSession={activeSharedSession}
           autosaveStatus={autosaveStatus}
           onClearAllData={handleClearAllData}
           onClearDealerFile={handleClearDealerFile}
@@ -1625,6 +1631,8 @@ export default function Home() {
                 onApplySharedItems={handleApplySharedItems}
                 onApplySharedSpreadsheets={handleApplySharedSpreadsheets}
                 onGuestLeaveOrKicked={handleGuestLeaveOrKicked}
+                isSharedModalOpen={isSharedModalOpen}
+                onSharedModalOpenChange={setIsSharedModalOpen}
               />
             ) : (
               <>

@@ -42,6 +42,12 @@ import {
   WifiOff,
   Clock,
   UserCheck,
+  MessageCircle,
+  Mail,
+  Link2,
+  CheckCircle2,
+  Eye,
+  Info,
 } from 'lucide-react';
 
 interface SharedFechamentoModalProps {
@@ -145,8 +151,44 @@ export function SharedFechamentoModal({
     setTimeout(() => setCopiedCode(false), 2500);
   };
 
+  const handleShareWhatsApp = () => {
+    if (!shareableLink || !activeSession) return;
+    const msg = `*Fechamento de Conciliação - Wanfinance*\n` +
+      `Olá! Segue o link para visualizar e acompanhar o Fechamento de Caixa do dia *${activeSession.dataMovimento || ''}*:\n\n` +
+      `🔗 *Acessar Fechamento:* ${shareableLink}\n` +
+      `🔑 *Código da Sala:* ${activeSession.id}\n\n` +
+      `📊 *Total Dealer:* ${formatBRL(activeSession.summary?.totalDealer || 0)}\n` +
+      `💳 *Total SiTef:* ${formatBRL(activeSession.summary?.totalSitef || 0)}\n` +
+      `⚠️ *Divergências:* ${activeSession.summary?.countDivergencias || 0}\n\n` +
+      `_Enviado por ${currentUser.name} (${currentUser.empresa})_`;
+    const url = `https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`;
+    if (typeof window !== 'undefined') {
+      window.open(url, '_blank');
+    }
+  };
+
+  const handleShareEmail = () => {
+    if (!shareableLink || !activeSession) return;
+    const subject = `Fechamento de Caixa Compartilhado - ${activeSession.dataMovimento || 'Wanfinance'}`;
+    const body = `Olá,\n\nSegue o link para visualização do Fechamento de Caixa de Conciliação:\n\n` +
+      `Link Direto de Acesso: ${shareableLink}\n` +
+      `Código da Sala: ${activeSession.id}\n` +
+      `Data do Movimento: ${activeSession.dataMovimento}\n\n` +
+      `Resumo Financeiro:\n` +
+      `- Total Dealer: ${formatBRL(activeSession.summary?.totalDealer || 0)}\n` +
+      `- Total SiTef: ${formatBRL(activeSession.summary?.totalSitef || 0)}\n` +
+      `- Diferença: ${formatBRL(activeSession.summary?.diferencaTotal || 0)}\n` +
+      `- Divergências Pendentes: ${activeSession.summary?.countDivergencias || 0}\n\n` +
+      `O outro usuário poderá acompanhar todos os lançamentos e status das 52 empresas em tempo real.\n\n` +
+      `Atenciosamente,\n${currentUser.name} (${currentUser.empresa})`;
+    const url = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    if (typeof window !== 'undefined') {
+      window.location.href = url;
+    }
+  };
+
   // Create new shared session with Dealer & SiTef states included
-  const handleCreateRoom = async () => {
+  const handleCreateRoom = async (autoCopyLink = false) => {
     setIsLoading(true);
     setErrorMsg(null);
     try {
@@ -172,6 +214,16 @@ export function SharedFechamentoModal({
       if (res.success && res.session) {
         onSessionConnected(res.session);
         loadRooms();
+        if (autoCopyLink && typeof window !== 'undefined') {
+          const newLink = `${window.location.origin}/?sala=${res.session.id}`;
+          navigator.clipboard.writeText(newLink);
+          setCopiedLink(true);
+          setSuccessMsg(`Link de encaminhamento gerado e copiado: ${res.session.id}`);
+          setTimeout(() => {
+            setCopiedLink(false);
+            setSuccessMsg(null);
+          }, 3500);
+        }
       } else {
         setErrorMsg(res.error || 'Não foi possível criar a sala compartilhada');
       }
@@ -459,19 +511,62 @@ export function SharedFechamentoModal({
                     </div>
                   </div>
 
-                  {/* Shareable Link Box */}
-                  <div className="bg-slate-900/90 p-3 rounded-xl border border-slate-750 flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-2 overflow-hidden">
-                      <Globe className="w-4 h-4 text-slate-400 shrink-0" />
-                      <span className="text-xs text-slate-300 font-mono truncate">{shareableLink}</span>
+                  {/* Forwarding / Share Action Box */}
+                  <div className="bg-gradient-to-br from-slate-900 to-slate-850 p-4 rounded-2xl border border-emerald-500/30 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Link2 className="w-4 h-4 text-emerald-400" />
+                        <span className="font-extrabold text-xs text-white">
+                          Link Direto para Encaminhar ao Usuário
+                        </span>
+                      </div>
+                      <span className="text-[10px] text-emerald-300 font-bold bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20 flex items-center gap-1">
+                        <Eye className="w-3 h-3 text-emerald-400" />
+                        Visualização e Acesso Imediato
+                      </span>
                     </div>
-                    <button
-                      onClick={handleCopyLink}
-                      className="px-3.5 py-1.5 bg-emerald-500 hover:bg-emerald-450 text-slate-950 font-black rounded-lg text-xs flex items-center gap-1.5 transition-all cursor-pointer shrink-0 shadow-xs"
-                    >
-                      {copiedLink ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                      <span>{copiedLink ? 'Link Copiado!' : 'Copiar Link'}</span>
-                    </button>
+
+                    {/* Shareable Link Box */}
+                    <div className="bg-slate-950/80 p-2.5 rounded-xl border border-slate-750 flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2 overflow-hidden flex-1">
+                        <Globe className="w-4 h-4 text-slate-400 shrink-0" />
+                        <span className="text-xs text-slate-200 font-mono select-all truncate">{shareableLink}</span>
+                      </div>
+                      <button
+                        onClick={handleCopyLink}
+                        className="px-3.5 py-1.5 bg-emerald-500 hover:bg-emerald-450 text-slate-950 font-black rounded-lg text-xs flex items-center gap-1.5 transition-all cursor-pointer shrink-0 shadow-xs"
+                      >
+                        {copiedLink ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                        <span>{copiedLink ? 'Link Copiado!' : 'Copiar Link'}</span>
+                      </button>
+                    </div>
+
+                    {/* Direct Quick Forward Channels */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                      <button
+                        onClick={handleShareWhatsApp}
+                        className="px-3 py-2 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 font-bold rounded-xl border border-emerald-500/40 text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow-xs"
+                      >
+                        <MessageCircle className="w-4 h-4 text-emerald-400" />
+                        <span>Encaminhar no WhatsApp</span>
+                      </button>
+
+                      <button
+                        onClick={handleShareEmail}
+                        className="px-3 py-2 bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 font-bold rounded-xl border border-blue-500/40 text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow-xs"
+                      >
+                        <Mail className="w-4 h-4 text-blue-400" />
+                        <span>Encaminhar por E-mail</span>
+                      </button>
+                    </div>
+
+                    {/* Recipient Guidance Info */}
+                    <div className="p-2.5 bg-slate-900/60 rounded-xl border border-slate-800 flex items-start gap-2 text-[11px] text-slate-300">
+                      <Info className="w-3.5 h-3.5 text-emerald-400 shrink-0 mt-0.5" />
+                      <span>
+                        O destinatário precisará apenas clicar no link ou acessar com o código <strong>{activeSession.id}</strong> para enxergar automaticamente o fechamento, as 52 empresas, conciliações e valores do Dealer e SiTef no computador dele.
+                      </span>
+                    </div>
                   </div>
 
                   {/* Summary Indicators */}
@@ -681,18 +776,18 @@ export function SharedFechamentoModal({
               </div>
             ) : (
               /* No Active Session: Offer to create one */
-              <div className="space-y-4 text-center py-4">
+              <div className="space-y-5 text-center py-2">
                 <div className="w-14 h-14 bg-emerald-500/10 text-emerald-400 rounded-3xl border border-emerald-500/20 flex items-center justify-center mx-auto shadow-inner">
-                  <Globe className="w-7 h-7" />
+                  <Share2 className="w-7 h-7" />
                 </div>
                 <div className="max-w-md mx-auto">
-                  <h4 className="font-extrabold text-base text-white">Iniciar Nova Sala de Fechamento</h4>
+                  <h4 className="font-extrabold text-base text-white">Encaminhar Fechamento com Link</h4>
                   <p className="text-xs text-slate-400 mt-1">
-                    Crie um link e código exclusivo para que outros operadores ou gestores acompanhem esta conciliação ao mesmo tempo em outros computadores.
+                    Gere um link para que outro usuário abra e enxergue o fechamento, as 52 empresas, as conciliações e as divergências em tempo real no navegador dele.
                   </p>
                 </div>
 
-                <div className="bg-slate-800/50 border border-slate-750 p-4 rounded-2xl max-w-md mx-auto text-left space-y-2">
+                <div className="bg-slate-800/50 border border-slate-750 p-4 rounded-2xl max-w-md mx-auto text-left space-y-2.5">
                   <div className="flex items-center justify-between text-xs">
                     <span className="text-slate-400">Total de Lançamentos:</span>
                     <span className="font-bold text-white">{fechamentoItems.length}</span>
@@ -706,19 +801,34 @@ export function SharedFechamentoModal({
                   <div className="flex items-center justify-between text-xs">
                     <span className="text-slate-400">Empresas Conciliadas:</span>
                     <span className="font-bold text-emerald-400">
-                      {Object.values(conciliatedEmpresas).filter(Boolean).length}
+                      {Object.values(conciliatedEmpresas).filter(Boolean).length} de 52
                     </span>
+                  </div>
+                  <div className="border-t border-slate-700/60 pt-2 flex items-start gap-2 text-[11px] text-emerald-300">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                    <span>Ao gerar o link, as planilhas Dealer e SiTef atuais são enviadas de forma segura para a nuvem.</span>
                   </div>
                 </div>
 
-                <button
-                  onClick={handleCreateRoom}
-                  disabled={isLoading || fechamentoItems.length === 0}
-                  className="px-6 py-3 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-450 hover:to-teal-450 disabled:opacity-50 text-slate-950 font-black rounded-2xl text-sm transition-all shadow-lg flex items-center gap-2 mx-auto cursor-pointer"
-                >
-                  {isLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-                  <span>{isLoading ? 'Criando Sala em Nuvem...' : 'Criar Sala de Fechamento em Nuvem'}</span>
-                </button>
+                <div className="flex flex-col sm:flex-row items-center justify-center gap-3 max-w-md mx-auto">
+                  <button
+                    onClick={() => handleCreateRoom(true)}
+                    disabled={isLoading || fechamentoItems.length === 0}
+                    className="w-full sm:w-auto px-5 py-3 bg-gradient-to-r from-emerald-500 via-emerald-400 to-teal-400 hover:brightness-105 active:scale-98 disabled:opacity-50 text-slate-950 font-black rounded-2xl text-xs sm:text-sm transition-all shadow-lg flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    {isLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Link2 className="w-4 h-4" />}
+                    <span>{isLoading ? 'Gerando Link...' : 'Gerar Link e Copiar'}</span>
+                  </button>
+
+                  <button
+                    onClick={() => handleCreateRoom(false)}
+                    disabled={isLoading || fechamentoItems.length === 0}
+                    className="w-full sm:w-auto px-4 py-3 bg-slate-800 hover:bg-slate-750 text-slate-200 font-bold rounded-2xl text-xs border border-slate-700 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                  >
+                    <Globe className="w-4 h-4 text-emerald-400" />
+                    <span>Criar Sala em Nuvem</span>
+                  </button>
+                </div>
               </div>
             )}
           </div>

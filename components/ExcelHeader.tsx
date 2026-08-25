@@ -30,6 +30,9 @@ import {
   AlertTriangle,
   X,
   FolderArchive,
+  Share2,
+  Link2,
+  Users,
 } from 'lucide-react';
 
 interface ExcelHeaderProps {
@@ -54,6 +57,8 @@ interface ExcelHeaderProps {
   onOpenDiagnostics?: () => void;
   onOpenPendingFilesModal?: () => void;
   pendingFilesCount?: number;
+  onOpenSharedModal?: () => void;
+  activeSharedSession?: any;
   autosaveStatus?: {
     lastSaved: Date | null;
     isSaving: boolean;
@@ -83,6 +88,8 @@ export function ExcelHeader({
   onOpenDiagnostics,
   onOpenPendingFilesModal,
   pendingFilesCount = 0,
+  onOpenSharedModal,
+  activeSharedSession,
   autosaveStatus,
 }: ExcelHeaderProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -439,6 +446,33 @@ export function ExcelHeader({
                 <span className="px-1.5 py-0.2 rounded-full bg-amber-600 text-white text-[10px] font-black">
                   {pendingFilesCount}
                 </span>
+              )}
+            </button>
+          )}
+
+          {/* Encaminhar / Compartilhar Fechamento Button */}
+          {onOpenSharedModal && (
+            <button
+              onClick={onOpenSharedModal}
+              id="apple-btn-shared-room"
+              className={`flex items-center gap-1.5 px-3 py-1.5 active:scale-97 font-bold rounded-xl border transition-all cursor-pointer text-xs shadow-2xs ${
+                activeSharedSession
+                  ? 'bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-900 border-emerald-400'
+                  : 'bg-emerald-50/90 hover:bg-emerald-100/90 text-emerald-800 border-emerald-200/80'
+              }`}
+              title="Encaminhar link do fechamento para outro usuário visualizar no computador dele"
+            >
+              {activeSharedSession ? (
+                <>
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
+                  <Users className="w-3.5 h-3.5 text-emerald-700" />
+                  <span>Sala: {activeSharedSession.id}</span>
+                </>
+              ) : (
+                <>
+                  <Link2 className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Encaminhar Fechamento</span>
+                </>
               )}
             </button>
           )}

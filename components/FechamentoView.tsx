@@ -67,6 +67,10 @@ import {
   EyeOff,
   Unlock,
   FolderArchive,
+  Link2,
+  Send,
+  MessageCircle,
+  Mail,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
@@ -103,6 +107,8 @@ interface FechamentoViewProps {
   onApplySharedItems?: (items: FechamentoItem[], conciliated: Record<string, boolean>) => void;
   onApplySharedSpreadsheets?: (dealerState?: any, sitefState?: any, pendenteCdcState?: any) => void;
   onGuestLeaveOrKicked?: (reason: 'left' | 'kicked' | 'deleted') => void;
+  isSharedModalOpen?: boolean;
+  onSharedModalOpenChange?: (open: boolean) => void;
 }
 
 export function FechamentoView({
@@ -134,6 +140,8 @@ export function FechamentoView({
   onApplySharedItems,
   onApplySharedSpreadsheets,
   onGuestLeaveOrKicked,
+  isSharedModalOpen: externalIsSharedModalOpen,
+  onSharedModalOpenChange,
 }: FechamentoViewProps) {
   const fechamentoItems = useMemo(
     () => fechamentoItemsProp || itemsProp || [],
@@ -154,7 +162,12 @@ export function FechamentoView({
     else setInternalSharedSession(s);
   }, [onSharedSessionChange]);
 
-  const [isSharedModalOpen, setIsSharedModalOpen] = useState(false);
+  const [internalIsSharedModalOpen, setInternalIsSharedModalOpen] = useState(false);
+  const isSharedModalOpen = externalIsSharedModalOpen !== undefined ? externalIsSharedModalOpen : internalIsSharedModalOpen;
+  const setIsSharedModalOpen = useCallback((open: boolean) => {
+    if (onSharedModalOpenChange) onSharedModalOpenChange(open);
+    else setInternalIsSharedModalOpen(open);
+  }, [onSharedModalOpenChange]);
   const [isSyncingLive, setIsSyncingLive] = useState(false);
   const [lastSyncText, setLastSyncText] = useState<string>('');
   const [copiedSessionLink, setCopiedSessionLink] = useState(false);
@@ -1127,14 +1140,16 @@ export function FechamentoView({
             </button>
           )}
 
-          {/* Real-time Share Button */}
+          {/* Real-time Share / Forward Button */}
           <button
             onClick={() => setIsSharedModalOpen(true)}
+            id="btn-forward-fechamento"
             className={`px-3.5 py-2 font-bold rounded-xl text-xs border transition-all flex items-center gap-2 cursor-pointer shadow-2xs ${
               activeSharedSession
                 ? 'bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border-emerald-500/40'
-                : 'bg-slate-800 hover:bg-slate-750 text-slate-200 border-slate-700'
+                : 'bg-gradient-to-r from-emerald-600/30 to-teal-600/30 hover:from-emerald-600/40 hover:to-teal-600/40 text-emerald-200 border-emerald-500/50 hover:border-emerald-400'
             }`}
+            title="Encaminhar link do fechamento para outro usuário visualizar no próprio computador"
           >
             {activeSharedSession ? (
               <>
@@ -1149,8 +1164,8 @@ export function FechamentoView({
               </>
             ) : (
               <>
-                <Share2 className="w-4 h-4 text-emerald-400" />
-                <span>Compartilhar Fechamento</span>
+                <Link2 className="w-4 h-4 text-emerald-400" />
+                <span>Encaminhar Fechamento (Criar Link)</span>
               </>
             )}
           </button>
@@ -1207,25 +1222,49 @@ export function FechamentoView({
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <button
               onClick={() => {
                 if (typeof window !== 'undefined') {
                   navigator.clipboard.writeText(`${window.location.origin}/?sala=${activeSharedSession.id}`);
                   setCopiedSessionLink(true);
-                  setTimeout(() => setCopiedSessionLink(false), 2000);
+                  setTimeout(() => setCopiedSessionLink(false), 2500);
                 }
               }}
-              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-750 text-slate-200 text-xs font-bold rounded-xl border border-slate-700 transition-all flex items-center gap-1.5 cursor-pointer"
+              id="btn-banner-copy-link"
+              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-750 text-slate-200 text-xs font-bold rounded-xl border border-slate-700 transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
             >
               {copiedSessionLink ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
               <span>{copiedSessionLink ? 'Link Copiado!' : 'Copiar Link da Sala'}</span>
             </button>
 
             <button
+              onClick={() => {
+                if (typeof window !== 'undefined') {
+                  const link = `${window.location.origin}/?sala=${activeSharedSession.id}`;
+                  const msg = `*Fechamento de Conciliação - Wanfinance*\n` +
+                    `Olá! Segue o link para visualizar e acompanhar o Fechamento de Caixa:\n\n` +
+                    `🔗 *Acessar Fechamento:* ${link}\n` +
+                    `🔑 *Código da Sala:* ${activeSharedSession.id}\n\n` +
+                    `📊 *Total Dealer:* ${formatBRL(summary.totalDealer)}\n` +
+                    `💳 *Total SiTef:* ${formatBRL(summary.totalSitef)}\n` +
+                    `⚠️ *Divergências:* ${summary.countDivergencias}\n\n` +
+                    `_Enviado por ${currentUser.name} (${currentUser.empresa})_`;
+                  window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`, '_blank');
+                }
+              }}
+              id="btn-banner-whatsapp-share"
+              className="px-3 py-1.5 bg-emerald-600/30 hover:bg-emerald-600/40 text-emerald-300 text-xs font-bold rounded-xl border border-emerald-500/40 transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
+              title="Encaminhar link do fechamento via WhatsApp"
+            >
+              <MessageCircle className="w-3.5 h-3.5 text-emerald-400" />
+              <span>WhatsApp</span>
+            </button>
+
+            <button
               onClick={() => performLiveSync(true)}
               disabled={isSyncingLive}
-              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-750 text-slate-200 text-xs font-bold rounded-xl border border-slate-700 transition-all flex items-center gap-1.5 cursor-pointer"
+              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-750 text-slate-200 text-xs font-bold rounded-xl border border-slate-700 transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
             >
               <RefreshCw className={`w-3.5 h-3.5 text-emerald-400 ${isSyncingLive ? 'animate-spin' : ''}`} />
               <span>Sincronizar</span>
@@ -1233,15 +1272,15 @@ export function FechamentoView({
 
             <button
               onClick={() => setIsSharedModalOpen(true)}
-              className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-450 text-slate-950 text-xs font-black rounded-xl transition-all flex items-center gap-1.5 cursor-pointer"
+              className="px-3.5 py-1.5 bg-emerald-500 hover:bg-emerald-450 text-slate-950 text-xs font-black rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
             >
               <Users className="w-3.5 h-3.5" />
-              <span>Ver Conectados / Chat</span>
+              <span>Participantes / Encaminhar</span>
             </button>
 
             <button
               onClick={handleLeaveOrDeleteRoom}
-              className="px-3 py-1.5 bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 text-xs font-bold rounded-xl border border-rose-500/40 transition-all flex items-center gap-1.5 cursor-pointer"
+              className="px-3 py-1.5 bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 text-xs font-bold rounded-xl border border-rose-500/40 transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
               title={isHost ? 'Excluir e encerrar sala para todos' : 'Sair da sala compartilhada'}
             >
               <LogOut className="w-3.5 h-3.5 text-rose-400" />
