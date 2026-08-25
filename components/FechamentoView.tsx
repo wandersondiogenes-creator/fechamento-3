@@ -71,8 +71,12 @@ import {
   Send,
   MessageCircle,
   Mail,
+  Clock,
+  FileSpreadsheet,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import { exportFechamentoToExcel } from '@/lib/fechamento-excel-io';
+import { getSessionTimeRemaining } from '@/lib/shared-fechamento-service';
 
 interface FechamentoViewProps {
   fechamentoItems?: FechamentoItem[];
@@ -109,6 +113,7 @@ interface FechamentoViewProps {
   onGuestLeaveOrKicked?: (reason: 'left' | 'kicked' | 'deleted') => void;
   isSharedModalOpen?: boolean;
   onSharedModalOpenChange?: (open: boolean) => void;
+  onImportExcelData?: (importedData: any) => void;
 }
 
 export function FechamentoView({
@@ -142,6 +147,7 @@ export function FechamentoView({
   onGuestLeaveOrKicked,
   isSharedModalOpen: externalIsSharedModalOpen,
   onSharedModalOpenChange,
+  onImportExcelData,
 }: FechamentoViewProps) {
   const fechamentoItems = useMemo(
     () => fechamentoItemsProp || itemsProp || [],
@@ -1140,7 +1146,7 @@ export function FechamentoView({
             </button>
           )}
 
-          {/* Real-time Share / Forward Button */}
+          {/* Snapshot Share / Forward Button (8 Hours) */}
           <button
             onClick={() => setIsSharedModalOpen(true)}
             id="btn-forward-fechamento"
@@ -1149,25 +1155,43 @@ export function FechamentoView({
                 ? 'bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border-emerald-500/40'
                 : 'bg-gradient-to-r from-emerald-600/30 to-teal-600/30 hover:from-emerald-600/40 hover:to-teal-600/40 text-emerald-200 border-emerald-500/50 hover:border-emerald-400'
             }`}
-            title="Encaminhar link do fechamento para outro usuário visualizar no próprio computador"
+            title="Encaminhar link do fechamento para outro usuário visualizar no próprio computador (Válido por 8 horas, cópia sem conflitos)"
           >
             {activeSharedSession ? (
               <>
-                <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-400"></span>
-                </span>
-                <Users className="w-3.5 h-3.5 text-emerald-400" />
+                <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                <Link2 className="w-3.5 h-3.5 text-emerald-400" />
                 <span>
-                  Sala: <strong>{activeSharedSession.id}</strong> ({activeSharedSession.activeParticipants?.length || 1} online)
+                  Link 8h: <strong>{activeSharedSession.id}</strong>
                 </span>
               </>
             ) : (
               <>
                 <Link2 className="w-4 h-4 text-emerald-400" />
-                <span>Encaminhar Fechamento (Criar Link)</span>
+                <span>Encaminhar Fechamento (Link 8h)</span>
               </>
             )}
+          </button>
+
+          {/* Backup Excel (.xlsx) Button */}
+          <button
+            onClick={() => {
+              exportFechamentoToExcel({
+                items: fechamentoItems,
+                conciliatedEmpresas,
+                dealerState,
+                sitefState,
+                pendenteCdcState,
+                summary,
+                dataMovimento: fechamentoItems[0]?.data || new Date().toLocaleDateString('pt-BR'),
+                operador: currentUser.name,
+              });
+            }}
+            className="px-3.5 py-2 bg-emerald-700/80 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs border border-emerald-600/60 transition-all flex items-center gap-2 cursor-pointer shadow-2xs"
+            title="Baixar arquivo Excel (.xlsx) completo para backup e restauração fiel"
+          >
+            <FileSpreadsheet className="w-4 h-4 text-emerald-300" />
+            <span>Backup Excel (.xlsx)</span>
           </button>
 
           <button
@@ -1192,32 +1216,28 @@ export function FechamentoView({
         </div>
       </div>
 
-      {/* Real-time Shared Session Collaboration Banner */}
+      {/* Snapshot Active Link Banner (8h TTL) */}
       {activeSharedSession && (
         <div className="bg-gradient-to-r from-slate-900 via-slate-850 to-slate-900 border border-emerald-500/40 p-3.5 rounded-2xl text-white flex flex-wrap items-center justify-between gap-3 shadow-md">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-emerald-500/20 text-emerald-400 rounded-xl border border-emerald-500/30">
-              <Globe className="w-5 h-5 animate-pulse" />
+              <Link2 className="w-5 h-5" />
             </div>
             <div>
               <div className="flex flex-wrap items-center gap-2">
                 <span className="font-extrabold text-xs text-white">
-                  Sessão Compartilhada em Tempo Real:
+                  Link de Encaminhamento Ativo:
                 </span>
                 <span className="bg-emerald-500 text-slate-950 font-mono font-black text-xs px-2 py-0.5 rounded-md">
                   {activeSharedSession.id}
                 </span>
-                <span className="text-[11px] text-emerald-300 font-semibold bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20 flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
-                  {activeSharedSession.activeParticipants?.length || 1} computadores conectados
+                <span className="text-[11px] text-amber-300 font-bold bg-amber-500/15 px-2 py-0.5 rounded-full border border-amber-500/30 flex items-center gap-1">
+                  <Clock className="w-3 h-3" />
+                  Validade: 8 Horas ({getSessionTimeRemaining(activeSharedSession).formatted})
                 </span>
               </div>
               <p className="text-[11px] text-slate-400 mt-0.5">
-                Participantes:{' '}
-                <strong className="text-slate-200">
-                  {activeSharedSession.activeParticipants?.map((p) => p.name).join(', ') || currentUser.name}
-                </strong>
-                {lastSyncText && ` • Sincronizado às ${lastSyncText}`}
+                Cópia estática e isolada gerada por <strong className="text-slate-200">{activeSharedSession.createdBy?.name || currentUser.name}</strong> • Sem conflito concorrente
               </p>
             </div>
           </div>
@@ -1235,17 +1255,19 @@ export function FechamentoView({
               className="px-3 py-1.5 bg-slate-800 hover:bg-slate-750 text-slate-200 text-xs font-bold rounded-xl border border-slate-700 transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
             >
               {copiedSessionLink ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-              <span>{copiedSessionLink ? 'Link Copiado!' : 'Copiar Link da Sala'}</span>
+              <span>{copiedSessionLink ? 'Link Copiado!' : 'Copiar Link (8h)'}</span>
             </button>
 
             <button
               onClick={() => {
                 if (typeof window !== 'undefined') {
                   const link = `${window.location.origin}/?sala=${activeSharedSession.id}`;
+                  const rem = getSessionTimeRemaining(activeSharedSession).formatted;
                   const msg = `*Fechamento de Conciliação - Wanfinance*\n` +
-                    `Olá! Segue o link para visualizar e acompanhar o Fechamento de Caixa:\n\n` +
+                    `Olá! Segue o link com a cópia segura do Fechamento de Caixa do dia *${activeSharedSession.dataMovimento || ''}*:\n\n` +
                     `🔗 *Acessar Fechamento:* ${link}\n` +
-                    `🔑 *Código da Sala:* ${activeSharedSession.id}\n\n` +
+                    `🔑 *Código:* ${activeSharedSession.id}\n` +
+                    `⏳ *Validade:* 8 horas (${rem})\n\n` +
                     `📊 *Total Dealer:* ${formatBRL(summary.totalDealer)}\n` +
                     `💳 *Total SiTef:* ${formatBRL(summary.totalSitef)}\n` +
                     `⚠️ *Divergências:* ${summary.countDivergencias}\n\n` +
@@ -1262,29 +1284,40 @@ export function FechamentoView({
             </button>
 
             <button
-              onClick={() => performLiveSync(true)}
-              disabled={isSyncingLive}
-              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-750 text-slate-200 text-xs font-bold rounded-xl border border-slate-700 transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
+              onClick={() => {
+                exportFechamentoToExcel({
+                  items: fechamentoItems,
+                  conciliatedEmpresas,
+                  dealerState,
+                  sitefState,
+                  pendenteCdcState,
+                  summary,
+                  dataMovimento: fechamentoItems[0]?.data || new Date().toLocaleDateString('pt-BR'),
+                  operador: currentUser.name,
+                });
+              }}
+              className="px-3 py-1.5 bg-emerald-700/80 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl border border-emerald-600/60 transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
+              title="Baixar arquivo Excel (.xlsx) completo"
             >
-              <RefreshCw className={`w-3.5 h-3.5 text-emerald-400 ${isSyncingLive ? 'animate-spin' : ''}`} />
-              <span>Sincronizar</span>
+              <FileSpreadsheet className="w-3.5 h-3.5" />
+              <span>Baixar Excel (.xlsx)</span>
             </button>
 
             <button
               onClick={() => setIsSharedModalOpen(true)}
               className="px-3.5 py-1.5 bg-emerald-500 hover:bg-emerald-450 text-slate-950 text-xs font-black rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
             >
-              <Users className="w-3.5 h-3.5" />
-              <span>Participantes / Encaminhar</span>
+              <Share2 className="w-3.5 h-3.5" />
+              <span>Opções / Renovar</span>
             </button>
 
             <button
               onClick={handleLeaveOrDeleteRoom}
               className="px-3 py-1.5 bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 text-xs font-bold rounded-xl border border-rose-500/40 transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
-              title={isHost ? 'Excluir e encerrar sala para todos' : 'Sair da sala compartilhada'}
+              title={isHost ? 'Excluir link de compartilhamento agora' : 'Sair da visualização deste link'}
             >
               <LogOut className="w-3.5 h-3.5 text-rose-400" />
-              <span>{isHost ? 'Excluir Sala' : 'Sair da Sala'}</span>
+              <span>{isHost ? 'Excluir Link' : 'Fechar Link'}</span>
             </button>
           </div>
         </div>
@@ -2884,7 +2917,7 @@ export function FechamentoView({
         }}
       />
 
-      {/* Modal: Compartilhamento em Tempo Real de Fechamento */}
+      {/* Modal: Compartilhamento em Snapshot / Encaminhar Fechamento */}
       <SharedFechamentoModal
         isOpen={isSharedModalOpen}
         onClose={() => setIsSharedModalOpen(false)}
@@ -2922,7 +2955,7 @@ export function FechamentoView({
             onGuestLeaveOrKicked?.('left');
           }
         }}
-        onManualSync={() => performLiveSync(true)}
+        onImportExcelData={onImportExcelData}
       />
     </div>
   );

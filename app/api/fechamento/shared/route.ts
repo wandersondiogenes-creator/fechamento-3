@@ -7,13 +7,25 @@ import {
   SessionParticipant,
   SessionChatMessage,
   extractRoomCode,
+  SHARED_SESSION_TTL_MS,
+  isSessionExpired,
 } from '@/lib/shared-fechamento-service';
 import { FechamentoItem, FechamentoSummary } from '@/lib/fechamento-utils';
 
 export const dynamic = 'force-dynamic';
 
-// Resilient in-memory storage for high-speed multi-user synchronization
+// In-memory storage for shared fechamento snapshots
 const inMemorySessions = new Map<string, SharedFechamentoSession>();
+
+// Cleanup expired sessions older than 8 hours
+function purgeExpiredSessions() {
+  const now = Date.now();
+  for (const [id, session] of inMemorySessions.entries()) {
+    if (isSessionExpired(session)) {
+      inMemorySessions.delete(id);
+    }
+  }
+}
 
 function cleanParticipantList(participants: SessionParticipant[], kickedUserIds: string[] = []): SessionParticipant[] {
   const now = Date.now();
@@ -21,7 +33,7 @@ function cleanParticipantList(participants: SessionParticipant[], kickedUserIds:
   return (participants || []).filter((p) => {
     if (kickedSet.has(p.id)) return false;
     const last = new Date(p.lastSeen).getTime();
-    return now - last < 1000 * 60 * 60 * 12; // 12 hours retention in list
+    return now - last < 1000 * 60 * 60 * 8; // 8 hours retention in list
   });
 }
 
@@ -87,9 +99,10 @@ export async function GET(req: NextRequest) {
 
     // 1. List active shared sessions
     if (listAll) {
+      purgeExpiredSessions();
       const allSessions: SharedFechamentoSession[] = [];
       inMemorySessions.forEach((s) => {
-        if (s.status === 'active') {
+        if (s.status === 'active' && !isSessionExpired(s)) {
           allSessions.push({
             ...s,
             activeParticipants: cleanParticipantList(s.activeParticipants, s.kickedUserIds),
@@ -109,26 +122,29 @@ export async function GET(req: NextRequest) {
             .limit(20);
 
           dbRows.forEach((row) => {
-            if (!inMemorySessions.has(row.id)) {
-              allSessions.push({
-                id: row.id,
-                title: row.title,
-                dataMovimento: row.dataMovimento,
-                createdBy: row.createdBy as any,
-                status: row.status as any,
-                items: row.items as any,
-                conciliatedEmpresas: (row.conciliatedEmpresas as any) || {},
-                summary: row.summary as any,
-                dealerState: (row.dealerState as any) || undefined,
-                sitefState: (row.sitefState as any) || undefined,
-                pendenteCdcState: (row.pendenteCdcState as any) || undefined,
-                kickedUserIds: (row.kickedUserIds as any) || [],
-                activeParticipants: (row.activeParticipants as any) || [],
-                chatMessages: (row.chatMessages as any) || [],
-                version: row.version || 1,
-                createdAt: row.createdAt.toISOString(),
-                updatedAt: row.updatedAt.toISOString(),
-              });
+            const rowSession: SharedFechamentoSession = {
+              id: row.id,
+              title: row.title,
+              dataMovimento: row.dataMovimento,
+              createdBy: row.createdBy as any,
+              status: row.status as any,
+              items: row.items as any,
+              conciliatedEmpresas: (row.conciliatedEmpresas as any) || {},
+              summary: row.summary as any,
+              dealerState: (row.dealerState as any) || undefined,
+              sitefState: (row.sitefState as any) || undefined,
+              pendenteCdcState: (row.pendenteCdcState as any) || undefined,
+              kickedUserIds: (row.kickedUserIds as any) || [],
+              activeParticipants: (row.activeParticipants as any) || [],
+              chatMessages: (row.chatMessages as any) || [],
+              version: row.version || 1,
+              createdAt: row.createdAt.toISOString(),
+              updatedAt: row.updatedAt.toISOString(),
+              expiresAt: new Date(new Date(row.createdAt).getTime() + SHARED_SESSION_TTL_MS).toISOString(),
+            };
+
+            if (!inMemorySessions.has(row.id) && !isSessionExpired(rowSession)) {
+              allSessions.push(rowSession);
             }
           });
         } catch (dbErr) {
@@ -147,6 +163,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Código ou ID da sala não informado' }, { status: 400 });
     }
 
+    purgeExpiredSessions();
     let session = inMemorySessions.get(id);
 
     // Fallback: search in memory by case-insensitive or stripped hyphen
@@ -197,12 +214,24 @@ export async function GET(req: NextRequest) {
             version: row.version || 1,
             createdAt: row.createdAt.toISOString(),
             updatedAt: row.updatedAt.toISOString(),
+            expiresAt: new Date(new Date(row.createdAt).getTime() + SHARED_SESSION_TTL_MS).toISOString(),
           };
           inMemorySessions.set(session.id, session);
         }
       } catch (dbErr) {
         console.warn('DB lookup error:', dbErr);
       }
+    }
+
+    // Check if session is expired (exceeded 8 hours lifetime)
+    if (session && isSessionExpired(session)) {
+      session.status = 'expired';
+      inMemorySessions.delete(session.id);
+      return NextResponse.json({
+        success: false,
+        expired: true,
+        error: 'Este link de compartilhamento expirou (validade máxima de 8 horas ultrapassada). Solicite ao operador um novo link gerado.',
+      }, { status: 410 });
     }
 
     // Check if session is deleted
@@ -582,6 +611,9 @@ export async function POST(req: NextRequest) {
         ? incomingSession.kickedUserIds
         : (existing?.kickedUserIds || []);
 
+    const sessionCreatedAt = existing?.createdAt || nowIso;
+    const sessionExpiresAt = existing?.expiresAt || new Date(new Date(sessionCreatedAt).getTime() + SHARED_SESSION_TTL_MS).toISOString();
+
     const fullSession: SharedFechamentoSession = {
       id: roomId,
       title: incomingSession.title || existing?.title || `Fechamento ${incomingSession.dataMovimento || 'Hoje'}`,
@@ -604,8 +636,9 @@ export async function POST(req: NextRequest) {
       activeParticipants: cleanParticipantList(updatedParticipants, kickedUserIds),
       chatMessages: incomingSession.chatMessages || existing?.chatMessages || [],
       version: (existing?.version || 0) + 1,
-      createdAt: existing?.createdAt || nowIso,
+      createdAt: sessionCreatedAt,
       updatedAt: nowIso,
+      expiresAt: sessionExpiresAt,
     };
 
     inMemorySessions.set(roomId, fullSession);

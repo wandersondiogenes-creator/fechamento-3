@@ -1,25 +1,23 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   SharedFechamentoSession,
   createOrUpdateSharedSession,
   fetchSharedSession,
   listActiveSharedSessions,
-  sendSharedSessionChatMessage,
-  closeSharedSession,
-  leaveSharedSession,
   deleteSharedSession,
-  kickParticipantFromSharedSession,
   generateRoomCode,
   extractRoomCode,
   saveActiveRoomIdLocally,
+  getSessionTimeRemaining,
+  isSessionExpired,
 } from '@/lib/shared-fechamento-service';
 import { FechamentoItem } from '@/lib/fechamento-utils';
 import { UserProfile } from '@/types/audit';
 import { getCurrentUser } from '@/lib/auth-service';
+import { exportFechamentoToExcel, importFechamentoFromExcel } from '@/lib/fechamento-excel-io';
 import {
-  Users,
   Share2,
   Copy,
   Check,
@@ -30,24 +28,23 @@ import {
   Plus,
   ArrowRight,
   ShieldCheck,
-  MessageSquare,
-  Send,
   Building2,
   Calendar,
   Layers,
   Sparkles,
   ExternalLink,
-  LogOut,
-  Wifi,
-  WifiOff,
   Clock,
-  UserCheck,
   MessageCircle,
   Mail,
   Link2,
   CheckCircle2,
   Eye,
   Info,
+  Download,
+  Upload,
+  FileSpreadsheet,
+  AlertTriangle,
+  Lock,
 } from 'lucide-react';
 
 interface SharedFechamentoModalProps {
@@ -70,7 +67,8 @@ interface SharedFechamentoModalProps {
   activeSession: SharedFechamentoSession | null;
   onSessionConnected: (session: SharedFechamentoSession) => void;
   onSessionDisconnected: (isGuestLeave?: boolean) => void;
-  onManualSync: () => void;
+  onManualSync?: () => void;
+  onImportExcelData?: (importedData: any) => void;
 }
 
 export function SharedFechamentoModal({
@@ -85,9 +83,9 @@ export function SharedFechamentoModal({
   activeSession,
   onSessionConnected,
   onSessionDisconnected,
-  onManualSync,
+  onImportExcelData,
 }: SharedFechamentoModalProps) {
-  const [activeTab, setActiveTab] = useState<'share' | 'join' | 'chat'>('share');
+  const [activeTab, setActiveTab] = useState<'share' | 'join' | 'excel'>('share');
   const [copiedLink, setCopiedLink] = useState(false);
   const [copiedCode, setCopiedCode] = useState(false);
   const [joinCodeInput, setJoinCodeInput] = useState('');
@@ -95,14 +93,11 @@ export function SharedFechamentoModal({
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [activeRoomsList, setActiveRoomsList] = useState<SharedFechamentoSession[]>([]);
-  const [chatInput, setChatInput] = useState('');
-  const [isSendingChat, setIsSendingChat] = useState(false);
   const [isDeletingRoom, setIsDeletingRoom] = useState(false);
-  const [kickingUserId, setKickingUserId] = useState<string | null>(null);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
-  const [confirmLeaveOpen, setConfirmLeaveOpen] = useState(false);
-  const [confirmKickUser, setConfirmKickUser] = useState<{ id: string; name: string } | null>(null);
+  const [isImportingFile, setIsImportingFile] = useState(false);
 
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const currentUser: UserProfile = getCurrentUser();
 
   const isHost = activeSession
@@ -111,7 +106,22 @@ export function SharedFechamentoModal({
       currentUser.role === 'admin'
     : true;
 
-  // Load active rooms when tab is 'join' or modal opens
+  // Real-time time remaining calculation
+  const [timeRemaining, setTimeRemaining] = useState(getSessionTimeRemaining(activeSession));
+
+  useEffect(() => {
+    if (!activeSession) return;
+    const interval = setInterval(() => {
+      const remaining = getSessionTimeRemaining(activeSession);
+      setTimeRemaining(remaining);
+      if (remaining.isExpired) {
+        setErrorMsg('Este link de compartilhamento atingiu o tempo limite de 8 horas e foi expirado.');
+      }
+    }, 10000);
+    return () => clearInterval(interval);
+  }, [activeSession]);
+
+  // Load active rooms when modal opens
   const loadRooms = async () => {
     try {
       const rooms = await listActiveSharedSessions();
@@ -128,6 +138,7 @@ export function SharedFechamentoModal({
       setSuccessMsg(null);
       if (activeSession) {
         setActiveTab('share');
+        setTimeRemaining(getSessionTimeRemaining(activeSession));
       }
     }
   }, [isOpen, activeSession]);
@@ -151,12 +162,22 @@ export function SharedFechamentoModal({
     setTimeout(() => setCopiedCode(false), 2500);
   };
 
+  const formatBRL = (val: number) => {
+    return new Intl.NumberFormat('pt-BR', {
+      style: 'currency',
+      currency: 'BRL',
+    }).format(val || 0);
+  };
+
   const handleShareWhatsApp = () => {
     if (!shareableLink || !activeSession) return;
-    const msg = `*Fechamento de Conciliação - Wanfinance*\n` +
-      `Olá! Segue o link para visualizar e acompanhar o Fechamento de Caixa do dia *${activeSession.dataMovimento || ''}*:\n\n` +
+    const timeText = timeRemaining.isExpired ? 'Expirado' : timeRemaining.formatted;
+    const msg =
+      `*Fechamento de Conciliação - Wanfinance*\n` +
+      `Olá! Segue o link com a cópia segura do Fechamento de Caixa do dia *${activeSession.dataMovimento || ''}*:\n\n` +
       `🔗 *Acessar Fechamento:* ${shareableLink}\n` +
-      `🔑 *Código da Sala:* ${activeSession.id}\n\n` +
+      `🔑 *Código da Cópia:* ${activeSession.id}\n` +
+      `⏳ *Validade do Link:* 8 horas (${timeText})\n\n` +
       `📊 *Total Dealer:* ${formatBRL(activeSession.summary?.totalDealer || 0)}\n` +
       `💳 *Total SiTef:* ${formatBRL(activeSession.summary?.totalSitef || 0)}\n` +
       `⚠️ *Divergências:* ${activeSession.summary?.countDivergencias || 0}\n\n` +
@@ -169,17 +190,20 @@ export function SharedFechamentoModal({
 
   const handleShareEmail = () => {
     if (!shareableLink || !activeSession) return;
-    const subject = `Fechamento de Caixa Compartilhado - ${activeSession.dataMovimento || 'Wanfinance'}`;
-    const body = `Olá,\n\nSegue o link para visualização do Fechamento de Caixa de Conciliação:\n\n` +
-      `Link Direto de Acesso: ${shareableLink}\n` +
-      `Código da Sala: ${activeSession.id}\n` +
+    const timeText = timeRemaining.isExpired ? 'Expirado' : timeRemaining.formatted;
+    const subject = `Link de Fechamento de Caixa (Cópia Segura 8h) - ${activeSession.dataMovimento || 'Wanfinance'}`;
+    const body =
+      `Olá,\n\nSegue o link para visualização do Fechamento de Caixa de Conciliação:\n\n` +
+      `Link Direto: ${shareableLink}\n` +
+      `Código de Acesso: ${activeSession.id}\n` +
+      `Validade: 8 horas (${timeText}) - após esse período o link expira automaticamente por segurança.\n` +
       `Data do Movimento: ${activeSession.dataMovimento}\n\n` +
       `Resumo Financeiro:\n` +
       `- Total Dealer: ${formatBRL(activeSession.summary?.totalDealer || 0)}\n` +
       `- Total SiTef: ${formatBRL(activeSession.summary?.totalSitef || 0)}\n` +
       `- Diferença: ${formatBRL(activeSession.summary?.diferencaTotal || 0)}\n` +
       `- Divergências Pendentes: ${activeSession.summary?.countDivergencias || 0}\n\n` +
-      `O outro usuário poderá acompanhar todos os lançamentos e status das 52 empresas em tempo real.\n\n` +
+      `Ao acessar, você terá uma cópia completa de todos os lançamentos e status das 52 empresas sem risco de concorrência ou conflitos online.\n\n` +
       `Atenciosamente,\n${currentUser.name} (${currentUser.empresa})`;
     const url = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
     if (typeof window !== 'undefined') {
@@ -187,14 +211,17 @@ export function SharedFechamentoModal({
     }
   };
 
-  // Create new shared session with Dealer & SiTef states included
-  const handleCreateRoom = async (autoCopyLink = false) => {
+  // Generate new 8-hour snapshot link
+  const handleCreateSnapshotLink = async (autoCopy = false) => {
     setIsLoading(true);
     setErrorMsg(null);
     try {
       const code = generateRoomCode();
       const defaultDate =
         fechamentoItems[0]?.data || new Date().toLocaleDateString('pt-BR');
+
+      const now = Date.now();
+      const expiresAt = new Date(now + 8 * 60 * 60 * 1000).toISOString();
 
       const newSession: Partial<SharedFechamentoSession> & { id: string; items: FechamentoItem[] } = {
         id: code,
@@ -208,38 +235,43 @@ export function SharedFechamentoModal({
         sitefState,
         pendenteCdcState,
         version: 1,
+        expiresAt,
       };
 
       const res = await createOrUpdateSharedSession(newSession, currentUser);
       if (res.success && res.session) {
         onSessionConnected(res.session);
+        setTimeRemaining(getSessionTimeRemaining(res.session));
         loadRooms();
-        if (autoCopyLink && typeof window !== 'undefined') {
+        if (autoCopy && typeof window !== 'undefined') {
           const newLink = `${window.location.origin}/?sala=${res.session.id}`;
           navigator.clipboard.writeText(newLink);
           setCopiedLink(true);
-          setSuccessMsg(`Link de encaminhamento gerado e copiado: ${res.session.id}`);
+          setSuccessMsg(`Link seguro gerado com sucesso (Válido por 8 horas): ${res.session.id}`);
           setTimeout(() => {
             setCopiedLink(false);
             setSuccessMsg(null);
-          }, 3500);
+          }, 4000);
+        } else {
+          setSuccessMsg(`Link de fechamento gerado com sucesso! Válido por 8 horas.`);
+          setTimeout(() => setSuccessMsg(null), 3000);
         }
       } else {
-        setErrorMsg(res.error || 'Não foi possível criar a sala compartilhada');
+        setErrorMsg(res.error || 'Não foi possível gerar o link de compartilhamento.');
       }
     } catch (err: any) {
-      setErrorMsg(err.message || 'Erro ao criar sala');
+      setErrorMsg(err.message || 'Erro ao gerar link de compartilhamento');
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Join room by code
-  const handleJoinRoom = async (codeToJoin?: string) => {
+  // Join/Import snapshot by code or link
+  const handleJoinSnapshot = async (codeToJoin?: string) => {
     const rawInput = codeToJoin || joinCodeInput;
     const cleanCode = extractRoomCode(rawInput);
     if (!cleanCode) {
-      setErrorMsg('Informe o código da sala ou link de acesso válido (ex: FC-93641).');
+      setErrorMsg('Informe um código de fechamento ou link válido (ex: FC-93641).');
       return;
     }
 
@@ -248,114 +280,98 @@ export function SharedFechamentoModal({
     try {
       const res = await fetchSharedSession(cleanCode, currentUser);
       if (res.success && res.session) {
+        if (isSessionExpired(res.session)) {
+          setErrorMsg('Este link de fechamento expirou (validade máxima de 8 horas ultrapassada).');
+          return;
+        }
         onSessionConnected(res.session);
-        saveActiveRoomIdLocally(res.session.id);
-        setActiveTab('share');
-        setJoinCodeInput('');
+        setTimeRemaining(getSessionTimeRemaining(res.session));
+        setSuccessMsg(`Cópia do fechamento "${res.session.id}" carregada com sucesso na sua tela!`);
+        setTimeout(() => {
+          onClose();
+        }, 1200);
       } else {
-        setErrorMsg(res.error || `Sala "${cleanCode}" não encontrada ou expirada.`);
+        setErrorMsg(res.error || `Link "${cleanCode}" não encontrado ou já expirou.`);
       }
     } catch (err: any) {
-      setErrorMsg(err.message || 'Erro ao conectar à sala');
+      setErrorMsg(err.message || 'Erro ao carregar link');
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Leave room (Guest or User)
-  const handleLeaveRoom = async () => {
-    if (!activeSession) return;
-    setIsLoading(true);
-    setErrorMsg(null);
-    try {
-      await leaveSharedSession(activeSession.id, currentUser);
-      onSessionDisconnected(true);
-      saveActiveRoomIdLocally(null);
-      setActiveTab('join');
-      loadRooms();
-      onClose();
-    } catch (err: any) {
-      setErrorMsg(err.message || 'Erro ao sair da sala');
-    } finally {
-      setIsLoading(false);
-      setConfirmLeaveOpen(false);
-    }
-  };
-
-  // Delete room (Host/Admin only)
-  const handleDeleteRoom = async () => {
+  // Delete/Invalidate link immediately
+  const handleDeleteSnapshot = async () => {
     if (!activeSession) return;
     setIsDeletingRoom(true);
-    setErrorMsg(null);
     try {
       const res = await deleteSharedSession(activeSession.id, currentUser);
       if (res.success) {
         onSessionDisconnected(false);
-        saveActiveRoomIdLocally(null);
-        setActiveTab('join');
+        saveActiveRoomIdLocally('');
         loadRooms();
-        onClose();
+        setSuccessMsg('Link de compartilhamento excluído e invalidado com sucesso.');
+        setTimeout(() => setSuccessMsg(null), 3000);
       } else {
-        setErrorMsg(res.error || 'Erro ao excluir a sala');
+        setErrorMsg(res.error || 'Não foi possível excluir o link');
       }
     } catch (err: any) {
-      setErrorMsg(err.message || 'Erro ao excluir a sala');
+      setErrorMsg(err.message || 'Erro ao excluir link');
     } finally {
       setIsDeletingRoom(false);
       setConfirmDeleteOpen(false);
     }
   };
 
-  // Kick participant (Host/Admin only)
-  const handleKickParticipant = async (targetUserId: string, targetUserName: string) => {
-    if (!activeSession) return;
-    setKickingUserId(targetUserId);
+  // Export full Excel backup (.xlsx)
+  const handleExportFullExcel = () => {
+    exportFechamentoToExcel({
+      items: fechamentoItems,
+      conciliatedEmpresas,
+      dealerState,
+      sitefState,
+      pendenteCdcState,
+      summary,
+      dataMovimento: fechamentoItems[0]?.data || new Date().toLocaleDateString('pt-BR'),
+      operador: currentUser.name,
+      observacoes: 'Backup completo para importação e restauração exata no Wanfinance',
+    });
+    setSuccessMsg('Arquivo Excel (.xlsx) de backup baixado com sucesso!');
+    setTimeout(() => setSuccessMsg(null), 3000);
+  };
+
+  // Import full Excel backup (.xlsx)
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsImportingFile(true);
     setErrorMsg(null);
     try {
-      const res = await kickParticipantFromSharedSession(activeSession.id, targetUserId, currentUser);
-      if (res.success && res.session) {
-        onSessionConnected(res.session);
-        setSuccessMsg(`Usuário "${targetUserName}" foi removido da sala.`);
-        setTimeout(() => setSuccessMsg(null), 3000);
+      const res = await importFechamentoFromExcel(file);
+      if (res.success && res.data) {
+        if (onImportExcelData) {
+          onImportExcelData(res.data);
+        }
+        setSuccessMsg(`Fechamento restaurado com sucesso do Excel! (${res.data.items.length} lançamentos recuperados)`);
+        setTimeout(() => {
+          onClose();
+        }, 1500);
       } else {
-        setErrorMsg(res.error || 'Erro ao remover usuário');
+        setErrorMsg(res.error || 'Falha ao importar o arquivo Excel.');
       }
     } catch (err: any) {
-      setErrorMsg(err.message || 'Erro ao remover participante');
+      setErrorMsg(err.message || 'Erro ao ler arquivo Excel');
     } finally {
-      setKickingUserId(null);
-      setConfirmKickUser(null);
-    }
-  };
-
-  // Send collaborative message/note
-  const handleSendChat = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!chatInput.trim() || !activeSession) return;
-
-    setIsSendingChat(true);
-    try {
-      const res = await sendSharedSessionChatMessage(activeSession.id, currentUser, chatInput.trim());
-      if (res.success && res.session) {
-        onSessionConnected(res.session);
-        setChatInput('');
+      setIsImportingFile(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
       }
-    } catch {
-      // ignore
-    } finally {
-      setIsSendingChat(false);
     }
-  };
-
-  const formatBRL = (val: number) => {
-    return new Intl.NumberFormat('pt-BR', {
-      style: 'currency',
-      currency: 'BRL',
-    }).format(val || 0);
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-md animate-fade-in">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-md animate-fade-in">
       <div className="bg-slate-900 border border-slate-750 text-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] animate-scale-up">
         {/* Modal Header */}
         <div className="p-5 bg-gradient-to-r from-slate-900 via-slate-850 to-slate-900 border-b border-slate-750/80 flex items-center justify-between">
@@ -366,21 +382,21 @@ export function SharedFechamentoModal({
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="font-extrabold text-base text-white tracking-tight">
-                  Compartilhamento em Tempo Real
+                  Encaminhar Fechamento & Arquivo Excel
                 </h3>
                 {activeSession ? (
                   <span className="flex items-center gap-1.5 bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-black px-2.5 py-0.5 rounded-full">
-                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-                    CONECTADO ({activeSession.id})
+                    <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                    LINK ATIVO ({activeSession.id})
                   </span>
                 ) : (
                   <span className="bg-slate-800 text-slate-400 border border-slate-700 text-[10px] font-bold px-2 py-0.5 rounded-full">
-                    NÃO CONECTADO
+                    SEM LINK ATIVO
                   </span>
                 )}
               </div>
-              <p className="text-xs text-slate-400 mt-0.5">
-                Visualize e concilie o fechamento simultaneamente em computadores diferentes.
+              <p className="text-xs text-slate-300 mt-0.5">
+                Gere link de cópia segura com validade de 8h (sem conflitos) ou exporte/importe em Excel.
               </p>
             </div>
           </div>
@@ -403,8 +419,8 @@ export function SharedFechamentoModal({
                 : 'border-transparent text-slate-400 hover:text-slate-200'
             }`}
           >
-            <Share2 className="w-3.5 h-3.5" />
-            <span>Sessão Atual</span>
+            <Link2 className="w-3.5 h-3.5" />
+            <span>Gerar Link (8 Horas)</span>
           </button>
 
           <button
@@ -419,29 +435,27 @@ export function SharedFechamentoModal({
             }`}
           >
             <Radio className="w-3.5 h-3.5" />
-            <span>Entrar / Salas Ativas ({activeRoomsList.length})</span>
+            <span>Abrir Link / Código ({activeRoomsList.length})</span>
           </button>
 
-          {activeSession && (
-            <button
-              onClick={() => setActiveTab('chat')}
-              className={`px-4 py-2.5 text-xs font-extrabold border-b-2 transition-all flex items-center gap-2 cursor-pointer ${
-                activeTab === 'chat'
-                  ? 'border-emerald-500 text-emerald-400 bg-emerald-500/5'
-                  : 'border-transparent text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              <MessageSquare className="w-3.5 h-3.5" />
-              <span>Notas e Equipe {activeSession.chatMessages?.length ? `(${activeSession.chatMessages.length})` : ''}</span>
-            </button>
-          )}
+          <button
+            onClick={() => setActiveTab('excel')}
+            className={`px-4 py-2.5 text-xs font-extrabold border-b-2 transition-all flex items-center gap-2 cursor-pointer ${
+              activeTab === 'excel'
+                ? 'border-emerald-500 text-emerald-400 bg-emerald-500/5'
+                : 'border-transparent text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5" />
+            <span>Baixar / Restaurar Excel (.xlsx)</span>
+          </button>
         </div>
 
         {/* Success Alert */}
         {successMsg && (
           <div className="mx-5 mt-4 p-3 bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 rounded-xl text-xs flex items-center justify-between">
             <span className="flex items-center gap-1.5">
-              <Check className="w-4 h-4 text-emerald-400" />
+              <Check className="w-4 h-4 text-emerald-400 shrink-0" />
               {successMsg}
             </span>
             <button onClick={() => setSuccessMsg(null)} className="text-emerald-400 hover:text-white">
@@ -453,37 +467,48 @@ export function SharedFechamentoModal({
         {/* Error Alert */}
         {errorMsg && (
           <div className="mx-5 mt-4 p-3 bg-rose-500/15 border border-rose-500/30 text-rose-300 rounded-xl text-xs flex items-center justify-between">
-            <span>{errorMsg}</span>
+            <span className="flex items-center gap-1.5">
+              <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+              {errorMsg}
+            </span>
             <button onClick={() => setErrorMsg(null)} className="text-rose-400 hover:text-white">
               <X className="w-4 h-4" />
             </button>
           </div>
         )}
 
-        {/* Tab 1: Current Session / Share */}
+        {/* Tab 1: Current Session / Share Link (8h) */}
         {activeTab === 'share' && (
           <div className="p-5 space-y-5 overflow-y-auto flex-1">
-            {activeSession ? (
-              <div className="space-y-4">
-                {/* Synchronization Badge */}
-                <div className="p-3 bg-emerald-500/10 border border-emerald-500/25 rounded-2xl flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-                    <span className="text-xs font-extrabold text-emerald-300">
-                      Sincronização Online Ativa: Dealer, SiTef e Fechamento
-                    </span>
-                  </div>
-                  <span className="text-[10px] bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-full font-bold border border-emerald-500/30">
-                    Tempo Real
+            {/* Rule of 8 hours and isolated snapshot explanation */}
+            <div className="p-3.5 bg-slate-800/80 border border-slate-700 rounded-2xl flex items-start gap-3">
+              <div className="p-2 bg-emerald-500/10 text-emerald-400 rounded-xl border border-emerald-500/20 shrink-0 mt-0.5">
+                <ShieldCheck className="w-4 h-4" />
+              </div>
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <h4 className="font-extrabold text-xs text-white">
+                    Compartilhamento Seguro (Snapshot Estático)
+                  </h4>
+                  <span className="bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[10px] font-black px-2 py-0.2 rounded-full flex items-center gap-1">
+                    <Clock className="w-3 h-3" />
+                    Validade: 8 Horas
                   </span>
                 </div>
+                <p className="text-[11px] text-slate-300 leading-relaxed">
+                  Quem receber o link terá acesso a uma <strong>cópia integral e isolada</strong> de todo o fechamento (Dealer, SiTef, CDC e 52 empresas). Não há sincronização concorrente online, garantindo <strong>zero conflitos</strong> de tela. Após <strong>8 horas</strong>, o link expira e é excluído automaticamente.
+                </p>
+              </div>
+            </div>
 
-                {/* Active Session Card */}
-                <div className="bg-slate-800/80 border border-slate-700/80 p-4 rounded-2xl space-y-4">
+            {activeSession ? (
+              <div className="space-y-4">
+                {/* Active Snapshot Card */}
+                <div className="bg-slate-800/90 border border-slate-700 p-4 rounded-2xl space-y-4">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
                       <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                        Código de Acesso da Sala
+                        Código do Fechamento
                       </span>
                       <div className="flex items-center gap-2 mt-1">
                         <span className="font-mono text-2xl font-black text-emerald-400 bg-slate-900/90 px-3 py-1 rounded-xl border border-emerald-500/30 tracking-widest">
@@ -502,16 +527,25 @@ export function SharedFechamentoModal({
 
                     <div className="text-right">
                       <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                        Data do Movimento
+                        Tempo de Validade
                       </span>
-                      <p className="text-sm font-extrabold text-white">{activeSession.dataMovimento}</p>
-                      <p className="text-[11px] text-slate-400 mt-0.5">
-                        Criado por <strong>{activeSession.createdBy.name}</strong>
+                      <div className="flex items-center justify-end gap-1.5 mt-1">
+                        <Clock className={`w-4 h-4 ${timeRemaining.isExpired ? 'text-rose-400' : 'text-amber-400'}`} />
+                        <span className={`text-xs font-black px-2.5 py-1 rounded-lg border ${
+                          timeRemaining.isExpired
+                            ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                            : 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                        }`}>
+                          {timeRemaining.formatted}
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-slate-400 mt-1">
+                        Criado por <strong>{activeSession.createdBy?.name}</strong> ({activeSession.dataMovimento})
                       </p>
                     </div>
                   </div>
 
-                  {/* Forwarding / Share Action Box */}
+                  {/* Share Action Box */}
                   <div className="bg-gradient-to-br from-slate-900 to-slate-850 p-4 rounded-2xl border border-emerald-500/30 space-y-3">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
@@ -522,7 +556,7 @@ export function SharedFechamentoModal({
                       </div>
                       <span className="text-[10px] text-emerald-300 font-bold bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20 flex items-center gap-1">
                         <Eye className="w-3 h-3 text-emerald-400" />
-                        Visualização e Acesso Imediato
+                        Acesso Imediato
                       </span>
                     </div>
 
@@ -559,18 +593,10 @@ export function SharedFechamentoModal({
                         <span>Encaminhar por E-mail</span>
                       </button>
                     </div>
-
-                    {/* Recipient Guidance Info */}
-                    <div className="p-2.5 bg-slate-900/60 rounded-xl border border-slate-800 flex items-start gap-2 text-[11px] text-slate-300">
-                      <Info className="w-3.5 h-3.5 text-emerald-400 shrink-0 mt-0.5" />
-                      <span>
-                        O destinatário precisará apenas clicar no link ou acessar com o código <strong>{activeSession.id}</strong> para enxergar automaticamente o fechamento, as 52 empresas, conciliações e valores do Dealer e SiTef no computador dele.
-                      </span>
-                    </div>
                   </div>
 
                   {/* Summary Indicators */}
-                  <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-750/70 text-center">
+                  <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-750 text-center">
                     <div className="bg-slate-900/50 p-2 rounded-xl">
                       <span className="text-[10px] text-slate-400">Lançamentos</span>
                       <p className="text-xs font-bold text-white">{activeSession.items?.length || 0}</p>
@@ -586,111 +612,22 @@ export function SharedFechamentoModal({
                   </div>
                 </div>
 
-                {/* Connected Participants List */}
-                <div className="bg-slate-800/50 border border-slate-750 p-4 rounded-2xl space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Users className="w-4 h-4 text-emerald-400" />
-                      <span className="font-extrabold text-xs text-white">
-                        Usuários Conectados ({activeSession.activeParticipants?.length || 1})
-                      </span>
-                    </div>
-                    <span className="text-[10px] text-emerald-400 font-bold bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
-                      Sincronização Ativa
-                    </span>
-                  </div>
-
-                  <div className="space-y-2">
-                    {activeSession.activeParticipants?.map((part) => {
-                      const isMe = part.id === currentUser.id || part.email === currentUser.email;
-                      const canKick = isHost && !isMe && !part.isHost;
-
-                      return (
-                        <div
-                          key={part.id}
-                          className="bg-slate-900/70 border border-slate-800 p-2.5 rounded-xl flex items-center justify-between gap-2"
-                        >
-                          <div className="flex items-center gap-3 min-w-0">
-                            <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-emerald-600 to-teal-500 text-white font-black text-xs flex items-center justify-center border border-emerald-400/40 shrink-0">
-                              {part.name.substring(0, 2).toUpperCase()}
-                            </div>
-                            <div className="min-w-0">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <span className="font-bold text-xs text-white truncate">{part.name}</span>
-                                {isMe && (
-                                  <span className="bg-slate-700 text-slate-300 text-[9px] font-bold px-1.5 py-0.2 rounded-sm">
-                                    VOCÊ
-                                  </span>
-                                )}
-                                {part.isHost && (
-                                  <span className="bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[9px] font-bold px-1.5 py-0.2 rounded-sm">
-                                    ANFITRIÃO
-                                  </span>
-                                )}
-                              </div>
-                              <p className="text-[10px] text-slate-400 truncate">{part.empresa} • {part.email}</p>
-                            </div>
-                          </div>
-
-                          <div className="flex items-center gap-2 shrink-0">
-                            <div className="flex items-center gap-1.5">
-                              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                              <span className="text-[10px] text-emerald-300 font-bold">Online</span>
-                            </div>
-
-                            {canKick && (
-                              confirmKickUser?.id === part.id ? (
-                                <div className="flex items-center gap-1">
-                                  <button
-                                    onClick={() => handleKickParticipant(part.id, part.name)}
-                                    disabled={kickingUserId === part.id}
-                                    className="px-2 py-1 bg-rose-600 hover:bg-rose-700 text-white text-[10px] font-black rounded-lg transition-all cursor-pointer flex items-center gap-1"
-                                  >
-                                    {kickingUserId === part.id ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
-                                    <span>Sim, remover</span>
-                                  </button>
-                                  <button
-                                    onClick={() => setConfirmKickUser(null)}
-                                    className="px-1.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] rounded-lg cursor-pointer"
-                                  >
-                                    <X className="w-3 h-3" />
-                                  </button>
-                                </div>
-                              ) : (
-                                <button
-                                  onClick={() => setConfirmKickUser({ id: part.id, name: part.name })}
-                                  disabled={kickingUserId === part.id}
-                                  className="px-2 py-1 bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 text-[10px] font-bold rounded-lg border border-rose-500/40 transition-all cursor-pointer flex items-center gap-1 disabled:opacity-50"
-                                  title="Remover usuário da sala"
-                                >
-                                  <X className="w-3 h-3" />
-                                  <span>Remover</span>
-                                </button>
-                              )
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* Host vs Guest Administrative Bottom Actions */}
+                {/* Bottom Actions */}
                 <div className="pt-2 border-t border-slate-800 space-y-3">
                   {/* Inline Confirmation for Deleting Room */}
                   {confirmDeleteOpen && (
                     <div className="p-3 bg-rose-950/40 border border-rose-500/50 rounded-xl space-y-2 animate-in fade-in">
                       <p className="text-xs text-rose-200 font-bold">
-                        ⚠️ Tem certeza de que deseja encerrar e excluir a sala para todos os participantes?
+                        ⚠️ Deseja excluir e invalidar este link de compartilhamento agora?
                       </p>
                       <div className="flex items-center gap-2">
                         <button
-                          onClick={handleDeleteRoom}
+                          onClick={handleDeleteSnapshot}
                           disabled={isDeletingRoom}
                           className="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-black rounded-lg text-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
                         >
                           {isDeletingRoom ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
-                          <span>Sim, Confirmar Exclusão</span>
+                          <span>Sim, Excluir Link</span>
                         </button>
                         <button
                           onClick={() => setConfirmDeleteOpen(false)}
@@ -703,130 +640,70 @@ export function SharedFechamentoModal({
                     </div>
                   )}
 
-                  {/* Inline Confirmation for Leaving Room */}
-                  {confirmLeaveOpen && (
-                    <div className="p-3 bg-amber-950/40 border border-amber-500/50 rounded-xl space-y-2 animate-in fade-in">
-                      <p className="text-xs text-amber-200 font-bold">
-                        Deseja realmente sair da sala compartilhada? Os dados serão limpos da sua tela.
-                      </p>
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={handleLeaveRoom}
-                          disabled={isLoading}
-                          className="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-black rounded-lg text-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-                        >
-                          {isLoading ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <LogOut className="w-3.5 h-3.5" />}
-                          <span>Sim, Sair da Sala</span>
-                        </button>
-                        <button
-                          onClick={() => setConfirmLeaveOpen(false)}
-                          disabled={isLoading}
-                          className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-lg text-xs cursor-pointer"
-                        >
-                          Cancelar
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <button
-                      onClick={onManualSync}
-                      className="px-3.5 py-2 bg-slate-800 hover:bg-slate-750 text-slate-200 font-bold rounded-xl text-xs border border-slate-700 transition-all flex items-center gap-1.5 cursor-pointer"
+                      onClick={() => handleCreateSnapshotLink(true)}
+                      disabled={isLoading}
+                      className="px-4 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-black rounded-xl text-xs flex items-center gap-2 transition-all cursor-pointer shadow-md disabled:opacity-60"
                     >
-                      <RefreshCw className="w-3.5 h-3.5 text-emerald-400" />
-                      <span>Sincronizar Agora</span>
+                      <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+                      <span>Gerar Novo Link (Renovar 8h)</span>
                     </button>
 
-                    {isHost ? (
-                      !confirmDeleteOpen && (
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={handleExportFullExcel}
+                        className="px-3 py-2 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 cursor-pointer"
+                        title="Baixar arquivo Excel de backup para importação posterior"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                        <span>Baixar Excel (.xlsx)</span>
+                      </button>
+
+                      {isHost && !confirmDeleteOpen && (
                         <button
                           onClick={() => setConfirmDeleteOpen(true)}
-                          disabled={isDeletingRoom}
-                          className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white font-black rounded-xl text-xs shadow-md transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                          className="px-3 py-2 bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 font-bold rounded-xl border border-rose-500/40 text-xs flex items-center gap-1.5 transition-all cursor-pointer"
                         >
                           <X className="w-3.5 h-3.5" />
-                          <span>Excluir Sala Definitivamente</span>
+                          <span>Excluir Link</span>
                         </button>
-                      )
-                    ) : (
-                      !confirmLeaveOpen && (
-                        <button
-                          onClick={() => setConfirmLeaveOpen(true)}
-                          disabled={isLoading}
-                          className="px-4 py-2 bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 font-extrabold rounded-xl text-xs border border-rose-500/40 transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-                        >
-                          <LogOut className="w-3.5 h-3.5" />
-                          <span>Sair da Sala (Limpar Tela)</span>
-                        </button>
-                      )
-                    )}
+                      )}
+                    </div>
                   </div>
-
-                  {isHost ? (
-                    <p className="text-[11px] text-slate-400">
-                      ℹ️ <strong>Painel do Administrador</strong>: Ao excluir a sala, a sessão será encerrada e os dados serão removidos da tela dos convidados, permanecendo salvos na sua tela.
-                    </p>
-                  ) : (
-                    <p className="text-[11px] text-slate-400">
-                      ℹ️ Ao clicar em <strong>Sair da Sala</strong>, você será desconectado e os dados compartilhados serão limpos da sua tela automaticamente.
-                    </p>
-                  )}
                 </div>
               </div>
             ) : (
-              /* No Active Session: Offer to create one */
-              <div className="space-y-5 text-center py-2">
-                <div className="w-14 h-14 bg-emerald-500/10 text-emerald-400 rounded-3xl border border-emerald-500/20 flex items-center justify-center mx-auto shadow-inner">
-                  <Share2 className="w-7 h-7" />
+              /* No Active Snapshot yet - Prompt to create */
+              <div className="bg-slate-800/60 border border-slate-700 p-6 rounded-2xl text-center space-y-4">
+                <div className="w-14 h-14 bg-emerald-500/20 text-emerald-400 rounded-full flex items-center justify-center mx-auto border border-emerald-500/30">
+                  <Link2 className="w-7 h-7" />
                 </div>
-                <div className="max-w-md mx-auto">
-                  <h4 className="font-extrabold text-base text-white">Encaminhar Fechamento com Link</h4>
-                  <p className="text-xs text-slate-400 mt-1">
-                    Gere um link para que outro usuário abra e enxergue o fechamento, as 52 empresas, as conciliações e as divergências em tempo real no navegador dele.
+                <div className="space-y-1.5 max-w-md mx-auto">
+                  <h4 className="font-extrabold text-base text-white">
+                    Nenhum link de fechamento ativo no momento
+                  </h4>
+                  <p className="text-xs text-slate-300 leading-relaxed">
+                    Clique no botão abaixo para gerar um link direto com a cópia exata do fechamento atual ({fechamentoItems.length} lançamentos e status das 52 empresas). O link terá <strong>validade de 8 horas</strong>.
                   </p>
                 </div>
 
-                <div className="bg-slate-800/50 border border-slate-750 p-4 rounded-2xl max-w-md mx-auto text-left space-y-2.5">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-slate-400">Total de Lançamentos:</span>
-                    <span className="font-bold text-white">{fechamentoItems.length}</span>
-                  </div>
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-slate-400">Divergências Pendentes:</span>
-                    <span className={`font-bold ${summary.countDivergencias > 0 ? 'text-amber-400' : 'text-emerald-400'}`}>
-                      {summary.countDivergencias}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-slate-400">Empresas Conciliadas:</span>
-                    <span className="font-bold text-emerald-400">
-                      {Object.values(conciliatedEmpresas).filter(Boolean).length} de 52
-                    </span>
-                  </div>
-                  <div className="border-t border-slate-700/60 pt-2 flex items-start gap-2 text-[11px] text-emerald-300">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-                    <span>Ao gerar o link, as planilhas Dealer e SiTef atuais são enviadas de forma segura para a nuvem.</span>
-                  </div>
-                </div>
-
-                <div className="flex flex-col sm:flex-row items-center justify-center gap-3 max-w-md mx-auto">
+                <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-3">
                   <button
-                    onClick={() => handleCreateRoom(true)}
+                    onClick={() => handleCreateSnapshotLink(true)}
                     disabled={isLoading || fechamentoItems.length === 0}
-                    className="w-full sm:w-auto px-5 py-3 bg-gradient-to-r from-emerald-500 via-emerald-400 to-teal-400 hover:brightness-105 active:scale-98 disabled:opacity-50 text-slate-950 font-black rounded-2xl text-xs sm:text-sm transition-all shadow-lg flex items-center justify-center gap-2 cursor-pointer"
+                    className="w-full sm:w-auto px-6 py-3 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-black rounded-xl text-sm flex items-center justify-center gap-2 transition-all cursor-pointer shadow-lg disabled:opacity-50"
                   >
-                    {isLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Link2 className="w-4 h-4" />}
-                    <span>{isLoading ? 'Gerando Link...' : 'Gerar Link e Copiar'}</span>
+                    {isLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                    <span>Gerar Link de Encaminhamento (8h)</span>
                   </button>
 
                   <button
-                    onClick={() => handleCreateRoom(false)}
-                    disabled={isLoading || fechamentoItems.length === 0}
-                    className="w-full sm:w-auto px-4 py-3 bg-slate-800 hover:bg-slate-750 text-slate-200 font-bold rounded-2xl text-xs border border-slate-700 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                    onClick={handleExportFullExcel}
+                    className="w-full sm:w-auto px-4 py-3 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold rounded-xl text-xs border border-slate-700 flex items-center justify-center gap-2 transition-all cursor-pointer"
                   >
-                    <Globe className="w-4 h-4 text-emerald-400" />
-                    <span>Criar Sala em Nuvem</span>
+                    <Download className="w-4 h-4 text-emerald-400" />
+                    <span>Baixar Arquivo Excel (.xlsx)</span>
                   </button>
                 </div>
               </div>
@@ -834,109 +711,94 @@ export function SharedFechamentoModal({
           </div>
         )}
 
-        {/* Tab 2: Join / Active Rooms */}
+        {/* Tab 2: Join / Open Snapshot Link */}
         {activeTab === 'join' && (
           <div className="p-5 space-y-5 overflow-y-auto flex-1">
-            {/* Direct Code Input Box */}
-            <div className="bg-slate-800/80 border border-slate-700/80 p-4 rounded-2xl space-y-3">
-              <span className="text-xs font-extrabold text-white flex items-center gap-2">
-                <Radio className="w-4 h-4 text-emerald-400" />
-                <span>Conectar via Código ou Link da Sala</span>
-              </span>
+            {/* Input Form */}
+            <div className="bg-slate-800/80 border border-slate-700 p-4 rounded-2xl space-y-3">
+              <label className="block text-xs font-extrabold text-white">
+                Colar Link de Fechamento ou Código (ex: FC-12345):
+              </label>
               <div className="flex gap-2">
                 <input
                   type="text"
                   value={joinCodeInput}
                   onChange={(e) => setJoinCodeInput(e.target.value)}
-                  placeholder="Ex: FC-84920 ou cole o link recebido"
-                  className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2 text-xs font-mono text-white placeholder-slate-500 focus:outline-hidden focus:border-emerald-500 uppercase"
+                  placeholder="https://.../?sala=FC-12345 ou FC-12345"
+                  className="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 font-mono"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleJoinSnapshot();
+                  }}
                 />
                 <button
-                  onClick={() => handleJoinRoom()}
+                  onClick={() => handleJoinSnapshot()}
                   disabled={isLoading || !joinCodeInput.trim()}
-                  className="px-4 py-2 bg-emerald-500 hover:bg-emerald-450 disabled:opacity-50 text-slate-950 font-black rounded-xl text-xs flex items-center gap-1.5 transition-all cursor-pointer"
+                  className="px-5 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-black rounded-xl text-xs flex items-center gap-2 transition-all cursor-pointer shrink-0 disabled:opacity-50"
                 >
-                  {isLoading ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <ArrowRight className="w-3.5 h-3.5" />}
-                  <span>Conectar</span>
+                  {isLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
+                  <span>Abrir Fechamento</span>
                 </button>
               </div>
             </div>
 
-            {/* List of Active Rooms in Cloud */}
+            {/* Active Snapshots List */}
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <span className="font-extrabold text-xs text-slate-300 flex items-center gap-2">
-                  <Globe className="w-4 h-4 text-slate-400" />
-                  <span>Salas de Fechamento Ativas na Rede ({activeRoomsList.length})</span>
+                <span className="text-xs font-extrabold text-slate-300">
+                  Links de Fechamento Disponíveis ({activeRoomsList.length})
                 </span>
                 <button
                   onClick={loadRooms}
-                  className="text-slate-400 hover:text-slate-200 text-xs flex items-center gap-1 cursor-pointer"
+                  className="text-xs text-emerald-400 hover:text-emerald-300 flex items-center gap-1 font-bold cursor-pointer"
                 >
-                  <RefreshCw className="w-3 h-3" />
+                  <RefreshCw className="w-3.5 h-3.5" />
                   <span>Atualizar</span>
                 </button>
               </div>
 
               {activeRoomsList.length === 0 ? (
-                <div className="bg-slate-800/40 border border-slate-800 p-8 rounded-2xl text-center space-y-2">
-                  <WifiOff className="w-6 h-6 text-slate-500 mx-auto" />
-                  <p className="text-xs font-bold text-slate-400">Nenhuma outra sala ativa no momento.</p>
-                  <p className="text-[11px] text-slate-500 max-w-sm mx-auto">
-                    Peça ao outro usuário para clicar em &quot;Compartilhar Fechamento&quot; para que a sala apareça aqui automaticamente.
-                  </p>
+                <div className="bg-slate-800/40 border border-slate-750 p-6 rounded-2xl text-center text-xs text-slate-400">
+                  Nenhum link ativo encontrado no momento.
                 </div>
               ) : (
                 <div className="space-y-2">
                   {activeRoomsList.map((room) => {
                     const isCurrent = activeSession?.id === room.id;
+                    const rem = getSessionTimeRemaining(room);
+
                     return (
                       <div
                         key={room.id}
-                        className={`p-3.5 rounded-2xl border transition-all flex flex-wrap items-center justify-between gap-3 ${
+                        className={`p-3.5 rounded-2xl border transition-all flex items-center justify-between gap-3 ${
                           isCurrent
-                            ? 'bg-emerald-500/10 border-emerald-500/40'
-                            : 'bg-slate-800/60 hover:bg-slate-800 border-slate-750'
+                            ? 'bg-emerald-950/20 border-emerald-500/40'
+                            : 'bg-slate-800/60 hover:bg-slate-800 border-slate-700'
                         }`}
                       >
-                        <div className="flex items-center gap-3">
-                          <div className="p-2 bg-slate-900 text-emerald-400 rounded-xl border border-slate-750 font-mono font-black text-xs">
-                            {room.id}
-                          </div>
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <span className="font-bold text-xs text-white">{room.title}</span>
-                              <span className="bg-slate-700 text-slate-300 text-[10px] font-bold px-2 py-0.2 rounded-full">
-                                {room.items.length} lançamentos
-                              </span>
-                            </div>
-                            <p className="text-[11px] text-slate-400 mt-0.5">
-                              Aberta por <strong>{room.createdBy?.name || 'Operador'}</strong> ({room.createdBy?.empresa})
-                            </p>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                          <span className="text-[10px] text-slate-400 flex items-center gap-1 bg-slate-900/60 px-2 py-1 rounded-lg">
-                            <Users className="w-3 h-3 text-emerald-400" />
-                            <span>{room.activeParticipants?.length || 1} online</span>
-                          </span>
-
-                          {isCurrent ? (
-                            <span className="px-3 py-1.5 bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs font-bold rounded-xl">
-                              Conectado
+                        <div className="space-y-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-mono font-black text-xs text-emerald-400 bg-slate-900 px-2 py-0.5 rounded-md border border-emerald-500/30">
+                              {room.id}
                             </span>
-                          ) : (
-                            <button
-                              onClick={() => handleJoinRoom(room.id)}
-                              disabled={isLoading}
-                              className="px-3.5 py-1.5 bg-emerald-500 hover:bg-emerald-450 text-slate-950 font-extrabold rounded-xl text-xs transition-all cursor-pointer flex items-center gap-1"
-                            >
-                              <span>Entrar na Sala</span>
-                              <ArrowRight className="w-3.5 h-3.5" />
-                            </button>
-                          )}
+                            <span className="font-bold text-xs text-white truncate">{room.title}</span>
+                            <span className="text-[10px] text-amber-300 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.2 rounded-md font-bold flex items-center gap-1">
+                              <Clock className="w-2.5 h-2.5" />
+                              {rem.formatted}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-slate-400 truncate">
+                            Criado por <strong>{room.createdBy?.name}</strong> • Movimento: {room.dataMovimento} • {room.items?.length || 0} lançamentos
+                          </p>
                         </div>
+
+                        <button
+                          onClick={() => handleJoinSnapshot(room.id)}
+                          disabled={isLoading}
+                          className="px-3.5 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-black rounded-xl text-xs flex items-center gap-1.5 transition-all cursor-pointer shrink-0 disabled:opacity-50 shadow-xs"
+                        >
+                          <span>Carregar Cópia</span>
+                          <ArrowRight className="w-3.5 h-3.5" />
+                        </button>
                       </div>
                     );
                   })}
@@ -946,72 +808,86 @@ export function SharedFechamentoModal({
           </div>
         )}
 
-        {/* Tab 3: Chat / Collaborative Notes */}
-        {activeTab === 'chat' && activeSession && (
-          <div className="p-5 space-y-4 overflow-y-auto flex-1 flex flex-col justify-between">
-            <div className="space-y-3 overflow-y-auto max-h-[350px] pr-1">
-              {(!activeSession.chatMessages || activeSession.chatMessages.length === 0) ? (
-                <div className="text-center py-8 text-slate-500 text-xs">
-                  <MessageSquare className="w-6 h-6 mx-auto mb-2 opacity-50" />
-                  <span>Nenhuma anotação nesta sessão. Envie mensagens ou notas para os outros operadores.</span>
-                </div>
-              ) : (
-                activeSession.chatMessages.map((msg) => {
-                  const isMe = msg.userId === currentUser.id;
-                  return (
-                    <div
-                      key={msg.id}
-                      className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}
-                    >
-                      <div className="flex items-center gap-1 text-[10px] text-slate-400 mb-1">
-                        <span className="font-bold">{msg.userName}</span>
-                        {msg.empresa && <span>({msg.empresa})</span>}
-                        <span>• {new Date(msg.timestamp).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
-                      </div>
-                      <div
-                        className={`p-3 rounded-2xl max-w-sm text-xs leading-relaxed ${
-                          isMe
-                            ? 'bg-emerald-500 text-slate-950 font-medium rounded-tr-xs'
-                            : 'bg-slate-800 text-slate-200 rounded-tl-xs border border-slate-700'
-                        }`}
-                      >
-                        {msg.text}
-                      </div>
-                    </div>
-                  );
-                })
-              )}
+        {/* Tab 3: Excel Backup & Restore (.xlsx) */}
+        {activeTab === 'excel' && (
+          <div className="p-5 space-y-5 overflow-y-auto flex-1">
+            <div className="p-3.5 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl flex items-start gap-3">
+              <div className="p-2 bg-emerald-500/20 text-emerald-400 rounded-xl shrink-0 mt-0.5">
+                <FileSpreadsheet className="w-5 h-5" />
+              </div>
+              <div className="space-y-1">
+                <h4 className="font-extrabold text-xs text-white">
+                  Backup e Restauração Fiel em Excel (.xlsx)
+                </h4>
+                <p className="text-[11px] text-slate-300 leading-relaxed">
+                  Baixe o arquivo completo do fechamento contendo todas as 52 empresas, lançamentos de Dealer, SiTef e conciliações. Você pode reimportar este mesmo arquivo a qualquer momento para <strong>trazer as informações exatamente como foram criadas</strong>.
+                </p>
+              </div>
             </div>
 
-            <form onSubmit={handleSendChat} className="flex gap-2 pt-2 border-t border-slate-800">
-              <input
-                type="text"
-                value={chatInput}
-                onChange={(e) => setChatInput(e.target.value)}
-                placeholder="Escreva uma observação ou mensagem para a equipe..."
-                className="flex-1 bg-slate-900 border border-slate-750 rounded-xl px-3.5 py-2 text-xs text-white placeholder-slate-500 focus:outline-hidden focus:border-emerald-500"
-              />
-              <button
-                type="submit"
-                disabled={isSendingChat || !chatInput.trim()}
-                className="px-4 py-2 bg-emerald-500 hover:bg-emerald-450 disabled:opacity-50 text-slate-950 font-black rounded-xl text-xs flex items-center gap-1.5 transition-all cursor-pointer"
-              >
-                <Send className="w-3.5 h-3.5" />
-                <span>Enviar</span>
-              </button>
-            </form>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* Export Box */}
+              <div className="bg-slate-800/80 border border-slate-700 p-5 rounded-2xl space-y-3 flex flex-col justify-between">
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 text-emerald-400">
+                    <Download className="w-5 h-5" />
+                    <h5 className="font-extrabold text-xs text-white">Baixar Arquivo Excel</h5>
+                  </div>
+                  <p className="text-[11px] text-slate-300 leading-relaxed">
+                    Gera a planilha com todas as abas (Fechamento, Status das 52 Empresas, Dealer e SiTef) e metadados de restauração 100% fiel.
+                  </p>
+                </div>
+                <button
+                  onClick={handleExportFullExcel}
+                  className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-xl text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow-md"
+                >
+                  <Download className="w-4 h-4" />
+                  <span>Baixar Fechamento (.xlsx)</span>
+                </button>
+              </div>
+
+              {/* Import Box */}
+              <div className="bg-slate-800/80 border border-slate-700 p-5 rounded-2xl space-y-3 flex flex-col justify-between">
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 text-blue-400">
+                    <Upload className="w-5 h-5" />
+                    <h5 className="font-extrabold text-xs text-white">Importar Arquivo Excel</h5>
+                  </div>
+                  <p className="text-[11px] text-slate-300 leading-relaxed">
+                    Selecione um arquivo <code>.xlsx</code> previamente exportado para recarregar todos os dados exatamente como foram salvos.
+                  </p>
+                </div>
+
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  onChange={handleFileChange}
+                  accept=".xlsx, .xls"
+                  className="hidden"
+                />
+
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isImportingFile}
+                  className="w-full py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-black rounded-xl text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow-md disabled:opacity-50"
+                >
+                  {isImportingFile ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                  <span>{isImportingFile ? 'Lendo Excel...' : 'Selecionar Arquivo (.xlsx)'}</span>
+                </button>
+              </div>
+            </div>
           </div>
         )}
 
         {/* Modal Footer */}
-        <div className="p-4 bg-slate-950/80 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400">
+        <div className="p-4 bg-slate-900 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400">
           <div className="flex items-center gap-2">
-            <ShieldCheck className="w-4 h-4 text-emerald-400" />
-            <span>Sessões seguras com sincronização bidirecional em nuvem</span>
+            <Lock className="w-3.5 h-3.5 text-emerald-400" />
+            <span>Wanfinance Fechamento Seguro • 8h TTL</span>
           </div>
           <button
             onClick={onClose}
-            className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold rounded-xl text-xs transition-all cursor-pointer"
+            className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold rounded-xl cursor-pointer"
           >
             Fechar
           </button>

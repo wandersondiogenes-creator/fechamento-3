@@ -1394,6 +1394,40 @@ export default function Home() {
     setActiveTab('fechamento');
   }, []);
 
+  const handleImportExcelData = useCallback((importedData: any) => {
+    if (!importedData) return;
+
+    if (importedData.dealerState) {
+      setDealerState(importedData.dealerState);
+    }
+    if (importedData.sitefState) {
+      setSitefState(importedData.sitefState);
+    }
+    if (importedData.pendenteCdcState) {
+      setPendenteCdcState(importedData.pendenteCdcState);
+    }
+
+    if (importedData.items && Array.isArray(importedData.items)) {
+      setManualFechamentoItems(importedData.items);
+    }
+
+    if (importedData.conciliatedEmpresas && typeof window !== 'undefined') {
+      try {
+        localStorage.setItem(
+          'wanfinance_conciliated_empresas_v1',
+          JSON.stringify(importedData.conciliatedEmpresas)
+        );
+      } catch {}
+    }
+
+    setDeletedFechamentoIds(new Set());
+    setActiveTab('fechamento');
+    setAutoOrganizeBanner({
+      show: true,
+      message: `Fechamento ${importedData.dataMovimento ? `do dia ${importedData.dataMovimento}` : ''} restaurado com sucesso do arquivo Excel! (${importedData.items?.length || 0} lançamentos)`,
+    });
+  }, []);
+
   const formatBRL = (val: number) => {
     return new Intl.NumberFormat('pt-BR', {
       style: 'currency',
@@ -1633,6 +1667,7 @@ export default function Home() {
                 onGuestLeaveOrKicked={handleGuestLeaveOrKicked}
                 isSharedModalOpen={isSharedModalOpen}
                 onSharedModalOpenChange={setIsSharedModalOpen}
+                onImportExcelData={handleImportExcelData}
               />
             ) : (
               <>

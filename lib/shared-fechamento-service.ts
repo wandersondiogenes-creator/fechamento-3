@@ -39,7 +39,7 @@ export interface SharedFechamentoSession {
     empresa: string;
     role: string;
   };
-  status: 'active' | 'closed' | 'deleted' | 'archived';
+  status: 'active' | 'closed' | 'deleted' | 'archived' | 'expired';
   items: FechamentoItem[];
   conciliatedEmpresas: Record<string, boolean | ConciliationDetail>;
   summary: {
@@ -61,6 +61,51 @@ export interface SharedFechamentoSession {
   version: number;
   createdAt: string;
   updatedAt: string;
+  expiresAt?: string; // 8 hours lifetime ISO date
+}
+
+export const SHARED_SESSION_TTL_HOURS = 8;
+export const SHARED_SESSION_TTL_MS = 8 * 60 * 60 * 1000;
+
+export function isSessionExpired(session: SharedFechamentoSession | null | undefined): boolean {
+  if (!session) return true;
+  if (session.status === 'expired' || session.status === 'deleted') return true;
+  const now = Date.now();
+  if (session.expiresAt) {
+    return new Date(session.expiresAt).getTime() <= now;
+  }
+  if (session.createdAt) {
+    return now - new Date(session.createdAt).getTime() > SHARED_SESSION_TTL_MS;
+  }
+  return false;
+}
+
+export function getSessionTimeRemaining(session: SharedFechamentoSession | null | undefined): {
+  isExpired: boolean;
+  hours: number;
+  minutes: number;
+  formatted: string;
+} {
+  if (!session) return { isExpired: true, hours: 0, minutes: 0, formatted: 'Expirado' };
+  const now = Date.now();
+  let expireTime = session.expiresAt ? new Date(session.expiresAt).getTime() : 0;
+  if (!expireTime && session.createdAt) {
+    expireTime = new Date(session.createdAt).getTime() + SHARED_SESSION_TTL_MS;
+  }
+
+  const diffMs = expireTime - now;
+  if (diffMs <= 0) {
+    return { isExpired: true, hours: 0, minutes: 0, formatted: 'Expirado (8h atingidas)' };
+  }
+
+  const totalMinutes = Math.floor(diffMs / (1000 * 60));
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+
+  if (hours > 0) {
+    return { isExpired: false, hours, minutes, formatted: `${hours}h ${minutes}min restantes` };
+  }
+  return { isExpired: false, hours, minutes, formatted: `${minutes}min restantes` };
 }
 
 const ACTIVE_SHARED_ROOM_STORAGE_KEY = 'wanfinance_active_shared_room_id_v1';
