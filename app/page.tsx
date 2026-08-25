@@ -1487,7 +1487,7 @@ export default function Home() {
 
         {/* Auto-Archived (>8 Hours) Notification Banner */}
         {autoArchivedBanner && autoArchivedBanner.show && (
-          <div className="max-w-7xl mx-auto px-4 w-full pt-3">
+          <div className="w-full px-3 sm:px-5 md:px-6 lg:px-8 xl:px-10 2xl:px-12 pt-3">
             <div className="bg-gradient-to-r from-amber-50 via-orange-50 to-amber-50 border border-amber-300/80 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3 shadow-sm animate-in slide-in-from-top duration-300">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-2xl bg-amber-500 text-white flex items-center justify-center shadow-xs flex-shrink-0">
@@ -1529,7 +1529,7 @@ export default function Home() {
 
         {/* Autosave Recovery Notification Banner */}
         {recoveredBanner && recoveredBanner.show && (
-          <div className="max-w-7xl mx-auto px-4 w-full pt-3">
+          <div className="w-full px-3 sm:px-5 md:px-6 lg:px-8 xl:px-10 2xl:px-12 pt-3">
             <div className="bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200/80 rounded-2xl p-3.5 flex items-center justify-between shadow-xs animate-in slide-in-from-top duration-300">
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 rounded-xl bg-emerald-500 text-white flex items-center justify-center shadow-xs">
@@ -1559,7 +1559,7 @@ export default function Home() {
         )}
 
         {/* Main Container Area */}
-        <main className="flex-1 max-w-7xl w-full mx-auto p-3 sm:p-5 flex flex-col gap-4">
+        <main className="flex-1 w-full px-3 sm:px-5 md:px-6 lg:px-8 xl:px-10 2xl:px-12 py-3 sm:py-5 flex flex-col gap-4">
           <AppErrorBoundary fallbackTitle="Instabilidade no Módulo Financeiro">
             {activeTab === 'auditoria' ? (
               <AuditView

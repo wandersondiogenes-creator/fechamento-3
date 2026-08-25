@@ -991,28 +991,42 @@ export function ExcelTable({
 
       {/* Modal: Adicionar Novo Lançamento */}
       {isAddModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-2xl border border-slate-200 w-full max-w-xl max-h-[85vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-            <div className="px-5 py-4 bg-slate-900 text-white flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <PlusCircle className="w-5 h-5 text-emerald-400" />
-                <h3 className="font-extrabold text-base tracking-wide">
-                  Novo Lançamento ({activeTab === 'dealer' ? 'Aba DEALER' : 'Aba SiTef'})
-                </h3>
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-6 overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-4xl lg:max-w-5xl xl:max-w-6xl max-h-[92vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150 my-auto">
+            {/* Modal Header */}
+            <div className="px-6 py-4.5 bg-slate-900 text-white flex items-center justify-between shadow-sm">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+                  <PlusCircle className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2.5">
+                    <h3 className="font-extrabold text-base tracking-wide text-white">
+                      Novo Lançamento
+                    </h3>
+                    <span className="px-2.5 py-0.5 rounded-full bg-slate-800 text-emerald-400 text-xs font-bold border border-emerald-500/30">
+                      {activeTab === 'dealer'
+                        ? 'Aba DEALER'
+                        : activeTab === 'sitef'
+                        ? 'Aba SiTef'
+                        : 'Aba Pendente de CDC'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Preencha os campos abaixo. As opções de Empresa, Departamento e Conta Gerencial possuem sugestões e listas integradas.
+                  </p>
+                </div>
               </div>
               <button
                 onClick={() => setIsAddModalOpen(false)}
-                className="p-1 text-slate-400 hover:text-white rounded-lg transition-colors cursor-pointer"
+                className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition-colors cursor-pointer"
+                title="Fechar"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleSaveNewRow} className="p-6 overflow-y-auto space-y-5 flex-1">
-              <p className="text-xs text-slate-600 leading-relaxed font-medium">
-                Preencha os campos abaixo para adicionar um novo registro. Selecione a <strong>Empresa</strong> e o <strong>Departamento</strong> nas opções disponíveis.
-              </p>
-
+            <form onSubmit={handleSaveNewRow} className="flex flex-col flex-1 overflow-hidden bg-slate-50/60">
               {/* Datalists globais para sugestões instantâneas */}
               <datalist id="empresas-datalist">
                 {CADASTRO_EMPRESAS.map((emp) => (
@@ -1032,125 +1046,167 @@ export function ExcelTable({
                 ))}
               </datalist>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {activeColumns.map((col) => {
-                  const label = col.customHeader || col.originalHeader;
-                  const isEmp = isEmpresaColumn(label);
-                  const isDep = isDepartamentoColumn(label);
-                  const isCta = isContaGerencialColumn(label);
-                  const isDate = isDateColumn(label);
+              <div className="p-6 sm:p-8 overflow-y-auto space-y-6 flex-1">
+                {/* Information Header Banner */}
+                <div className="bg-emerald-50/80 border border-emerald-200/80 rounded-xl p-3.5 flex items-center gap-3 text-xs text-emerald-950">
+                  <Sparkles className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                  <span>
+                    O novo lançamento será inserido instantaneamente nesta aba e sincronizado com o módulo de <strong>Fechamento</strong> e conciliações automáticas.
+                  </span>
+                </div>
 
-                  return (
-                    <div key={col.id} className="space-y-1.5 sm:col-span-1">
-                      <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block truncate flex items-center gap-1.5">
-                        {isEmp && <Building2 className="w-3.5 h-3.5 text-emerald-600" />}
-                        {isDep && <FolderTree className="w-3.5 h-3.5 text-blue-600" />}
-                        {isCta && <Scale className="w-3.5 h-3.5 text-indigo-600" />}
-                        {isDate && <Calendar className="w-3.5 h-3.5 text-amber-600" />}
-                        <span>{label}</span>
-                      </label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4.5">
+                  {activeColumns.map((col) => {
+                    const label = col.customHeader || col.originalHeader;
+                    const isEmp = isEmpresaColumn(label);
+                    const isDep = isDepartamentoColumn(label);
+                    const isCta = isContaGerencialColumn(label);
+                    const isDate = isDateColumn(label);
+                    const isLongText = /HIST[OÓ]RICO|OBSERVA[CÇ][OÕ]ES|DETALHE/i.test(label);
+                    const isCurrency = /ENTRADA|SA[IÍ]DA|VALOR|TAXA|L[IÍ]QUIDO|BRUTO/i.test(label);
 
-                      {isEmp ? (
-                        <select
-                          value={newRowFormData[col.id] || ''}
-                          onChange={(e) =>
-                            setNewRowFormData((prev) => ({
-                              ...prev,
-                              [col.id]: e.target.value,
-                            }))
-                          }
-                          className="w-full px-3.5 py-2.5 text-sm font-bold text-slate-900 bg-emerald-50/50 border-2 border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 cursor-pointer shadow-xs transition-all"
-                        >
-                          <option value="">-- Selecione a Empresa (52 Opções) --</option>
-                          {CADASTRO_EMPRESAS.map((emp) => (
-                            <option key={emp} value={emp}>
-                              {emp}
-                            </option>
-                          ))}
-                        </select>
-                      ) : isDep ? (
-                        <select
-                          value={newRowFormData[col.id] || ''}
-                          onChange={(e) =>
-                            setNewRowFormData((prev) => ({
-                              ...prev,
-                              [col.id]: e.target.value,
-                            }))
-                          }
-                          className="w-full px-3.5 py-2.5 text-sm font-bold text-slate-900 bg-blue-50/50 border-2 border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 cursor-pointer shadow-xs transition-all"
-                        >
-                          <option value="">-- Selecione o Departamento --</option>
-                          {CADASTRO_DEPARTAMENTOS.map((dep) => (
-                            <option key={dep} value={dep}>
-                              {dep}
-                            </option>
-                          ))}
-                        </select>
-                      ) : isCta ? (
-                        <select
-                          value={newRowFormData[col.id] || ''}
-                          onChange={(e) =>
-                            setNewRowFormData((prev) => ({
-                              ...prev,
-                              [col.id]: e.target.value,
-                            }))
-                          }
-                          className="w-full px-3.5 py-2.5 text-sm font-bold text-slate-900 bg-indigo-50/50 border-2 border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 cursor-pointer shadow-xs transition-all"
-                        >
-                          <option value="">-- Selecione a Conta Gerencial --</option>
-                          {CADASTRO_CONTAS_GERENCIAIS.map((cta) => (
-                            <option key={cta} value={cta}>
-                              {cta}
-                            </option>
-                          ))}
-                        </select>
-                      ) : isDate ? (
-                        <input
-                          type="date"
-                          value={toInputDateFormat(newRowFormData[col.id] || '')}
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            setNewRowFormData((prev) => ({
-                              ...prev,
-                              [col.id]: toDisplayDateFormat(val),
-                            }));
-                          }}
-                          className="w-full px-3.5 py-2.5 text-sm font-bold text-slate-900 bg-amber-50/30 border-2 border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 cursor-pointer shadow-xs transition-all"
-                        />
-                      ) : (
-                        <input
-                          type="text"
-                          value={newRowFormData[col.id] || ''}
-                          onChange={(e) =>
-                            setNewRowFormData((prev) => ({
-                              ...prev,
-                              [col.id]: e.target.value,
-                            }))
-                          }
-                          placeholder={`Digite ${label}...`}
-                          className="w-full px-3.5 py-2.5 text-sm font-semibold text-slate-900 bg-white border-2 border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500 placeholder:text-slate-400 placeholder:font-normal shadow-xs transition-all"
-                        />
-                      )}
-                    </div>
-                  );
-                })}
+                    // Dynamic column spans for wide readable layout
+                    let colSpanClass = 'sm:col-span-1';
+                    if (isEmp) {
+                      colSpanClass = 'sm:col-span-2 md:col-span-2 xl:col-span-2';
+                    } else if (isLongText) {
+                      colSpanClass = 'sm:col-span-2 md:col-span-3 xl:col-span-4';
+                    }
+
+                    return (
+                      <div key={col.id} className={`space-y-1.5 ${colSpanClass}`}>
+                        <label className="text-xs font-bold text-slate-800 uppercase tracking-wider block flex items-center justify-between gap-1.5">
+                          <span className="flex items-center gap-1.5 truncate">
+                            {isEmp && <Building2 className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0" />}
+                            {isDep && <FolderTree className="w-3.5 h-3.5 text-blue-600 flex-shrink-0" />}
+                            {isCta && <Scale className="w-3.5 h-3.5 text-indigo-600 flex-shrink-0" />}
+                            {isDate && <Calendar className="w-3.5 h-3.5 text-amber-600 flex-shrink-0" />}
+                            <span className="truncate">{label}</span>
+                          </span>
+                          {isEmp && (
+                            <span className="text-[10px] font-extrabold text-emerald-700 bg-emerald-100/80 px-2 py-0.5 rounded-md flex-shrink-0">
+                              52 Opções
+                            </span>
+                          )}
+                          {isCurrency && (
+                            <span className="text-[10px] font-extrabold text-blue-700 bg-blue-100/80 px-1.5 py-0.5 rounded-md flex-shrink-0">
+                              R$
+                            </span>
+                          )}
+                        </label>
+
+                        {isEmp ? (
+                          <select
+                            value={newRowFormData[col.id] || ''}
+                            onChange={(e) =>
+                              setNewRowFormData((prev) => ({
+                                ...prev,
+                                [col.id]: e.target.value,
+                              }))
+                            }
+                            className="w-full px-3.5 py-2.5 text-sm font-bold text-slate-900 bg-emerald-50/70 border-2 border-emerald-300 hover:border-emerald-400 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 cursor-pointer shadow-xs transition-all"
+                          >
+                            <option value="">-- Selecione a Empresa (52 Opções) --</option>
+                            {CADASTRO_EMPRESAS.map((emp) => (
+                              <option key={emp} value={emp}>
+                                {emp}
+                              </option>
+                            ))}
+                          </select>
+                        ) : isDep ? (
+                          <select
+                            value={newRowFormData[col.id] || ''}
+                            onChange={(e) =>
+                              setNewRowFormData((prev) => ({
+                                ...prev,
+                                [col.id]: e.target.value,
+                              }))
+                            }
+                            className="w-full px-3.5 py-2.5 text-sm font-bold text-slate-900 bg-blue-50/70 border-2 border-blue-300 hover:border-blue-400 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 cursor-pointer shadow-xs transition-all"
+                          >
+                            <option value="">-- Selecione o Departamento --</option>
+                            {CADASTRO_DEPARTAMENTOS.map((dep) => (
+                              <option key={dep} value={dep}>
+                                {dep}
+                              </option>
+                            ))}
+                          </select>
+                        ) : isCta ? (
+                          <select
+                            value={newRowFormData[col.id] || ''}
+                            onChange={(e) =>
+                              setNewRowFormData((prev) => ({
+                                ...prev,
+                                [col.id]: e.target.value,
+                              }))
+                            }
+                            className="w-full px-3.5 py-2.5 text-sm font-bold text-slate-900 bg-indigo-50/70 border-2 border-indigo-300 hover:border-indigo-400 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 cursor-pointer shadow-xs transition-all"
+                          >
+                            <option value="">-- Selecione a Conta Gerencial --</option>
+                            {CADASTRO_CONTAS_GERENCIAIS.map((cta) => (
+                              <option key={cta} value={cta}>
+                                {cta}
+                              </option>
+                            ))}
+                          </select>
+                        ) : isDate ? (
+                          <input
+                            type="date"
+                            value={toInputDateFormat(newRowFormData[col.id] || '')}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setNewRowFormData((prev) => ({
+                                ...prev,
+                                [col.id]: toDisplayDateFormat(val),
+                              }));
+                            }}
+                            className="w-full px-3.5 py-2.5 text-sm font-bold text-slate-900 bg-amber-50/50 border-2 border-amber-300 hover:border-amber-400 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 cursor-pointer shadow-xs transition-all"
+                          />
+                        ) : (
+                          <input
+                            type="text"
+                            value={newRowFormData[col.id] || ''}
+                            onChange={(e) =>
+                              setNewRowFormData((prev) => ({
+                                ...prev,
+                                [col.id]: e.target.value,
+                              }))
+                            }
+                            placeholder={isCurrency ? '0,00' : `Digite ${label}...`}
+                            className={`w-full px-3.5 py-2.5 text-sm rounded-xl border-2 transition-all shadow-xs ${
+                              isCurrency
+                                ? 'bg-white border-slate-300 font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500'
+                                : 'bg-white border-slate-300 font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500 placeholder:text-slate-400 placeholder:font-normal'
+                            }`}
+                          />
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
 
-              <div className="pt-4 border-t border-slate-200 flex items-center justify-end gap-2.5">
-                <button
-                  type="button"
-                  onClick={() => setIsAddModalOpen(false)}
-                  className="px-4 py-2.5 border border-slate-300 hover:bg-slate-100 text-slate-700 font-bold rounded-lg text-xs transition-colors cursor-pointer"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs shadow-md transition-all flex items-center gap-2 cursor-pointer"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>Adicionar Lançamento</span>
-                </button>
+              {/* Pinned Bottom Action Toolbar */}
+              <div className="px-6 py-4 bg-white border-t border-slate-200 flex items-center justify-between gap-3 shadow-md">
+                <span className="text-xs text-slate-500 font-medium hidden sm:inline">
+                  {activeColumns.length} campos configurados
+                </span>
+                <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setIsAddModalOpen(false)}
+                    className="px-5 py-2.5 border border-slate-300 hover:bg-slate-100 text-slate-700 font-bold rounded-xl text-xs transition-colors cursor-pointer"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 active:scale-97 text-white font-extrabold rounded-xl text-xs shadow-md transition-all flex items-center gap-2 cursor-pointer"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>Adicionar Lançamento</span>
+                  </button>
+                </div>
               </div>
             </form>
           </div>

@@ -139,10 +139,10 @@ export function ExcelHeader({
   return (
     <header
       id="wanfinance-apple-header"
-      className="bg-white/85 text-[#1D1D1F] border-b border-black/[0.06] shadow-xs sticky top-0 z-40 backdrop-blur-2xl transition-all"
+      className="bg-white/85 text-[#1D1D1F] border-b border-black/[0.06] shadow-xs sticky top-0 z-40 backdrop-blur-2xl transition-all w-full"
     >
       {/* UPPER TITLEBAR: Apple macOS / iPadOS Pro App Chrome */}
-      <div className="max-w-7xl mx-auto px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 text-xs border-b border-black/[0.04]">
+      <div className="w-full px-3 sm:px-5 md:px-6 lg:px-8 xl:px-10 2xl:px-12 py-2.5 flex flex-wrap items-center justify-between gap-3 text-xs border-b border-black/[0.04]">
         {/* Left: Traffic Lights & Wanfinance Logo */}
         <div className="flex items-center gap-4">
           <WanfinanceLogo size="md" showTrafficLights={true} showSubtitle={true} />
@@ -611,7 +611,7 @@ export function ExcelHeader({
       </div>
 
       {/* LOWER TAB BAR: Apple macOS / iOS Liquid Glass Segmented Controller */}
-      <div className="max-w-7xl mx-auto px-4 py-2.5 flex items-center justify-between overflow-x-auto scrollbar-none gap-3">
+      <div className="w-full px-3 sm:px-5 md:px-6 lg:px-8 xl:px-10 2xl:px-12 py-2.5 flex items-center justify-between overflow-x-auto scrollbar-none gap-3">
         <nav
           aria-label="Abas de Controle e Conciliação"
           className="flex items-center p-1.5 bg-gradient-to-b from-slate-200/90 via-slate-100/80 to-slate-200/90 border border-slate-300/80 rounded-2xl backdrop-blur-2xl shadow-[inset_0_1px_2px_rgba(0,0,0,0.08),0_2px_8px_rgba(0,0,0,0.04)] gap-1.5"
