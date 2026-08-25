@@ -93,6 +93,9 @@ export function SharedFechamentoModal({
   const [isSendingChat, setIsSendingChat] = useState(false);
   const [isDeletingRoom, setIsDeletingRoom] = useState(false);
   const [kickingUserId, setKickingUserId] = useState<string | null>(null);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+  const [confirmLeaveOpen, setConfirmLeaveOpen] = useState(false);
+  const [confirmKickUser, setConfirmKickUser] = useState<{ id: string; name: string } | null>(null);
 
   const currentUser: UserProfile = getCurrentUser();
 
