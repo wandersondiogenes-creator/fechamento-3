@@ -400,55 +400,40 @@ export function ExcelTable({
   };
 
   if (!state.columns || state.columns.length === 0) {
-    const isDealer = activeTab === 'dealer';
+    const getTabName = () => {
+      if (activeTab === 'dealer') return 'DEALER';
+      if (activeTab === 'sitef') return 'SiTef';
+      if (activeTab === 'pendente_cdc') return 'Pendente CDC';
+      return activeTab.toUpperCase();
+    };
 
     return (
       <div className="bg-white/90 rounded-2xl border border-black/[0.06] shadow-[0_2px_12px_rgba(0,0,0,0.03)] backdrop-blur-xl flex flex-col h-full overflow-hidden text-[#1D1D1F]">
-        <div className="p-10 text-center flex flex-col items-center justify-center my-auto space-y-5 max-w-xl mx-auto">
-          <div className="w-16 h-16 bg-blue-50 text-[#007AFF] rounded-2xl flex items-center justify-center shadow-xs border border-blue-100">
-            {isDealer ? (
-              <FileSpreadsheet className="w-8 h-8 text-[#007AFF]" />
-            ) : (
-              <CreditCard className="w-8 h-8 text-[#007AFF]" />
-            )}
+        <div className="flex flex-col items-center justify-center my-auto w-full max-w-4xl mx-auto p-12">
+          {/* Apple-style minimalist image container */}
+          <div className="relative w-full max-w-2xl aspect-[16/9] mb-8 overflow-hidden rounded-3xl group shadow-[0_20px_40px_-15px_rgba(0,0,0,0.1)] border border-white/50 bg-slate-50 transition-transform duration-500 hover:scale-[1.02]">
+            {/* The 3D image we generated */}
+            <img 
+              src="/excel_import_3d.jpg" 
+              alt="Importar Arquivo Excel 3D" 
+              className="object-cover w-full h-full transform transition-transform duration-700 group-hover:scale-105"
+            />
+            {/* Dynamic overlay glow */}
+            <div className="absolute inset-0 bg-gradient-to-tr from-[#007AFF]/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
           </div>
-
-          <div className="space-y-2">
-            <h3 className="font-extrabold text-[#1D1D1F] text-lg">
-              Aba {isDealer ? 'DEALER' : 'Sitef'} (Em Branco)
-            </h3>
-            <p className="text-slate-600 text-xs leading-relaxed max-w-md">
-              O aplicativo está pronto no modelo <strong className="text-[#007AFF]">{isDealer ? 'DEALER' : 'Sitef'}</strong>. Clique no botão abaixo para importar seu arquivo Excel e aplicar a limpeza e regras automáticas deste modelo.
-            </p>
-          </div>
-
-          <div className="bg-slate-50/90 p-4 rounded-xl border border-slate-200 text-left text-xs text-slate-700 space-y-2 w-full">
-            <div className="font-extrabold text-blue-700 text-[11px] uppercase tracking-wider flex items-center gap-1.5">
-              <Sparkles className="w-3.5 h-3.5 text-[#007AFF]" />
-              Regras do Modelo {isDealer ? 'DEALER' : 'Sitef TEF'}:
-            </div>
-            {isDealer ? (
-              <ul className="space-y-1.5 text-[11px] list-disc list-inside text-slate-600">
-                <li>Exclusão de colunas indesejadas (Conta Classificação, Dias, Parc., Histórico, Dep., Dat Acon)</li>
-                <li>Remoção automática de linhas sem data ou sem valor na Entrada</li>
-                <li>Formatação em Moeda Brasileira (R$) para colunas de Entrada e Saída</li>
-              </ul>
-            ) : (
-              <ul className="space-y-1.5 text-[11px] list-disc list-inside text-slate-600">
-                <li>Tratamento de extratos SiTef TEF (Data Transação, Hora, NSU, Autorização, Bandeira)</li>
-                <li>Conciliação de transações e formatação de Valor Bruto, Taxa TEF e Valor Líquido em R$</li>
-                <li>Identificação de bandeiras (Visa, Mastercard, Elo, Amex, Pix) e tipo de transação</li>
-              </ul>
-            )}
-          </div>
-
-          <div className="flex flex-wrap items-center justify-center gap-3 pt-1">
+          
+          {/* Main Call to Action */}
+          <div className="flex flex-col items-center justify-center space-y-6">
+            <h2 className="text-3xl font-semibold tracking-tight text-slate-900">
+              Importe o arquivo {getTabName()}
+            </h2>
+            
             <button
               onClick={onTriggerFileImport}
-              className="px-5 py-2.5 bg-gradient-to-b from-[#007AFF] to-[#0062D2] hover:brightness-105 active:scale-97 text-white font-bold rounded-xl text-xs shadow-xs transition-all flex items-center gap-2 cursor-pointer"
+              className="px-8 py-3.5 bg-[#007AFF] hover:bg-[#0062D2] text-white font-medium rounded-full text-sm shadow-[0_4px_14px_0_rgba(0,122,255,0.39)] hover:shadow-[0_6px_20px_rgba(0,122,255,0.23)] hover:-translate-y-0.5 transition-all duration-200 flex items-center gap-2 cursor-pointer"
             >
               <Upload className="w-4 h-4" />
-              <span>Importar Arquivo ({isDealer ? 'Modelo DEALER' : 'Modelo Sitef'})</span>
+              <span>Importar Arquivo</span>
             </button>
           </div>
         </div>
