@@ -73,6 +73,8 @@ import {
   Mail,
   Clock,
   FileSpreadsheet,
+  Car,
+  AlertCircle,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { exportFechamentoToExcel } from '@/lib/fechamento-excel-io';
