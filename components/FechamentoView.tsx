@@ -80,6 +80,19 @@ import * as XLSX from 'xlsx';
 import { exportFechamentoToExcel } from '@/lib/fechamento-excel-io';
 import { getSessionTimeRemaining } from '@/lib/shared-fechamento-service';
 
+const getCompanyLogo = (empName: string) => {
+  const n = empName.toLowerCase();
+  if (n.includes('byd')) return 'https://upload.wikimedia.org/wikipedia/commons/thumb/f/f6/BYD_Logo.svg/1024px-BYD_Logo.svg.png';
+  if (n.includes('jeep')) return 'https://upload.wikimedia.org/wikipedia/commons/thumb/2/23/Jeep_logo.svg/1024px-Jeep_logo.svg.png';
+  if (n.includes('fiat')) return 'https://upload.wikimedia.org/wikipedia/commons/thumb/1/12/Fiat_Automobiles_logo.svg/1024px-Fiat_Automobiles_logo.svg.png';
+  if (n.includes('ford')) return 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/a0/Ford_Motor_Company_Logo.svg/1024px-Ford_Motor_Company_Logo.svg.png';
+  if (n.includes('honda')) return 'https://upload.wikimedia.org/wikipedia/commons/thumb/7/7b/Honda_Logo.svg/1024px-Honda_Logo.svg.png';
+  if (n.includes('hyundai')) return 'https://upload.wikimedia.org/wikipedia/commons/thumb/4/44/Hyundai_Motor_Company_logo.svg/1024px-Hyundai_Motor_Company_logo.svg.png';
+  if (n.includes('geely')) return 'https://upload.wikimedia.org/wikipedia/commons/thumb/e/e6/Geely_Auto_logo.svg/1024px-Geely_Auto_logo.svg.png';
+  if (n.includes('cjdr')) return 'https://upload.wikimedia.org/wikipedia/commons/thumb/2/23/Jeep_logo.svg/1024px-Jeep_logo.svg.png';
+  return null;
+};
+
 interface FechamentoViewProps {
   fechamentoItems?: FechamentoItem[];
   items?: FechamentoItem[];
@@ -160,6 +173,7 @@ export function FechamentoView({
     [fechamentoItemsProp, itemsProp]
   );
   const [selectedCompanyPanel, setSelectedCompanyPanel] = useState<string | null>(null);
+  const [expandedDepartment, setExpandedDepartment] = useState<string | null>(null);
 
   const [internalSearchQuery, setInternalSearchQuery] = useState('');
   const [internalSelectedEmpresaFilter, setInternalSelectedEmpresaFilter] = useState<string>('ALL');
@@ -1200,7 +1214,6 @@ export function FechamentoView({
         <div className="flex items-center gap-2">
           <button onClick={() => setViewMode(viewMode === 'grouped' ? 'flat' : 'grouped')} className="px-4 py-2 bg-white hover:bg-slate-50 text-slate-700 font-bold rounded-xl text-xs border border-slate-200 shadow-sm transition-all flex items-center gap-2">
              <Layers className="w-4 h-4 text-indigo-500" />
-             <span>{viewMode === 'grouped' ? 'Ver Lista Plana' : 'Ver Agrupado'}</span>
           </button>
           <button onClick={handleExportExcel} className="px-4 py-2 bg-white hover:bg-slate-50 text-slate-700 font-bold rounded-xl text-xs border border-slate-200 shadow-sm transition-all flex items-center gap-2">
              <Download className="w-4 h-4 text-slate-500" />
@@ -1217,7 +1230,7 @@ export function FechamentoView({
 
       {/* 3. Main Split View */}
       {viewMode === 'grouped' ? (
-        <div className="flex flex-col lg:flex-row gap-6 items-start pb-8">
+        <div className="flex flex-col lg:flex-row gap-6 items-stretch pb-8">
           {/* Left: Companies List */}
           <div className="w-full lg:w-3/5 xl:w-2/3 flex flex-col gap-2.5">
             {/* Table Header */}
@@ -1236,11 +1249,12 @@ export function FechamentoView({
                  const isConciliada = empConciliation.isConciliated;
                  const isSelected = selectedCompanyPanel === empName;
                  const hasDivergence = empData.diferencaTotal !== 0;
+                 const logoUrl = typeof getCompanyLogo !== 'undefined' ? getCompanyLogo(empName) : null;
                  
                  return (
                    <div 
                      key={empName}
-                     onClick={() => setSelectedCompanyPanel(isSelected ? null : empName)}
+                     onClick={() => { setSelectedCompanyPanel(isSelected ? null : empName); setExpandedDepartment(null); }}
                      className={`group grid grid-cols-12 gap-4 items-center px-4 py-3.5 rounded-[1.25rem] border transition-all duration-300 cursor-pointer ${
                        isSelected 
                          ? 'bg-white ring-4 ring-blue-500/10 shadow-lg border-blue-200/60 scale-[1.01]' 
@@ -1250,8 +1264,13 @@ export function FechamentoView({
                      }`}
                    >
                       <div className="col-span-5 lg:col-span-4 flex items-center gap-3 min-w-0">
-                        <div className="w-12 h-12 bg-slate-900 rounded-full flex items-center justify-center text-white font-black text-sm shrink-0 shadow-inner">
-                          {empName.substring(0,3).toUpperCase()}
+                        <div className="w-12 h-12 bg-slate-900 rounded-full flex items-center justify-center text-white font-black text-sm shrink-0 shadow-inner overflow-hidden">
+                          {logoUrl ? (
+                             <img src={logoUrl} alt={empName} className="w-full h-full object-contain bg-white p-1.5" onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextElementSibling!.style.display = 'flex'; }} />
+                          ) : null}
+                          <span style={{ display: logoUrl ? 'none' : 'flex' }}>
+                            {empName.substring(0,3).toUpperCase()}
+                          </span>
                         </div>
                         <div className="flex flex-col overflow-hidden min-w-0">
                           <span className="font-extrabold text-slate-900 text-sm truncate">{empName}</span>
@@ -1265,16 +1284,18 @@ export function FechamentoView({
                             <AlertCircle className="w-3.5 h-3.5" />
                             <span className="hidden xl:inline">Com Divergências</span>
                           </span>
-                        ) : isConciliada ? (
-                          <span className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-100/80 text-emerald-700 rounded-full text-xs font-bold border border-emerald-200/50 shadow-sm shadow-emerald-500/10">
-                            <CheckCircle2 className="w-3.5 h-3.5" />
-                            <span className="hidden xl:inline">Conciliado</span>
-                          </span>
                         ) : (
-                          <span className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-100/80 text-amber-700 rounded-full text-xs font-bold border border-amber-200/50 shadow-sm shadow-amber-500/10">
-                            <Clock className="w-3.5 h-3.5" />
-                            <span className="hidden xl:inline">Pendente</span>
-                          </span>
+                          <button 
+                            onClick={(e) => toggleEmpresaConciliada(empName, e)}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold border shadow-sm transition-colors hover:scale-105 ${
+                              isConciliada 
+                                ? 'bg-emerald-100/80 text-emerald-700 border-emerald-200/50 shadow-emerald-500/10 hover:bg-emerald-200' 
+                                : 'bg-slate-100/80 text-slate-500 border-slate-200/50 shadow-slate-500/10 hover:bg-slate-200 hover:text-slate-700'
+                            }`}
+                          >
+                            {isConciliada ? <CheckCircle2 className="w-3.5 h-3.5" /> : <Clock className="w-3.5 h-3.5" />}
+                            <span className="hidden xl:inline">{isConciliada ? 'Conciliado' : 'Não Conciliado'}</span>
+                          </button>
                         )}
                       </div>
                       
@@ -1299,33 +1320,45 @@ export function FechamentoView({
           </div>
           
           {/* Right: Side Panel (Selected Company) */}
-          <div className="w-full lg:w-2/5 xl:w-1/3 relative">
+          <div className="w-full lg:w-2/5 xl:w-1/3 relative h-full">
             <div className="sticky top-6">
               {selectedCompanyPanel && selectedEmpData ? (
-                 <div className="bg-white/90 backdrop-blur-xl rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.08)] overflow-hidden animate-in slide-in-from-right-8 fade-in duration-300">
-                    <div className="p-6 pb-5 bg-gradient-to-b from-slate-50 to-white border-b border-slate-100">
+                 <div className="bg-white/90 backdrop-blur-xl rounded-3xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.08)] overflow-hidden animate-in slide-in-from-right-8 fade-in duration-300 flex flex-col max-h-[85vh]">
+                    <div className="p-6 pb-5 bg-gradient-to-b from-slate-50 to-white border-b border-slate-100 flex-shrink-0">
                       <div className="flex items-start justify-between mb-4">
                         <div className="flex items-center gap-3">
-                          <div className="w-14 h-14 bg-slate-900 rounded-2xl flex items-center justify-center text-white font-black text-lg shadow-lg">
-                            {selectedCompanyPanel.substring(0,3).toUpperCase()}
+                          <div className="w-14 h-14 bg-slate-900 rounded-2xl flex items-center justify-center text-white font-black text-lg shadow-lg overflow-hidden">
+                            {typeof getCompanyLogo !== 'undefined' && getCompanyLogo(selectedCompanyPanel) ? (
+                               <img src={getCompanyLogo(selectedCompanyPanel)!} alt={selectedCompanyPanel} className="w-full h-full object-contain bg-white p-2" onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextElementSibling!.style.display = 'flex'; }} />
+                            ) : null}
+                            <span style={{ display: typeof getCompanyLogo !== 'undefined' && getCompanyLogo(selectedCompanyPanel) ? 'none' : 'flex' }}>
+                              {selectedCompanyPanel.substring(0,3).toUpperCase()}
+                            </span>
                           </div>
                           <div>
-                            <h3 className="font-extrabold text-lg text-slate-900 leading-tight">{selectedCompanyPanel}</h3>
+                            <h3 className="font-extrabold text-lg text-slate-900 leading-tight truncate max-w-[200px]">{selectedCompanyPanel}</h3>
                             <p className="text-xs font-semibold text-slate-500">{Object.keys(selectedEmpData.departamentos).length} departamentos</p>
                           </div>
                         </div>
                         
                         {hasSelectedEmpDivergence ? (
-                          <span className="flex items-center gap-1.5 px-3 py-1 bg-red-100 text-red-700 rounded-full text-[11px] font-bold border border-red-200">
+                          <span className="flex items-center gap-1.5 px-3 py-1 bg-red-100 text-red-700 rounded-full text-[11px] font-bold border border-red-200 shrink-0">
                             <AlertCircle className="w-3 h-3" />
                             Com Divergências
                           </span>
-                        ) : isSelectedEmpConciliada ? (
-                          <span className="flex items-center gap-1.5 px-3 py-1 bg-emerald-100 text-emerald-700 rounded-full text-[11px] font-bold border border-emerald-200">
-                            <CheckCircle2 className="w-3 h-3" />
-                            Conciliado
-                          </span>
-                        ) : null}
+                        ) : (
+                          <button 
+                            onClick={(e) => toggleEmpresaConciliada(selectedCompanyPanel, e)}
+                            className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold border transition-colors hover:scale-105 shrink-0 ${
+                              isSelectedEmpConciliada 
+                                ? 'bg-emerald-100 text-emerald-700 border-emerald-200 hover:bg-emerald-200' 
+                                : 'bg-slate-100 text-slate-500 border-slate-200 hover:bg-slate-200 hover:text-slate-700'
+                            }`}
+                          >
+                            {isSelectedEmpConciliada ? <CheckCircle2 className="w-3 h-3" /> : <Clock className="w-3 h-3" />}
+                            {isSelectedEmpConciliada ? 'Conciliado' : 'Não Conciliado'}
+                          </button>
+                        )}
                       </div>
 
                       <div className="grid grid-cols-3 gap-3 mb-2">
@@ -1345,23 +1378,8 @@ export function FechamentoView({
                         </div>
                       </div>
                     </div>
-                    
-                    {/* Tabs / Segmented Control */}
-                    <div className="px-6 py-2">
-                      <div className="flex items-center gap-1 bg-slate-100/80 p-1 rounded-xl">
-                        <button className="flex-1 px-4 py-1.5 bg-blue-600 text-white font-bold text-xs rounded-lg shadow-sm">
-                          Departamentos
-                        </button>
-                        <button className="flex-1 px-4 py-1.5 text-slate-500 hover:text-slate-700 font-bold text-xs rounded-lg transition-colors">
-                          Comparativo
-                        </button>
-                        <button className="flex-1 px-4 py-1.5 text-slate-500 hover:text-slate-700 font-bold text-xs rounded-lg transition-colors">
-                          Resumo
-                        </button>
-                      </div>
-                    </div>
 
-                    <div className="px-6 py-3">
+                    <div className="px-6 py-3 flex-shrink-0">
                       <div className="relative">
                         <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
                         <input
@@ -1373,60 +1391,115 @@ export function FechamentoView({
                     </div>
                     
                     {/* Departamentos List */}
-                    <div className="px-4 pb-6 max-h-[500px] overflow-y-auto space-y-2">
+                    <div className="px-4 pb-6 overflow-y-auto space-y-3 custom-scrollbar flex-1">
                       {Object.entries(selectedEmpData.departamentos).map(([depTitle, dData]) => {
                         const depHasDivergence = dData.diferencaTotal !== 0;
                         const depNumber = depTitle.match(/\b\d{3,6}\b/)?.[0] || depTitle.match(/^\d+/)?.[0] || depTitle.split(/[-–—:]/)[0]?.trim() || depTitle;
                         const depNameOnly = depTitle.replace(depNumber, '').replace(/^[-–—:\s]+/, '').trim() || 'Departamento';
+                        const isExpanded = expandedDepartment === depTitle;
                         
                         return (
                           <div 
                             key={depTitle}
-                            className={`group flex items-center justify-between p-3 rounded-2xl border transition-all cursor-pointer hover:scale-[1.02] ${
+                            className={`group flex flex-col p-3 rounded-2xl border transition-all ${
                               depHasDivergence 
                                 ? 'bg-red-50/60 border-red-200 shadow-[0_4px_12px_rgba(239,68,68,0.1)]' 
                                 : 'bg-white border-slate-100 hover:border-slate-200 shadow-sm hover:shadow-md'
                             }`}
                           >
-                            <div className="flex items-center gap-3">
-                              <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 shadow-sm ${
-                                depHasDivergence ? 'bg-red-500 text-white' : 'bg-slate-100 text-slate-500 group-hover:bg-blue-50 group-hover:text-blue-500 transition-colors'
-                              }`}>
-                                <FolderTree className="w-4 h-4" />
-                              </div>
-                              <div className="flex flex-col">
-                                <span className="font-extrabold text-slate-800 text-xs">
-                                  {depNameOnly} <span className="text-slate-400 font-mono font-medium ml-1">#{depNumber}</span>
-                                </span>
-                                <div className="flex items-center gap-2 mt-0.5 font-mono text-[10px] font-medium text-slate-500">
-                                  <span title="Dealer">{formatBRL(dData.totalDealer)}</span>
-                                  <span className="text-slate-300">/</span>
-                                  <span title="SiTef">{formatBRL(dData.totalSitef)}</span>
+                            <div 
+                               className="flex items-center justify-between cursor-pointer"
+                               onClick={() => setExpandedDepartment(isExpanded ? null : depTitle)}
+                            >
+                              <div className="flex items-center gap-3">
+                                <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 shadow-sm ${
+                                  depHasDivergence ? 'bg-red-500 text-white' : 'bg-slate-100 text-slate-500 group-hover:bg-blue-50 group-hover:text-blue-500 transition-colors'
+                                }`}>
+                                  <FolderTree className="w-4 h-4" />
+                                </div>
+                                <div className="flex flex-col">
+                                  <span className="font-extrabold text-slate-800 text-xs">
+                                    {depNameOnly} <span className="text-slate-400 font-mono font-medium ml-1">#{depNumber}</span>
+                                  </span>
+                                  <div className="flex items-center gap-2 mt-0.5 font-mono text-[10px] font-medium text-slate-500">
+                                    <span title="Dealer">{formatBRL(dData.totalDealer)}</span>
+                                    <span className="text-slate-300">/</span>
+                                    <span title="SiTef">{formatBRL(dData.totalSitef)}</span>
+                                  </div>
                                 </div>
                               </div>
+                              
+                              <div className="flex items-center gap-2">
+                                {depHasDivergence ? (
+                                  <span className="flex items-center gap-1 px-2 py-0.5 bg-red-100 text-red-700 rounded-full text-[10px] font-bold border border-red-200">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse"></span>
+                                    {formatBRL(Math.abs(dData.diferencaTotal))}
+                                  </span>
+                                ) : isSelectedEmpConciliada ? (
+                                  <span className="flex items-center gap-1 px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded-full text-[10px] font-bold border border-emerald-200">
+                                    <Check className="w-3 h-3 stroke-[3]" />
+                                    Conciliado
+                                  </span>
+                                ) : null}
+                                <ChevronRight className={`w-4 h-4 text-slate-300 transition-transform duration-300 ${isExpanded ? 'rotate-90 text-blue-500' : 'group-hover:text-slate-600'}`} />
+                              </div>
                             </div>
-                            
-                            <div className="flex items-center gap-2">
-                              {depHasDivergence ? (
-                                <span className="flex items-center gap-1 px-2 py-0.5 bg-red-100 text-red-700 rounded-full text-[10px] font-bold border border-red-200">
-                                  <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse"></span>
-                                  {formatBRL(Math.abs(dData.diferencaTotal))}
-                                </span>
-                              ) : isSelectedEmpConciliada ? (
-                                <span className="flex items-center gap-1 px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded-full text-[10px] font-bold border border-emerald-200">
-                                  <Check className="w-3 h-3 stroke-[3]" />
-                                  Conciliado
-                                </span>
-                              ) : null}
-                              <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-slate-600 transition-colors" />
-                            </div>
+
+                            {/* Expanded Transactions (Comparativo) */}
+                            {isExpanded && (
+                              <div className="mt-4 pt-4 border-t border-slate-200/50 flex flex-col gap-2">
+                                {dData.items.map((item) => {
+                                   const itemConciliado = item.status === 'CONCILIADO' || (!item.temDivergencia && Math.abs(item.diferenca) < 0.01);
+                                   return (
+                                     <div key={item.id} className="flex flex-col bg-white rounded-xl p-3 border border-slate-100 shadow-sm text-xs transition-all hover:shadow-md">
+                                        <div className="flex justify-between items-center mb-3">
+                                          <div className="flex items-center gap-2">
+                                            <FileSpreadsheet className="w-3.5 h-3.5 text-slate-400" />
+                                            <span className="font-mono text-slate-500 font-semibold">{item.nsu ? `NSU: ${item.nsu}` : (item.data || '')}</span>
+                                          </div>
+                                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${itemConciliado ? 'bg-emerald-100 text-emerald-700 border border-emerald-200/50' : 'bg-red-100 text-red-700 border border-red-200/50'}`}>
+                                            {itemConciliado ? 'Casado' : 'Aberto'}
+                                          </span>
+                                        </div>
+                                        
+                                        {itemConciliado ? (
+                                          <div className="flex justify-between items-center bg-slate-50/50 p-2 rounded-lg border border-slate-100">
+                                            <div className="flex flex-col">
+                                              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">Dealer</span>
+                                              <span className="font-mono font-bold text-slate-700">{formatBRL(item.valorDealer)}</span>
+                                            </div>
+                                            <div className="flex items-center text-emerald-400 px-2 bg-white rounded-full border border-emerald-100 shadow-sm">
+                                              <CheckCircle2 className="w-4 h-4 text-emerald-500 m-1" />
+                                            </div>
+                                            <div className="flex flex-col text-right">
+                                              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">SiTef / CTF</span>
+                                              <span className="font-mono font-bold text-slate-700">{formatBRL(item.valorSitef)}</span>
+                                            </div>
+                                          </div>
+                                        ) : (
+                                          <div className="flex flex-col gap-1.5">
+                                            {(item.valorDealer > 0 || (item.valorDealer !== 0 && item.valorSitef === 0)) && (
+                                              <div className="flex justify-between items-center bg-blue-50/50 p-2.5 rounded-lg border border-blue-100/50">
+                                                <span className="text-[10px] font-bold text-blue-600 uppercase tracking-wider">Lançamento Dealer</span>
+                                                <span className="font-mono font-bold text-slate-800">{formatBRL(item.valorDealer)}</span>
+                                              </div>
+                                            )}
+                                            {(item.valorSitef > 0 || (item.valorSitef !== 0 && item.valorDealer === 0)) && (
+                                              <div className="flex justify-between items-center bg-purple-50/50 p-2.5 rounded-lg border border-purple-100/50">
+                                                <span className="text-[10px] font-bold text-purple-600 uppercase tracking-wider">Lançamento SiTef</span>
+                                                <span className="font-mono font-bold text-slate-800">{formatBRL(item.valorSitef)}</span>
+                                              </div>
+                                            )}
+                                          </div>
+                                        )}
+                                     </div>
+                                   );
+                                })}
+                              </div>
+                            )}
                           </div>
                         );
                       })}
-                      
-                      <button className="w-full py-3 text-xs font-bold text-blue-600 hover:text-blue-700 transition-colors flex items-center justify-center gap-1">
-                        Ver todos os departamentos <ChevronRight className="w-3 h-3" />
-                      </button>
                     </div>
                  </div>
               ) : (
@@ -1512,6 +1585,6 @@ export function FechamentoView({
       />
     </div>
   );
-};
+-e };
 
 export default FechamentoView;
